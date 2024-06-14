@@ -112,13 +112,13 @@ pub fn stepCpu(gb: *Gb) usize {
         },
     }
 
-    gb.*.pc += opcodeToInstructionSize(opcode);
+    gb.*.pc += instrSize(opcode);
 
     // TODO pass cond
-    return opcodeToInstructionCycles(opcode, true);
+    return instrCycles(opcode, true);
 }
 
-fn opcodeToInstructionSize(opcode: u8) u16 {
+fn instrSize(opcode: u8) u16 {
     const size: u16 = switch (opcode) {
         0x00 => 1, 0x01 => 3, 0x02 => 1, 0x03 => 1, 0x04 => 1, 0x05 => 1,
         0x06 => 2, 0x07 => 1, 0x08 => 3, 0x09 => 1, 0x0a => 1, 0x0b => 1,
@@ -170,7 +170,7 @@ fn opcodeToInstructionSize(opcode: u8) u16 {
     return size;
 }
 
-fn opcodeToInstructionCycles(opcode: u8, cond: bool) usize {
+fn instrCycles(opcode: u8, cond: bool) usize {
     const cycles: usize = switch (opcode) {
         0x00 => 1, 0x01 => 3, 0x02 => 2, 0x03 => 2, 0x04 => 1, 0x05 => 1,
         0x06 => 2, 0x07 => 1, 0x08 => 5, 0x09 => 2, 0x0a => 2, 0x0b => 2,
@@ -570,9 +570,13 @@ fn dec16(gb: *Gb, dst: Dst16) void {
 }
 
 fn jr(gb: *Gb, offset: u8) void {
-    const offsetU7: u7 = @truncate(offset);
-    const signBitU7: u7 = @truncate(offset >> 7);
-    const signBit: i8 = @as(i8, signBitU7);
-    const offsetSigned = @as(i8, offsetU7) * ((-1) * signBit);
-    gb.pc = gb.pc + offsetSigned;
+    const offset16 = (@as(u16, (offset & 0b1000_0000)) << 8) | (@as(u16, offset & 0b0111_1111));
+    gb.pc = gb.pc + offset16;
+}
+
+test "jr" {
+    const gameboy = @import("gameboy.zig");
+    const alloc = std.testing.allocator;
+    const rom = [_]u8 { 0, 0, 0, 0 };
+    const gb = gameboy.initGb(alloc, rom);
 }
