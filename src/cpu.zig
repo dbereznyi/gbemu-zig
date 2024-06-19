@@ -51,24 +51,28 @@ pub fn stepCpu(gb: *Gb) usize {
         0x1d => dec8(gb, Dst8.E),
         0x1e => ld8(gb, Dst8.E, Src8{ .Imm = n8 }),
 
+        0x20 => jrCond(gb, n8, !gb.zero),
         0x21 => ld16(gb, Dst16.HL, Src16{ .Imm = n16 }),
         0x22 => ld8(gb, Dst8.IndHLInc, Src8.A),
         0x23 => inc16(gb, Dst16.HL),
         0x24 => inc8(gb, Dst8.H),
         0x25 => dec8(gb, Dst8.H),
         0x26 => ld8(gb, Dst8.D, Src8{ .Imm = n8 }),
+        0x28 => jrCond(gb, n8, gb.zero),
         0x2a => ld8(gb, Dst8.A, Src8.IndHLInc),
         0x2b => dec16(gb, Dst16.HL),
         0x2c => inc8(gb, Dst8.L),
         0x2d => dec8(gb, Dst8.L),
         0x2e => ld8(gb, Dst8.L, Src8{ .Imm = n8 }),
 
+        0x30 => jrCond(gb, n8, !gb.carry),
         0x31 => ld16(gb, Dst16.SP, Src16{ .Imm = n16 }),
         0x32 => ld8(gb, Dst8.IndHLDec, Src8.A),
         0x33 => inc16(gb, Dst16.SP),
         0x34 => inc8(gb, Dst8.IndHL),
         0x35 => dec8(gb, Dst8.IndHL),
         0x36 => ld8(gb, Dst8.IndHL, Src8{ .Imm = n8 }),
+        0x38 => jrCond(gb, n8, gb.carry),
         0x3a => ld8(gb, Dst8.A, Src8.IndHLDec),
         0x3b => dec16(gb, Dst16.SP),
         0x3c => inc8(gb, Dst8.A),
@@ -93,10 +97,16 @@ pub fn stepCpu(gb: *Gb) usize {
         0xb0...0xb7 => or_(gb, opcodeReg),
         0xb8...0xbf => cp(gb, opcodeReg),
 
+        0xc2 => jpCond(gb, n16, !gb.zero),
+        0xc3 => jp(gb, n16),
         0xc6 => add(gb, Src8{ .Imm = n8 }),
+        0xc9 => ret(gb),
+        0xca => jpCond(gb, n16, gb.zero),
         0xce => adc(gb, Src8{ .Imm = n8 }),
 
+        0xd2 => jpCond(gb, n16, !gb.carry),
         0xd6 => sub(gb, Src8{ .Imm = n8 }),
+        0xda => jpCond(gb, n16, gb.carry),
         0xde => sbc(gb, Src8{ .Imm = n8 }),
 
         0xe6 => and_(gb, Src8{ .Imm = n8 }),
@@ -114,53 +124,256 @@ pub fn stepCpu(gb: *Gb) usize {
 
     gb.*.pc += instrSize(opcode);
 
-    // TODO pass cond
-    return instrCycles(opcode, true);
+    return instrCycles(opcode, gb.branchCond);
 }
 
 fn instrSize(opcode: u8) u16 {
     const size: u16 = switch (opcode) {
-        0x00 => 1, 0x01 => 3, 0x02 => 1, 0x03 => 1, 0x04 => 1, 0x05 => 1,
-        0x06 => 2, 0x07 => 1, 0x08 => 3, 0x09 => 1, 0x0a => 1, 0x0b => 1,
-        0x0c => 1, 0x0d => 1, 0x0e => 2, 0x0f => 1, 0x10 => 2, 0x11 => 3,
-        0x12 => 1, 0x13 => 1, 0x14 => 1, 0x15 => 1, 0x16 => 2, 0x17 => 1,
-        0x18 => 2, 0x19 => 1, 0x1a => 1, 0x1b => 1, 0x1c => 1, 0x1d => 1,
-        0x1e => 2, 0x1f => 1, 0x20 => 2, 0x21 => 3, 0x22 => 1, 0x23 => 1,
-        0x24 => 1, 0x25 => 1, 0x26 => 2, 0x27 => 1, 0x28 => 2, 0x29 => 1,
-        0x2a => 1, 0x2b => 1, 0x2c => 1, 0x2d => 1, 0x2e => 2, 0x2f => 1,
-        0x30 => 2, 0x31 => 3, 0x32 => 1, 0x33 => 1, 0x34 => 1, 0x35 => 1,
-        0x36 => 2, 0x37 => 1, 0x38 => 2, 0x39 => 1, 0x3a => 1, 0x3b => 1,
-        0x3c => 1, 0x3d => 1, 0x3e => 2, 0x3f => 1, 0x40 => 1, 0x41 => 1,
-        0x42 => 1, 0x43 => 1, 0x44 => 1, 0x45 => 1, 0x46 => 1, 0x47 => 1,
-        0x48 => 1, 0x49 => 1, 0x4a => 1, 0x4b => 1, 0x4c => 1, 0x4d => 1,
-        0x4e => 1, 0x4f => 1, 0x50 => 1, 0x51 => 1, 0x52 => 1, 0x53 => 1,
-        0x54 => 1, 0x55 => 1, 0x56 => 1, 0x57 => 1, 0x58 => 1, 0x59 => 1,
-        0x5a => 1, 0x5b => 1, 0x5c => 1, 0x5d => 1, 0x5e => 1, 0x5f => 1,
-        0x60 => 1, 0x61 => 1, 0x62 => 1, 0x63 => 1, 0x64 => 1, 0x65 => 1,
-        0x66 => 1, 0x67 => 1, 0x68 => 1, 0x69 => 1, 0x6a => 1, 0x6b => 1,
-        0x6c => 1, 0x6d => 1, 0x6e => 1, 0x6f => 1, 0x70 => 1, 0x71 => 1,
-        0x72 => 1, 0x73 => 1, 0x74 => 1, 0x75 => 1, 0x76 => 1, 0x77 => 1,
-        0x78 => 1, 0x79 => 1, 0x7a => 1, 0x7b => 1, 0x7c => 1, 0x7d => 1,
-        0x7e => 1, 0x7f => 1, 0x80 => 1, 0x81 => 1, 0x82 => 1, 0x83 => 1,
-        0x84 => 1, 0x85 => 1, 0x86 => 1, 0x87 => 1, 0x88 => 1, 0x89 => 1,
-        0x8a => 1, 0x8b => 1, 0x8c => 1, 0x8d => 1, 0x8e => 1, 0x8f => 1,
-        0x90 => 1, 0x91 => 1, 0x92 => 1, 0x93 => 1, 0x94 => 1, 0x95 => 1,
-        0x96 => 1, 0x97 => 1, 0x98 => 1, 0x99 => 1, 0x9a => 1, 0x9b => 1,
-        0x9c => 1, 0x9d => 1, 0x9e => 1, 0x9f => 1, 0xa0 => 1, 0xa1 => 1,
-        0xa2 => 1, 0xa3 => 1, 0xa4 => 1, 0xa5 => 1, 0xa6 => 1, 0xa7 => 1,
-        0xa8 => 1, 0xa9 => 1, 0xaa => 1, 0xab => 1, 0xac => 1, 0xad => 1,
-        0xae => 1, 0xaf => 1, 0xb0 => 1, 0xb1 => 1, 0xb2 => 1, 0xb3 => 1,
-        0xb4 => 1, 0xb5 => 1, 0xb6 => 1, 0xb7 => 1, 0xb8 => 1, 0xb9 => 1,
-        0xba => 1, 0xbb => 1, 0xbc => 1, 0xbd => 1, 0xbe => 1, 0xbf => 1,
-        0xc0 => 1, 0xc1 => 1, 0xc2 => 3, 0xc3 => 3, 0xc4 => 3, 0xc5 => 1,
-        0xc6 => 2, 0xc7 => 1, 0xc8 => 1, 0xc9 => 1, 0xca => 3, 0xcb => 2,
-        0xcc => 3, 0xcd => 3, 0xce => 2, 0xcf => 1, 0xd0 => 1, 0xd1 => 1,
-        0xd2 => 3, 0xd4 => 3, 0xd5 => 1, 0xd6 => 2, 0xd7 => 1, 0xd8 => 1,
-        0xd9 => 1, 0xda => 3, 0xdc => 3, 0xde => 2, 0xdf => 1, 0xe0 => 2,
-        0xe1 => 1, 0xe2 => 1, 0xe5 => 1, 0xe6 => 2, 0xe7 => 1, 0xe8 => 2,
-        0xe9 => 1, 0xea => 3, 0xee => 2, 0xef => 1, 0xf0 => 2, 0xf1 => 1,
-        0xf2 => 1, 0xf3 => 1, 0xf5 => 1, 0xf6 => 2, 0xf7 => 1, 0xf8 => 2,
-        0xf9 => 1, 0xfa => 3, 0xfb => 1, 0xfe => 2, 0xff => 1,
+        0x00 => 1,
+        0x01 => 3,
+        0x02 => 1,
+        0x03 => 1,
+        0x04 => 1,
+        0x05 => 1,
+        0x06 => 2,
+        0x07 => 1,
+        0x08 => 3,
+        0x09 => 1,
+        0x0a => 1,
+        0x0b => 1,
+        0x0c => 1,
+        0x0d => 1,
+        0x0e => 2,
+        0x0f => 1,
+        0x10 => 2,
+        0x11 => 3,
+        0x12 => 1,
+        0x13 => 1,
+        0x14 => 1,
+        0x15 => 1,
+        0x16 => 2,
+        0x17 => 1,
+        0x18 => 2,
+        0x19 => 1,
+        0x1a => 1,
+        0x1b => 1,
+        0x1c => 1,
+        0x1d => 1,
+        0x1e => 2,
+        0x1f => 1,
+        0x20 => 2,
+        0x21 => 3,
+        0x22 => 1,
+        0x23 => 1,
+        0x24 => 1,
+        0x25 => 1,
+        0x26 => 2,
+        0x27 => 1,
+        0x28 => 2,
+        0x29 => 1,
+        0x2a => 1,
+        0x2b => 1,
+        0x2c => 1,
+        0x2d => 1,
+        0x2e => 2,
+        0x2f => 1,
+        0x30 => 2,
+        0x31 => 3,
+        0x32 => 1,
+        0x33 => 1,
+        0x34 => 1,
+        0x35 => 1,
+        0x36 => 2,
+        0x37 => 1,
+        0x38 => 2,
+        0x39 => 1,
+        0x3a => 1,
+        0x3b => 1,
+        0x3c => 1,
+        0x3d => 1,
+        0x3e => 2,
+        0x3f => 1,
+        0x40 => 1,
+        0x41 => 1,
+        0x42 => 1,
+        0x43 => 1,
+        0x44 => 1,
+        0x45 => 1,
+        0x46 => 1,
+        0x47 => 1,
+        0x48 => 1,
+        0x49 => 1,
+        0x4a => 1,
+        0x4b => 1,
+        0x4c => 1,
+        0x4d => 1,
+        0x4e => 1,
+        0x4f => 1,
+        0x50 => 1,
+        0x51 => 1,
+        0x52 => 1,
+        0x53 => 1,
+        0x54 => 1,
+        0x55 => 1,
+        0x56 => 1,
+        0x57 => 1,
+        0x58 => 1,
+        0x59 => 1,
+        0x5a => 1,
+        0x5b => 1,
+        0x5c => 1,
+        0x5d => 1,
+        0x5e => 1,
+        0x5f => 1,
+        0x60 => 1,
+        0x61 => 1,
+        0x62 => 1,
+        0x63 => 1,
+        0x64 => 1,
+        0x65 => 1,
+        0x66 => 1,
+        0x67 => 1,
+        0x68 => 1,
+        0x69 => 1,
+        0x6a => 1,
+        0x6b => 1,
+        0x6c => 1,
+        0x6d => 1,
+        0x6e => 1,
+        0x6f => 1,
+        0x70 => 1,
+        0x71 => 1,
+        0x72 => 1,
+        0x73 => 1,
+        0x74 => 1,
+        0x75 => 1,
+        0x76 => 1,
+        0x77 => 1,
+        0x78 => 1,
+        0x79 => 1,
+        0x7a => 1,
+        0x7b => 1,
+        0x7c => 1,
+        0x7d => 1,
+        0x7e => 1,
+        0x7f => 1,
+        0x80 => 1,
+        0x81 => 1,
+        0x82 => 1,
+        0x83 => 1,
+        0x84 => 1,
+        0x85 => 1,
+        0x86 => 1,
+        0x87 => 1,
+        0x88 => 1,
+        0x89 => 1,
+        0x8a => 1,
+        0x8b => 1,
+        0x8c => 1,
+        0x8d => 1,
+        0x8e => 1,
+        0x8f => 1,
+        0x90 => 1,
+        0x91 => 1,
+        0x92 => 1,
+        0x93 => 1,
+        0x94 => 1,
+        0x95 => 1,
+        0x96 => 1,
+        0x97 => 1,
+        0x98 => 1,
+        0x99 => 1,
+        0x9a => 1,
+        0x9b => 1,
+        0x9c => 1,
+        0x9d => 1,
+        0x9e => 1,
+        0x9f => 1,
+        0xa0 => 1,
+        0xa1 => 1,
+        0xa2 => 1,
+        0xa3 => 1,
+        0xa4 => 1,
+        0xa5 => 1,
+        0xa6 => 1,
+        0xa7 => 1,
+        0xa8 => 1,
+        0xa9 => 1,
+        0xaa => 1,
+        0xab => 1,
+        0xac => 1,
+        0xad => 1,
+        0xae => 1,
+        0xaf => 1,
+        0xb0 => 1,
+        0xb1 => 1,
+        0xb2 => 1,
+        0xb3 => 1,
+        0xb4 => 1,
+        0xb5 => 1,
+        0xb6 => 1,
+        0xb7 => 1,
+        0xb8 => 1,
+        0xb9 => 1,
+        0xba => 1,
+        0xbb => 1,
+        0xbc => 1,
+        0xbd => 1,
+        0xbe => 1,
+        0xbf => 1,
+        0xc0 => 1,
+        0xc1 => 1,
+        0xc2 => 3,
+        0xc3 => 3,
+        0xc4 => 3,
+        0xc5 => 1,
+        0xc6 => 2,
+        0xc7 => 1,
+        0xc8 => 1,
+        0xc9 => 1,
+        0xca => 3,
+        0xcb => 2,
+        0xcc => 3,
+        0xcd => 3,
+        0xce => 2,
+        0xcf => 1,
+        0xd0 => 1,
+        0xd1 => 1,
+        0xd2 => 3,
+        0xd4 => 3,
+        0xd5 => 1,
+        0xd6 => 2,
+        0xd7 => 1,
+        0xd8 => 1,
+        0xd9 => 1,
+        0xda => 3,
+        0xdc => 3,
+        0xde => 2,
+        0xdf => 1,
+        0xe0 => 2,
+        0xe1 => 1,
+        0xe2 => 1,
+        0xe5 => 1,
+        0xe6 => 2,
+        0xe7 => 1,
+        0xe8 => 2,
+        0xe9 => 1,
+        0xea => 3,
+        0xee => 2,
+        0xef => 1,
+        0xf0 => 2,
+        0xf1 => 1,
+        0xf2 => 1,
+        0xf3 => 1,
+        0xf5 => 1,
+        0xf6 => 2,
+        0xf7 => 1,
+        0xf8 => 2,
+        0xf9 => 1,
+        0xfa => 3,
+        0xfb => 1,
+        0xfe => 2,
+        0xff => 1,
         else => {
             std.debug.print("opcode {} is invalid: size could not be computed", .{opcode});
             std.process.exit(1);
@@ -172,47 +385,251 @@ fn instrSize(opcode: u8) u16 {
 
 fn instrCycles(opcode: u8, cond: bool) usize {
     const cycles: usize = switch (opcode) {
-        0x00 => 1, 0x01 => 3, 0x02 => 2, 0x03 => 2, 0x04 => 1, 0x05 => 1,
-        0x06 => 2, 0x07 => 1, 0x08 => 5, 0x09 => 2, 0x0a => 2, 0x0b => 2,
-        0x0c => 1, 0x0d => 1, 0x0e => 2, 0x0f => 1, 0x10 => 1, 0x11 => 3,
-        0x12 => 2, 0x13 => 2, 0x14 => 1, 0x15 => 1, 0x16 => 2, 0x17 => 1,
-        0x18 => 3, 0x19 => 2, 0x1a => 2, 0x1b => 2, 0x1c => 1, 0x1d => 1,
-        0x1e => 2, 0x1f => 1, 0x20 => if (cond) 3 else 2, 0x21 => 3, 0x22 => 2, 0x23 => 2,
-        0x24 => 1, 0x25 => 1, 0x26 => 2, 0x27 => 1, 0x28 => if (cond) 3 else 2, 0x29 => 2,
-        0x2a => 2, 0x2b => 2, 0x2c => 1, 0x2d => 1, 0x2e => 2, 0x2f => 1,
-        0x30 => if (cond) 3 else 2, 0x31 => 3, 0x32 => 2, 0x33 => 2, 0x34 => 3, 0x35 => 3,
-        0x36 => 3, 0x37 => 1, 0x38 => if (cond) 3 else 2, 0x39 => 2, 0x3a => 2, 0x3b => 2,
-        0x3c => 1, 0x3d => 1, 0x3e => 2, 0x3f => 1, 0x40 => 1, 0x41 => 1,
-        0x42 => 1, 0x43 => 1, 0x44 => 1, 0x45 => 1, 0x46 => 2, 0x47 => 1,
-        0x48 => 1, 0x49 => 1, 0x4a => 1, 0x4b => 1, 0x4c => 1, 0x4d => 1,
-        0x4e => 2, 0x4f => 1, 0x50 => 1, 0x51 => 1, 0x52 => 1, 0x53 => 1,
-        0x54 => 1, 0x55 => 1, 0x56 => 2, 0x57 => 1, 0x58 => 1, 0x59 => 1,
-        0x5a => 1, 0x5b => 1, 0x5c => 1, 0x5d => 1, 0x5e => 2, 0x5f => 1,
-        0x60 => 1, 0x61 => 1, 0x62 => 1, 0x63 => 1, 0x64 => 1, 0x65 => 1,
-        0x66 => 2, 0x67 => 1, 0x68 => 1, 0x69 => 1, 0x6a => 1, 0x6b => 1,
-        0x6c => 1, 0x6d => 1, 0x6e => 2, 0x6f => 1, 0x70 => 2, 0x71 => 2,
-        0x72 => 2, 0x73 => 2, 0x74 => 2, 0x75 => 2, 0x76 => 1, 0x77 => 2,
-        0x78 => 1, 0x79 => 1, 0x7a => 1, 0x7b => 1, 0x7c => 1, 0x7d => 1,
-        0x7e => 2, 0x7f => 1, 0x80 => 1, 0x81 => 1, 0x82 => 1, 0x83 => 1,
-        0x84 => 1, 0x85 => 1, 0x86 => 2, 0x87 => 1, 0x88 => 1, 0x89 => 1,
-        0x8a => 1, 0x8b => 1, 0x8c => 1, 0x8d => 1, 0x8e => 2, 0x8f => 1,
-        0x90 => 1, 0x91 => 1, 0x92 => 1, 0x93 => 1, 0x94 => 1, 0x95 => 1,
-        0x96 => 2, 0x97 => 1, 0x98 => 1, 0x99 => 1, 0x9a => 1, 0x9b => 1,
-        0x9c => 1, 0x9d => 1, 0x9e => 2, 0x9f => 1, 0xa0 => 1, 0xa1 => 1,
-        0xa2 => 1, 0xa3 => 1, 0xa4 => 1, 0xa5 => 1, 0xa6 => 2, 0xa7 => 1,
-        0xa8 => 1, 0xa9 => 1, 0xaa => 1, 0xab => 1, 0xac => 1, 0xad => 1,
-        0xae => 2, 0xaf => 1, 0xb0 => 1, 0xb1 => 1, 0xb2 => 1, 0xb3 => 1,
-        0xb4 => 1, 0xb5 => 1, 0xb6 => 2, 0xb7 => 1, 0xb8 => 1, 0xb9 => 1,
-        0xba => 1, 0xbb => 1, 0xbc => 1, 0xbd => 1, 0xbe => 2, 0xbf => 1,
-        0xc0 => if (cond) 5 else 2, 0xc1 => 3, 0xc2 => if (cond) 4 else 3, 0xc3 => 4, 0xc4 => if (cond) 6 else 3, 0xc5 => 4,
-        0xc6 => 2, 0xc7 => 4, 0xc8 => if (cond) 5 else 2, 0xc9 => 4, 0xca => if (cond) 4 else 3, 0xcb => 2,
-        0xcc => if (cond) 6 else 3, 0xcd => 6, 0xce => 2, 0xcf => 4, 0xd0 => if (cond) 5 else 2, 0xd1 => 3,
-        0xd2 => if (cond) 4 else 3, 0xd4 => if (cond) 6 else 3, 0xd5 => 4, 0xd6 => 2, 0xd7 => 4, 0xd8 => if (cond) 5 else 2,
-        0xd9 => 4, 0xda => if (cond) 4 else 3, 0xdc => if (cond) 6 else 3, 0xde => 2, 0xdf => 4, 0xe0 => 3,
-        0xe1 => 3, 0xe2 => 2, 0xe5 => 4, 0xe6 => 2, 0xe7 => 4, 0xe8 => 4,
-        0xe9 => 1, 0xea => 4, 0xee => 2, 0xef => 4, 0xf0 => 3, 0xf1 => 3,
-        0xf2 => 2, 0xf3 => 1, 0xf5 => 4, 0xf6 => 2, 0xf7 => 4, 0xf8 => 3,
-        0xf9 => 2, 0xfa => 4, 0xfb => 1, 0xfe => 2, 0xff => 4,
+        0x00 => 1,
+        0x01 => 3,
+        0x02 => 2,
+        0x03 => 2,
+        0x04 => 1,
+        0x05 => 1,
+        0x06 => 2,
+        0x07 => 1,
+        0x08 => 5,
+        0x09 => 2,
+        0x0a => 2,
+        0x0b => 2,
+        0x0c => 1,
+        0x0d => 1,
+        0x0e => 2,
+        0x0f => 1,
+        0x10 => 1,
+        0x11 => 3,
+        0x12 => 2,
+        0x13 => 2,
+        0x14 => 1,
+        0x15 => 1,
+        0x16 => 2,
+        0x17 => 1,
+        0x18 => 3,
+        0x19 => 2,
+        0x1a => 2,
+        0x1b => 2,
+        0x1c => 1,
+        0x1d => 1,
+        0x1e => 2,
+        0x1f => 1,
+        0x20 => if (cond) 3 else 2,
+        0x21 => 3,
+        0x22 => 2,
+        0x23 => 2,
+        0x24 => 1,
+        0x25 => 1,
+        0x26 => 2,
+        0x27 => 1,
+        0x28 => if (cond) 3 else 2,
+        0x29 => 2,
+        0x2a => 2,
+        0x2b => 2,
+        0x2c => 1,
+        0x2d => 1,
+        0x2e => 2,
+        0x2f => 1,
+        0x30 => if (cond) 3 else 2,
+        0x31 => 3,
+        0x32 => 2,
+        0x33 => 2,
+        0x34 => 3,
+        0x35 => 3,
+        0x36 => 3,
+        0x37 => 1,
+        0x38 => if (cond) 3 else 2,
+        0x39 => 2,
+        0x3a => 2,
+        0x3b => 2,
+        0x3c => 1,
+        0x3d => 1,
+        0x3e => 2,
+        0x3f => 1,
+        0x40 => 1,
+        0x41 => 1,
+        0x42 => 1,
+        0x43 => 1,
+        0x44 => 1,
+        0x45 => 1,
+        0x46 => 2,
+        0x47 => 1,
+        0x48 => 1,
+        0x49 => 1,
+        0x4a => 1,
+        0x4b => 1,
+        0x4c => 1,
+        0x4d => 1,
+        0x4e => 2,
+        0x4f => 1,
+        0x50 => 1,
+        0x51 => 1,
+        0x52 => 1,
+        0x53 => 1,
+        0x54 => 1,
+        0x55 => 1,
+        0x56 => 2,
+        0x57 => 1,
+        0x58 => 1,
+        0x59 => 1,
+        0x5a => 1,
+        0x5b => 1,
+        0x5c => 1,
+        0x5d => 1,
+        0x5e => 2,
+        0x5f => 1,
+        0x60 => 1,
+        0x61 => 1,
+        0x62 => 1,
+        0x63 => 1,
+        0x64 => 1,
+        0x65 => 1,
+        0x66 => 2,
+        0x67 => 1,
+        0x68 => 1,
+        0x69 => 1,
+        0x6a => 1,
+        0x6b => 1,
+        0x6c => 1,
+        0x6d => 1,
+        0x6e => 2,
+        0x6f => 1,
+        0x70 => 2,
+        0x71 => 2,
+        0x72 => 2,
+        0x73 => 2,
+        0x74 => 2,
+        0x75 => 2,
+        0x76 => 1,
+        0x77 => 2,
+        0x78 => 1,
+        0x79 => 1,
+        0x7a => 1,
+        0x7b => 1,
+        0x7c => 1,
+        0x7d => 1,
+        0x7e => 2,
+        0x7f => 1,
+        0x80 => 1,
+        0x81 => 1,
+        0x82 => 1,
+        0x83 => 1,
+        0x84 => 1,
+        0x85 => 1,
+        0x86 => 2,
+        0x87 => 1,
+        0x88 => 1,
+        0x89 => 1,
+        0x8a => 1,
+        0x8b => 1,
+        0x8c => 1,
+        0x8d => 1,
+        0x8e => 2,
+        0x8f => 1,
+        0x90 => 1,
+        0x91 => 1,
+        0x92 => 1,
+        0x93 => 1,
+        0x94 => 1,
+        0x95 => 1,
+        0x96 => 2,
+        0x97 => 1,
+        0x98 => 1,
+        0x99 => 1,
+        0x9a => 1,
+        0x9b => 1,
+        0x9c => 1,
+        0x9d => 1,
+        0x9e => 2,
+        0x9f => 1,
+        0xa0 => 1,
+        0xa1 => 1,
+        0xa2 => 1,
+        0xa3 => 1,
+        0xa4 => 1,
+        0xa5 => 1,
+        0xa6 => 2,
+        0xa7 => 1,
+        0xa8 => 1,
+        0xa9 => 1,
+        0xaa => 1,
+        0xab => 1,
+        0xac => 1,
+        0xad => 1,
+        0xae => 2,
+        0xaf => 1,
+        0xb0 => 1,
+        0xb1 => 1,
+        0xb2 => 1,
+        0xb3 => 1,
+        0xb4 => 1,
+        0xb5 => 1,
+        0xb6 => 2,
+        0xb7 => 1,
+        0xb8 => 1,
+        0xb9 => 1,
+        0xba => 1,
+        0xbb => 1,
+        0xbc => 1,
+        0xbd => 1,
+        0xbe => 2,
+        0xbf => 1,
+        0xc0 => if (cond) 5 else 2,
+        0xc1 => 3,
+        0xc2 => if (cond) 4 else 3,
+        0xc3 => 4,
+        0xc4 => if (cond) 6 else 3,
+        0xc5 => 4,
+        0xc6 => 2,
+        0xc7 => 4,
+        0xc8 => if (cond) 5 else 2,
+        0xc9 => 4,
+        0xca => if (cond) 4 else 3,
+        0xcb => 2,
+        0xcc => if (cond) 6 else 3,
+        0xcd => 6,
+        0xce => 2,
+        0xcf => 4,
+        0xd0 => if (cond) 5 else 2,
+        0xd1 => 3,
+        0xd2 => if (cond) 4 else 3,
+        0xd4 => if (cond) 6 else 3,
+        0xd5 => 4,
+        0xd6 => 2,
+        0xd7 => 4,
+        0xd8 => if (cond) 5 else 2,
+        0xd9 => 4,
+        0xda => if (cond) 4 else 3,
+        0xdc => if (cond) 6 else 3,
+        0xde => 2,
+        0xdf => 4,
+        0xe0 => 3,
+        0xe1 => 3,
+        0xe2 => 2,
+        0xe5 => 4,
+        0xe6 => 2,
+        0xe7 => 4,
+        0xe8 => 4,
+        0xe9 => 1,
+        0xea => 4,
+        0xee => 2,
+        0xef => 4,
+        0xf0 => 3,
+        0xf1 => 3,
+        0xf2 => 2,
+        0xf3 => 1,
+        0xf5 => 4,
+        0xf6 => 2,
+        0xf7 => 4,
+        0xf8 => 3,
+        0xf9 => 2,
+        0xfa => 4,
+        0xfb => 1,
+        0xfe => 2,
+        0xff => 4,
         else => {
             std.debug.print("opcode {} is invalid: cycles could not be computed", .{opcode});
             std.process.exit(1);
@@ -304,16 +721,36 @@ fn ld16(gb: *Gb, dst: Dst16, src: Src16) void {
 }
 
 const Dst8Tag = enum {
-    IndBC, IndDE, IndHL, IndHLInc, IndHLDec,
+    IndBC,
+    IndDE,
+    IndHL,
+    IndHLInc,
+    IndHLDec,
     IndC,
-    A, B, C, D, E, H, L,
+    A,
+    B,
+    C,
+    D,
+    E,
+    H,
+    L,
     Ind,
 };
 
 const Dst8 = union(Dst8Tag) {
-    IndBC: void, IndDE: void, IndHL: void, IndHLInc: void, IndHLDec: void,
+    IndBC: void,
+    IndDE: void,
+    IndHL: void,
+    IndHLInc: void,
+    IndHLDec: void,
     IndC: void,
-    A: void, B: void, C: void, D: void, E: void, H: void, L: void,
+    A: void,
+    B: void,
+    C: void,
+    D: void,
+    E: void,
+    H: void,
+    L: void,
     Ind: u16,
 };
 
@@ -372,17 +809,37 @@ fn writeDst8(gb: *Gb, dst: Dst8, val: u8) void {
 }
 
 const Src8Tag = enum {
-    IndBC, IndDE, IndHL, IndHLInc, IndHLDec,
+    IndBC,
+    IndDE,
+    IndHL,
+    IndHLInc,
+    IndHLDec,
     IndC,
-    A, B, C, D, E, H, L,
+    A,
+    B,
+    C,
+    D,
+    E,
+    H,
+    L,
     Ind,
     Imm,
 };
 
 const Src8 = union(Src8Tag) {
-    IndBC: void, IndDE: void, IndHL: void, IndHLInc: void, IndHLDec: void,
+    IndBC: void,
+    IndDE: void,
+    IndHL: void,
+    IndHLInc: void,
+    IndHLDec: void,
     IndC: void,
-    A: void, B: void, C: void, D: void, E: void, H: void, L: void,
+    A: void,
+    B: void,
+    C: void,
+    D: void,
+    E: void,
+    H: void,
+    L: void,
     Ind: u16,
     Imm: u8,
 };
@@ -454,7 +911,7 @@ fn add(gb: *Gb, src: Src8) void {
 
     gb.zero = sum == 0;
     gb.negative = false;
-    gb.half_carry = checkHalfCarry(x, y);
+    gb.halfCarry = checkHalfCarry(x, y);
     gb.carry = checkCarry(x, y);
 }
 
@@ -467,7 +924,7 @@ fn adc(gb: *Gb, src: Src8) void {
 
     gb.zero = sum == 0;
     gb.negative = false;
-    gb.half_carry = checkHalfCarry(x, y + carry);
+    gb.halfCarry = checkHalfCarry(x, y + carry);
     gb.carry = checkCarry(x, y + carry);
 }
 
@@ -478,7 +935,7 @@ fn sub(gb: *Gb, src: Src8) void {
 
     gb.zero = diff == 0;
     gb.negative = true;
-    gb.half_carry = checkHalfCarry(gb.a, (x ^ 0xff) + 1);
+    gb.halfCarry = checkHalfCarry(gb.a, (x ^ 0xff) + 1);
     gb.carry = checkCarry(gb.a, (x ^ 0xff) + 1);
 }
 
@@ -490,7 +947,7 @@ fn sbc(gb: *Gb, src: Src8) void {
 
     gb.zero = diff == 0;
     gb.negative = true;
-    gb.half_carry = checkHalfCarry(gb.a, ((x + carry) ^ 0xff) + 1);
+    gb.halfCarry = checkHalfCarry(gb.a, ((x + carry) ^ 0xff) + 1);
     gb.carry = checkCarry(gb.a, ((x + carry) ^ 0xff) + 1);
 }
 
@@ -501,7 +958,7 @@ fn and_(gb: *Gb, src: Src8) void {
 
     gb.zero = result == 0;
     gb.negative = false;
-    gb.half_carry = true;
+    gb.halfCarry = true;
     gb.carry = false;
 }
 
@@ -512,7 +969,7 @@ fn xor(gb: *Gb, src: Src8) void {
 
     gb.zero = result == 0;
     gb.negative = false;
-    gb.half_carry = false;
+    gb.halfCarry = false;
     gb.carry = false;
 }
 
@@ -523,7 +980,7 @@ fn or_(gb: *Gb, src: Src8) void {
 
     gb.zero = result == 0;
     gb.negative = false;
-    gb.half_carry = false;
+    gb.halfCarry = false;
     gb.carry = false;
 }
 
@@ -533,50 +990,89 @@ fn cp(gb: *Gb, src: Src8) void {
 
     gb.zero = result == 0;
     gb.negative = true;
-    gb.half_carry = checkHalfCarry(gb.a, (x ^ 0xff) + 1);
+    gb.halfCarry = checkHalfCarry(gb.a, (x ^ 0xff) + 1);
     gb.carry = checkCarry(gb.a, (x ^ 0xff) + 1);
 }
 
 fn inc8(gb: *Gb, dst: Dst8) void {
-    const initialValue = readDst8(gb, dst); 
+    const initialValue = readDst8(gb, dst);
     const result = initialValue + 1;
     writeDst8(gb, dst, result);
 
     gb.zero = result == 0;
     gb.negative = false;
-    gb.half_carry = checkHalfCarry(initialValue, 1);
+    gb.halfCarry = checkHalfCarry(initialValue, 1);
 }
 
 fn dec8(gb: *Gb, dst: Dst8) void {
-    const initialValue = readDst8(gb, dst); 
+    const initialValue = readDst8(gb, dst);
     const result = initialValue - 1;
     writeDst8(gb, dst, result);
 
     gb.zero = result == 0;
     gb.negative = true;
-    gb.half_carry = checkHalfCarry(initialValue, 0xff);
+    gb.halfCarry = checkHalfCarry(initialValue, 0xff);
 }
 
 fn inc16(gb: *Gb, dst: Dst16) void {
-    const initialValue = readDst16(gb, dst); 
+    const initialValue = readDst16(gb, dst);
     const result = initialValue + 1;
     writeDst16(gb, dst, result);
 }
 
 fn dec16(gb: *Gb, dst: Dst16) void {
-    const initialValue = readDst16(gb, dst); 
+    const initialValue = readDst16(gb, dst);
     const result = initialValue - 1;
     writeDst16(gb, dst, result);
 }
 
-fn jr(gb: *Gb, offset: u8) void {
-    const offset16 = (@as(u16, (offset & 0b1000_0000)) << 8) | (@as(u16, offset & 0b0111_1111));
-    gb.pc = gb.pc + offset16;
+fn calcJrDestAddr(pc: u16, offset: u8) u16 {
+    const offsetI8: i8 = @bitCast(offset);
+    const pcI16: i16 = @intCast(pc);
+    // subtract 2 bytes to account for PC getting incremented by the size of JR (2 bytes)
+    return @intCast(pcI16 + offsetI8 - 2);
 }
 
-test "jr" {
-    const gameboy = @import("gameboy.zig");
-    const alloc = std.testing.allocator;
-    const rom = [_]u8 { 0, 0, 0, 0 };
-    const gb = gameboy.initGb(alloc, rom);
+test "calcJrDestAddr" {
+    const offset: u8 = 156; // -100 as i8
+    const pc: u16 = 1500;
+    const expected: u16 = 1400; // 1500 - 100 = 1400
+
+    const result = calcJrDestAddr(pc, offset) + 2; // inc by 2 to simulate PC increment
+    try std.testing.expect(result == expected);
+}
+
+fn jr(gb: *Gb, offset: u8) void {
+    gb.pc = calcJrDestAddr(gb.pc, offset);
+}
+
+fn jrCond(gb: *Gb, offset: u8, cond: bool) void {
+    if (cond) {
+        gb.pc = calcJrDestAddr(gb.pc, offset);
+        gb.branchCond = true;
+    }
+}
+
+fn calcJpDestAddr(address: u16) u16 {
+    // subtract 3 bytes to account for PC getting incremented by the size of JP (3 bytes)
+    return address - 3;
+}
+
+fn jp(gb: *Gb, address: u16) void {
+    gb.pc = calcJpDestAddr(address);
+}
+
+fn jpCond(gb: *Gb, address: u16, cond: bool) void {
+    if (cond) {
+        gb.pc = calcJpDestAddr(address);
+        gb.branchCond = true;
+    }
+}
+
+fn ret(gb: *Gb) void {
+    const low = readAddr(gb, gb.sp);
+    gb.sp += 1;
+    const high = readAddr(gb, gb.sp);
+    gb.sp += 1;
+    gb.pc = as16(low, high);
 }
