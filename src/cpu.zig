@@ -133,13 +133,16 @@ pub fn stepCpu(gb: *Gb) usize {
         0xe5 => push(gb, Src16.HL),
         0xe6 => and_(gb, Src8{ .Imm = n8 }),
         0xe7 => rst(gb, 0x20),
+        0xe9 => jpHl(gb),
         0xee => xor(gb, Src8{ .Imm = n8 }),
         0xef => rst(gb, 0x28),
 
         0xf1 => pop(gb, Dst16.AF),
+        0xf3 => di(gb),
         0xf5 => push(gb, Src16.AF),
         0xf6 => or_(gb, Src8{ .Imm = n8 }),
         0xf7 => rst(gb, 0x30),
+        0xfb => ei(gb),
         0xfe => cp(gb, Src8{ .Imm = n8 }),
         0xf8 => ld16(gb, Dst16.HL, Src16{ .SPOffset = gb.rom[gb.pc + 1] }),
         0xf9 => ld16(gb, Dst16.SP, Src16.HL),
@@ -1097,6 +1100,11 @@ fn jpCond(gb: *Gb, address: u16, cond: bool) void {
     }
 }
 
+fn jpHl(gb: *Gb) void {
+    const destAddr = readSrc16(gb, Src16.HL);
+    gb.pc = calcJpDestAddr(destAddr);
+}
+
 fn pop16(gb: *Gb) u16 {
     const low = readAddr(gb, gb.sp);
     gb.sp += 1;
@@ -1154,4 +1162,12 @@ fn pop(gb: *Gb, dst: Dst16) void {
 fn push(gb: *Gb, src: Src16) void {
     const value = readSrc16(gb, src);
     push16(gb, value);
+}
+
+fn di(gb: *Gb) void {
+    gb.ime = false;
+}
+
+fn ei(gb: *Gb) void {
+    gb.ime = true;
 }
