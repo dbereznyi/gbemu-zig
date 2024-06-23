@@ -19,6 +19,7 @@ pub const Gb = struct {
     // for instructions that evaluate a condition,
     // this is set to true if the condition evaluated to true
     branchCond: bool,
+    ime: bool,
 
     vram: []u8,
     wram: []u8,
@@ -48,6 +49,7 @@ pub fn initGb(alloc: std.mem.Allocator, rom: []const u8) !Gb {
         .halfCarry = false,
         .carry = false,
         .branchCond = false,
+        .ime = false,
         .vram = vram,
         .wram = wram,
         .ioRegs = ioRegs,

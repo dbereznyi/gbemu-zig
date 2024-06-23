@@ -23,6 +23,8 @@ pub fn stepCpu(gb: *Gb) usize {
         7 => Src8.A,
     };
 
+    gb.branchCond = false;
+
     switch (opcode) {
         0x00 => {},
         0x01 => ld16(gb, Dst16.BC, Src16{ .Imm = n16 }),
@@ -97,25 +99,51 @@ pub fn stepCpu(gb: *Gb) usize {
         0xb0...0xb7 => or_(gb, opcodeReg),
         0xb8...0xbf => cp(gb, opcodeReg),
 
+        0xc0 => retCond(gb, !gb.zero),
+        0xc1 => pop(gb, Dst16.BC),
         0xc2 => jpCond(gb, n16, !gb.zero),
         0xc3 => jp(gb, n16),
+        0xc4 => callCond(gb, n16, !gb.zero),
+        0xc5 => push(gb, Src16.BC),
         0xc6 => add(gb, Src8{ .Imm = n8 }),
+        0xc7 => rst(gb, 0x00),
+        0xc8 => retCond(gb, gb.zero),
         0xc9 => ret(gb),
         0xca => jpCond(gb, n16, gb.zero),
+        0xcc => callCond(gb, n16, gb.zero),
+        0xcd => call(gb, n16),
         0xce => adc(gb, Src8{ .Imm = n8 }),
+        0xcf => rst(gb, 0x08),
 
+        0xd0 => retCond(gb, !gb.carry),
+        0xd1 => pop(gb, Dst16.DE),
         0xd2 => jpCond(gb, n16, !gb.carry),
+        0xd4 => callCond(gb, n16, !gb.carry),
+        0xd5 => push(gb, Src16.DE),
         0xd6 => sub(gb, Src8{ .Imm = n8 }),
+        0xd7 => rst(gb, 0x10),
+        0xd8 => retCond(gb, gb.carry),
+        0xd9 => reti(gb),
         0xda => jpCond(gb, n16, gb.carry),
+        0xdc => callCond(gb, n16, gb.carry),
         0xde => sbc(gb, Src8{ .Imm = n8 }),
+        0xdf => rst(gb, 0x18),
 
+        0xe1 => pop(gb, Dst16.HL),
+        0xe5 => push(gb, Src16.HL),
         0xe6 => and_(gb, Src8{ .Imm = n8 }),
+        0xe7 => rst(gb, 0x20),
         0xee => xor(gb, Src8{ .Imm = n8 }),
+        0xef => rst(gb, 0x28),
 
+        0xf1 => pop(gb, Dst16.AF),
+        0xf5 => push(gb, Src16.AF),
         0xf6 => or_(gb, Src8{ .Imm = n8 }),
+        0xf7 => rst(gb, 0x30),
         0xfe => cp(gb, Src8{ .Imm = n8 }),
         0xf8 => ld16(gb, Dst16.HL, Src16{ .SPOffset = gb.rom[gb.pc + 1] }),
         0xf9 => ld16(gb, Dst16.SP, Src16.HL),
+        0xff => rst(gb, 0x38),
 
         else => {
             std.debug.print("unhandled opcode: {}\n", .{opcode});
@@ -1069,10 +1097,61 @@ fn jpCond(gb: *Gb, address: u16, cond: bool) void {
     }
 }
 
-fn ret(gb: *Gb) void {
+fn pop16(gb: *Gb) u16 {
     const low = readAddr(gb, gb.sp);
     gb.sp += 1;
     const high = readAddr(gb, gb.sp);
     gb.sp += 1;
-    gb.pc = as16(low, high);
+    return as16(low, high);
+}
+
+fn ret(gb: *Gb) void {
+    gb.pc = pop16(gb);
+}
+
+fn retCond(gb: *Gb, cond: bool) void {
+    if (cond) {
+        gb.pc = pop16(gb);
+        gb.branchCond = true;
+    }
+}
+
+fn reti(gb: *Gb) void {
+    gb.pc = pop16(gb);
+    gb.ime = true;
+}
+
+fn push16(gb: *Gb, value: u16) void {
+    const high: u8 = @truncate(value >> 8);
+    const low: u8 = @truncate(value);
+    writeAddr(gb, gb.sp, high);
+    writeAddr(gb, gb.sp, low);
+}
+
+fn call(gb: *Gb, address: u16) void {
+    push16(gb, gb.pc + 3);
+    gb.pc = address;
+}
+
+fn callCond(gb: *Gb, address: u16, cond: bool) void {
+    if (cond) {
+        push16(gb, gb.pc + 3);
+        gb.pc = address;
+        gb.branchCond = true;
+    }
+}
+
+fn rst(gb: *Gb, vector: u8) void {
+    push16(gb, gb.pc + 1);
+    gb.pc = vector;
+}
+
+fn pop(gb: *Gb, dst: Dst16) void {
+    const value = pop16(gb);
+    writeDst16(gb, dst, value);
+}
+
+fn push(gb: *Gb, src: Src16) void {
+    const value = readSrc16(gb, src);
+    push16(gb, value);
 }
