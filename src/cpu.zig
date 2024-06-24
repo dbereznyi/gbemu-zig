@@ -1,7 +1,7 @@
 const std = @import("std");
 const Gb = @import("gameboy.zig").Gb;
-const readAddr = @import("gameboy.zig").readAddr;
-const writeAddr = @import("gameboy.zig").writeAddr;
+const IoReg = @import("gameboy.zig").IoReg;
+const ExecState = @import("gameboy.zig").ExecState;
 const as16 = @import("util.zig").as16;
 
 pub fn stepCpu(gb: *Gb) usize {
@@ -40,6 +40,7 @@ pub fn stepCpu(gb: *Gb) usize {
         0x0d => dec8(gb, Dst8.C),
         0x0e => ld8(gb, Dst8.C, Src8{ .Imm = n8 }),
 
+        0x10 => stop(gb),
         0x11 => ld16(gb, Dst16.DE, Src16{ .Imm = n16 }),
         0x12 => ld8(gb, Dst8.IndDE, Src8.A),
         0x13 => inc16(gb, Dst16.DE),
@@ -87,7 +88,9 @@ pub fn stepCpu(gb: *Gb) usize {
         0x58...0x5f => ld8(gb, Dst8.E, opcodeReg),
         0x60...0x67 => ld8(gb, Dst8.H, opcodeReg),
         0x68...0x6f => ld8(gb, Dst8.L, opcodeReg),
-        0x70...0x77 => ld8(gb, Dst8.IndHL, opcodeReg),
+        0x70...0x75 => ld8(gb, Dst8.IndHL, opcodeReg),
+        0x76 => halt(gb),
+        0x77 => ld8(gb, Dst8.IndHL, opcodeReg),
         0x78...0x7f => ld8(gb, Dst8.A, opcodeReg),
 
         0x80...0x87 => add(gb, opcodeReg),
@@ -118,6 +121,7 @@ pub fn stepCpu(gb: *Gb) usize {
         0xd0 => retCond(gb, !gb.carry),
         0xd1 => pop(gb, Dst16.DE),
         0xd2 => jpCond(gb, n16, !gb.carry),
+        0xd3 => invalidOpcode(opcode),
         0xd4 => callCond(gb, n16, !gb.carry),
         0xd5 => push(gb, Src16.DE),
         0xd6 => sub(gb, Src8{ .Imm = n8 }),
@@ -125,27 +129,44 @@ pub fn stepCpu(gb: *Gb) usize {
         0xd8 => retCond(gb, gb.carry),
         0xd9 => reti(gb),
         0xda => jpCond(gb, n16, gb.carry),
+        0xdb => invalidOpcode(opcode),
         0xdc => callCond(gb, n16, gb.carry),
+        0xdd => invalidOpcode(opcode),
         0xde => sbc(gb, Src8{ .Imm = n8 }),
         0xdf => rst(gb, 0x18),
 
+        0xe0 => ld8(gb, Dst8{ .IndIoReg = n8 }, Src8.A),
         0xe1 => pop(gb, Dst16.HL),
+        0xe2 => ld8(gb, Dst8.IndC, Src8.A),
+        0xe3 => invalidOpcode(opcode),
+        0xe4 => invalidOpcode(opcode),
         0xe5 => push(gb, Src16.HL),
         0xe6 => and_(gb, Src8{ .Imm = n8 }),
         0xe7 => rst(gb, 0x20),
+        0xe8 => addSp(gb, n8),
         0xe9 => jpHl(gb),
+        0xea => ld8(gb, Dst8{ .Ind = n16 }, Src8.A),
+        0xeb => invalidOpcode(opcode),
+        0xec => invalidOpcode(opcode),
+        0xed => invalidOpcode(opcode),
         0xee => xor(gb, Src8{ .Imm = n8 }),
         0xef => rst(gb, 0x28),
 
+        0xf0 => ld8(gb, Dst8.A, Src8{ .IndIoReg = n8 }),
         0xf1 => pop(gb, Dst16.AF),
+        0xf2 => ld8(gb, Dst8.A, Src8.IndC),
         0xf3 => di(gb),
+        0xf4 => invalidOpcode(opcode),
         0xf5 => push(gb, Src16.AF),
         0xf6 => or_(gb, Src8{ .Imm = n8 }),
         0xf7 => rst(gb, 0x30),
-        0xfb => ei(gb),
-        0xfe => cp(gb, Src8{ .Imm = n8 }),
         0xf8 => ld16(gb, Dst16.HL, Src16{ .SPOffset = gb.rom[gb.pc + 1] }),
         0xf9 => ld16(gb, Dst16.SP, Src16.HL),
+        0xfa => ld8(gb, Dst8.A, Src8{ .Ind = n16 }),
+        0xfb => ei(gb),
+        0xfc => invalidOpcode(opcode),
+        0xfd => invalidOpcode(opcode),
+        0xfe => cp(gb, Src8{ .Imm = n8 }),
         0xff => rst(gb, 0x38),
 
         else => {
@@ -156,6 +177,11 @@ pub fn stepCpu(gb: *Gb) usize {
     gb.*.pc += instrSize(opcode);
 
     return instrCycles(opcode, gb.branchCond);
+}
+
+fn invalidOpcode(opcode: u8) void {
+    std.debug.print("invalid opcode: {}\n", .{opcode});
+    std.process.exit(1);
 }
 
 fn instrSize(opcode: u8) u16 {
@@ -671,6 +697,7 @@ fn instrCycles(opcode: u8, cond: bool) usize {
 }
 
 const Dst16Tag = enum {
+    AF,
     BC,
     DE,
     HL,
@@ -679,6 +706,7 @@ const Dst16Tag = enum {
 };
 
 const Dst16 = union(Dst16Tag) {
+    AF: void,
     BC: void,
     DE: void,
     HL: void,
@@ -688,11 +716,12 @@ const Dst16 = union(Dst16Tag) {
 
 fn readDst16(gb: *const Gb, dst: Dst16) u16 {
     return switch (dst) {
+        Dst16.AF => as16(gb.a, Gb.readFlags(gb)),
         Dst16.BC => as16(gb.b, gb.c),
         Dst16.DE => as16(gb.d, gb.e),
         Dst16.HL => as16(gb.h, gb.l),
         Dst16.SP => gb.sp,
-        Dst16.Ind => |ind| readAddr(gb, ind),
+        Dst16.Ind => |ind| Gb.read(gb, ind),
     };
 }
 
@@ -701,6 +730,10 @@ fn writeDst16(gb: *Gb, dst: Dst16, val: u16) void {
     const valHigh: u8 = @truncate(val >> 8);
 
     switch (dst) {
+        Dst16.AF => {
+            gb.*.a = valHigh;
+            Gb.writeFlags(gb, valLow);
+        },
         Dst16.BC => {
             gb.*.b = valHigh;
             gb.*.c = valLow;
@@ -717,13 +750,16 @@ fn writeDst16(gb: *Gb, dst: Dst16, val: u16) void {
             gb.*.sp = val;
         },
         Dst16.Ind => |ind| {
-            writeAddr(gb, ind, valLow);
-            writeAddr(gb, ind + 1, valHigh);
+            Gb.write(gb, ind, valLow);
+            Gb.write(gb, ind + 1, valHigh);
         },
     }
 }
 
 const Src16Tag = enum {
+    AF,
+    BC,
+    DE,
     HL,
     SP,
     SPOffset,
@@ -731,6 +767,9 @@ const Src16Tag = enum {
 };
 
 const Src16 = union(Src16Tag) {
+    AF: void,
+    BC: void,
+    DE: void,
     HL: void,
     SP: void,
     SPOffset: u8,
@@ -739,6 +778,9 @@ const Src16 = union(Src16Tag) {
 
 fn readSrc16(gb: *const Gb, src: Src16) u16 {
     return switch (src) {
+        Src16.AF => as16(gb.a, Gb.readFlags(gb)),
+        Src16.BC => as16(gb.b, gb.c),
+        Src16.DE => as16(gb.d, gb.e),
         Src16.HL => as16(gb.h, gb.l),
         Src16.SP => gb.sp,
         Src16.SPOffset => |offset| gb.sp + @as(u16, offset),
@@ -752,12 +794,6 @@ fn ld16(gb: *Gb, dst: Dst16, src: Src16) void {
 }
 
 const Dst8Tag = enum {
-    IndBC,
-    IndDE,
-    IndHL,
-    IndHLInc,
-    IndHLDec,
-    IndC,
     A,
     B,
     C,
@@ -766,15 +802,16 @@ const Dst8Tag = enum {
     H,
     L,
     Ind,
+    IndIoReg,
+    IndC,
+    IndBC,
+    IndDE,
+    IndHL,
+    IndHLInc,
+    IndHLDec,
 };
 
 const Dst8 = union(Dst8Tag) {
-    IndBC: void,
-    IndDE: void,
-    IndHL: void,
-    IndHLInc: void,
-    IndHLDec: void,
-    IndC: void,
     A: void,
     B: void,
     C: void,
@@ -783,24 +820,17 @@ const Dst8 = union(Dst8Tag) {
     H: void,
     L: void,
     Ind: u16,
+    IndIoReg: u8,
+    IndC: void,
+    IndBC: void,
+    IndDE: void,
+    IndHL: void,
+    IndHLInc: void,
+    IndHLDec: void,
 };
 
 fn readDst8(gb: *Gb, dst: Dst8) u8 {
     const val = switch (dst) {
-        Dst8.IndBC => readAddr(gb, as16(gb.b, gb.c)),
-        Dst8.IndDE => readAddr(gb, as16(gb.d, gb.e)),
-        Dst8.IndHL => readAddr(gb, as16(gb.h, gb.l)),
-        Dst8.IndHLInc => blk: {
-            const x = readAddr(gb, as16(gb.h, gb.l));
-            incHL(gb);
-            break :blk x;
-        },
-        Dst8.IndHLDec => blk: {
-            const x = readAddr(gb, as16(gb.h, gb.l));
-            decHL(gb);
-            break :blk x;
-        },
-        Dst8.IndC => readAddr(gb, 0xff00 + @as(u16, gb.c)),
         Dst8.A => gb.a,
         Dst8.B => gb.b,
         Dst8.C => gb.c,
@@ -808,7 +838,22 @@ fn readDst8(gb: *Gb, dst: Dst8) u8 {
         Dst8.E => gb.e,
         Dst8.H => gb.h,
         Dst8.L => gb.l,
-        Dst8.Ind => |ind| readAddr(gb, ind),
+        Dst8.Ind => |ind| Gb.read(gb, ind),
+        Dst8.IndIoReg => |ind| Gb.read(gb, 0xff00 + @as(u16, ind)),
+        Dst8.IndC => Gb.read(gb, 0xff00 + @as(u16, gb.c)),
+        Dst8.IndBC => Gb.read(gb, as16(gb.b, gb.c)),
+        Dst8.IndDE => Gb.read(gb, as16(gb.d, gb.e)),
+        Dst8.IndHL => Gb.read(gb, as16(gb.h, gb.l)),
+        Dst8.IndHLInc => blk: {
+            const x = Gb.read(gb, as16(gb.h, gb.l));
+            incHL(gb);
+            break :blk x;
+        },
+        Dst8.IndHLDec => blk: {
+            const x = Gb.read(gb, as16(gb.h, gb.l));
+            decHL(gb);
+            break :blk x;
+        },
     };
 
     return val;
@@ -816,18 +861,6 @@ fn readDst8(gb: *Gb, dst: Dst8) u8 {
 
 fn writeDst8(gb: *Gb, dst: Dst8, val: u8) void {
     switch (dst) {
-        Dst8.IndBC => writeAddr(gb, as16(gb.b, gb.c), val),
-        Dst8.IndDE => writeAddr(gb, as16(gb.d, gb.e), val),
-        Dst8.IndHL => writeAddr(gb, as16(gb.h, gb.l), val),
-        Dst8.IndHLInc => {
-            writeAddr(gb, as16(gb.h, gb.l), val);
-            incHL(gb);
-        },
-        Dst8.IndHLDec => {
-            writeAddr(gb, as16(gb.h, gb.l), val);
-            decHL(gb);
-        },
-        Dst8.IndC => writeAddr(gb, 0xff00 + @as(u16, gb.c), val),
         Dst8.A => gb.*.a = val,
         Dst8.B => gb.*.b = val,
         Dst8.C => gb.*.c = val,
@@ -835,17 +868,24 @@ fn writeDst8(gb: *Gb, dst: Dst8, val: u8) void {
         Dst8.E => gb.*.e = val,
         Dst8.H => gb.*.h = val,
         Dst8.L => gb.*.l = val,
-        Dst8.Ind => |ind| writeAddr(gb, ind, val),
+        Dst8.Ind => |ind| Gb.write(gb, ind, val),
+        Dst8.IndIoReg => |ind| Gb.write(gb, 0xff00 + @as(u16, ind), val),
+        Dst8.IndC => Gb.write(gb, 0xff00 + @as(u16, gb.c), val),
+        Dst8.IndBC => Gb.write(gb, as16(gb.b, gb.c), val),
+        Dst8.IndDE => Gb.write(gb, as16(gb.d, gb.e), val),
+        Dst8.IndHL => Gb.write(gb, as16(gb.h, gb.l), val),
+        Dst8.IndHLInc => {
+            Gb.write(gb, as16(gb.h, gb.l), val);
+            incHL(gb);
+        },
+        Dst8.IndHLDec => {
+            Gb.write(gb, as16(gb.h, gb.l), val);
+            decHL(gb);
+        },
     }
 }
 
 const Src8Tag = enum {
-    IndBC,
-    IndDE,
-    IndHL,
-    IndHLInc,
-    IndHLDec,
-    IndC,
     A,
     B,
     C,
@@ -854,16 +894,17 @@ const Src8Tag = enum {
     H,
     L,
     Ind,
+    IndIoReg,
+    IndC,
+    IndBC,
+    IndDE,
+    IndHL,
+    IndHLInc,
+    IndHLDec,
     Imm,
 };
 
 const Src8 = union(Src8Tag) {
-    IndBC: void,
-    IndDE: void,
-    IndHL: void,
-    IndHLInc: void,
-    IndHLDec: void,
-    IndC: void,
     A: void,
     B: void,
     C: void,
@@ -872,25 +913,18 @@ const Src8 = union(Src8Tag) {
     H: void,
     L: void,
     Ind: u16,
+    IndIoReg: u8,
+    IndC: void,
+    IndBC: void,
+    IndDE: void,
+    IndHL: void,
+    IndHLInc: void,
+    IndHLDec: void,
     Imm: u8,
 };
 
 fn readSrc8(gb: *Gb, src: Src8) u8 {
     const val = switch (src) {
-        Src8.IndBC => readAddr(gb, as16(gb.b, gb.c)),
-        Src8.IndDE => readAddr(gb, as16(gb.d, gb.e)),
-        Src8.IndHL => readAddr(gb, as16(gb.h, gb.l)),
-        Src8.IndHLInc => blk: {
-            const x = readAddr(gb, as16(gb.h, gb.l));
-            incHL(gb);
-            break :blk x;
-        },
-        Src8.IndHLDec => blk: {
-            const x = readAddr(gb, as16(gb.h, gb.l));
-            decHL(gb);
-            break :blk x;
-        },
-        Src8.IndC => readAddr(gb, 0xff00 + @as(u16, gb.c)),
         Src8.A => gb.a,
         Src8.B => gb.b,
         Src8.C => gb.c,
@@ -898,7 +932,22 @@ fn readSrc8(gb: *Gb, src: Src8) u8 {
         Src8.E => gb.e,
         Src8.H => gb.h,
         Src8.L => gb.l,
-        Src8.Ind => |ind| readAddr(gb, ind),
+        Src8.Ind => |ind| Gb.read(gb, ind),
+        Src8.IndIoReg => |ind| Gb.read(gb, 0xff00 + @as(u16, ind)),
+        Src8.IndC => Gb.read(gb, 0xff00 + @as(u16, gb.c)),
+        Src8.IndBC => Gb.read(gb, as16(gb.b, gb.c)),
+        Src8.IndDE => Gb.read(gb, as16(gb.d, gb.e)),
+        Src8.IndHL => Gb.read(gb, as16(gb.h, gb.l)),
+        Src8.IndHLInc => blk: {
+            const x = Gb.read(gb, as16(gb.h, gb.l));
+            incHL(gb);
+            break :blk x;
+        },
+        Src8.IndHLDec => blk: {
+            const x = Gb.read(gb, as16(gb.h, gb.l));
+            decHL(gb);
+            break :blk x;
+        },
         Src8.Imm => |imm| imm,
     };
 
@@ -1106,34 +1155,39 @@ fn jpHl(gb: *Gb) void {
 }
 
 fn pop16(gb: *Gb) u16 {
-    const low = readAddr(gb, gb.sp);
+    const low = Gb.read(gb, gb.sp);
     gb.sp += 1;
-    const high = readAddr(gb, gb.sp);
+    const high = Gb.read(gb, gb.sp);
     gb.sp += 1;
     return as16(low, high);
 }
 
+fn calcRetDestAddr(address: u16) u16 {
+    // subtract 1 byte to account for PC getting incremented by the size of RET (1 byte)
+    return address - 1;
+}
+
 fn ret(gb: *Gb) void {
-    gb.pc = pop16(gb);
+    gb.pc = calcRetDestAddr(pop16(gb));
 }
 
 fn retCond(gb: *Gb, cond: bool) void {
     if (cond) {
-        gb.pc = pop16(gb);
+        gb.pc = calcRetDestAddr(pop16(gb));
         gb.branchCond = true;
     }
 }
 
 fn reti(gb: *Gb) void {
-    gb.pc = pop16(gb);
+    gb.pc = calcRetDestAddr(pop16(gb));
     gb.ime = true;
 }
 
 fn push16(gb: *Gb, value: u16) void {
     const high: u8 = @truncate(value >> 8);
     const low: u8 = @truncate(value);
-    writeAddr(gb, gb.sp, high);
-    writeAddr(gb, gb.sp, low);
+    Gb.write(gb, gb.sp, high);
+    Gb.write(gb, gb.sp, low);
 }
 
 fn call(gb: *Gb, address: u16) void {
@@ -1149,9 +1203,10 @@ fn callCond(gb: *Gb, address: u16, cond: bool) void {
     }
 }
 
-fn rst(gb: *Gb, vector: u8) void {
+fn rst(gb: *Gb, address: u8) void {
     push16(gb, gb.pc + 1);
-    gb.pc = vector;
+    // subtract 1 byte to account for PC getting incremented by the size of RST (1 byte)
+    gb.pc = address - 1;
 }
 
 fn pop(gb: *Gb, dst: Dst16) void {
@@ -1170,4 +1225,34 @@ fn di(gb: *Gb) void {
 
 fn ei(gb: *Gb) void {
     gb.ime = true;
+}
+
+fn halt(gb: *Gb) void {
+    if (gb.ime) {
+        gb.execState = ExecState.halted;
+    } else {
+        const interruptPending = (Gb.read(gb, IoReg.IE) & Gb.read(gb, IoReg.IF)) > 0;
+        if (!interruptPending) {
+            gb.execState = ExecState.haltedSkipInterrupt;
+        } else {
+            // TODO simulate halting bug
+        }
+    }
+}
+
+fn stop(gb: *Gb) void {
+    gb.execState = ExecState.stopped;
+}
+
+fn addSp(gb: *Gb, value: u8) void {
+    const valueI8: i8 = @bitCast(value);
+    const spI16: i16 = @intCast(gb.sp);
+
+    const initialSp = gb.sp;
+    gb.sp = @intCast(spI16 + valueI8);
+
+    gb.zero = false;
+    gb.negative = false;
+    gb.halfCarry = checkHalfCarry(@truncate(initialSp), value);
+    gb.carry = checkCarry(@truncate(initialSp), value);
 }
