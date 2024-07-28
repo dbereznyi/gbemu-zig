@@ -2,7 +2,7 @@ const std = @import("std");
 const Gb = @import("gameboy.zig").Gb;
 const IoReg = @import("gameboy.zig").IoReg;
 const ExecState = @import("gameboy.zig").ExecState;
-const as16 = @import("util.zig").as16;
+const util = @import("util.zig");
 
 pub fn stepCpu(gb: *Gb) usize {
     const opcode = gb.rom[gb.pc];
@@ -23,6 +23,17 @@ pub fn stepCpu(gb: *Gb) usize {
         7 => Src8.A,
     };
 
+    const opcodeRegCb: Dst8 = switch (@as(u3, @truncate(n8 & 0b0000_0111))) {
+        0 => Dst8.B,
+        1 => Dst8.C,
+        2 => Dst8.D,
+        3 => Dst8.E,
+        4 => Dst8.H,
+        5 => Dst8.L,
+        6 => Dst8.IndHL,
+        7 => Dst8.A,
+    };
+
     gb.branchCond = false;
 
     switch (opcode) {
@@ -33,12 +44,15 @@ pub fn stepCpu(gb: *Gb) usize {
         0x04 => inc8(gb, Dst8.B),
         0x05 => dec8(gb, Dst8.B),
         0x06 => ld8(gb, Dst8.B, Src8{ .Imm = n8 }),
+        0x07 => rlca(gb),
         0x08 => ld16(gb, Dst16{ .Ind = n16 }, Src16.SP),
+        0x09 => add16(gb, Dst16.HL, Src16.BC),
         0x0a => ld8(gb, Dst8.A, Src8.IndBC),
         0x0b => dec16(gb, Dst16.BC),
         0x0c => inc8(gb, Dst8.C),
         0x0d => dec8(gb, Dst8.C),
         0x0e => ld8(gb, Dst8.C, Src8{ .Imm = n8 }),
+        0x0f => rrca(gb),
 
         0x10 => stop(gb),
         0x11 => ld16(gb, Dst16.DE, Src16{ .Imm = n16 }),
@@ -47,12 +61,15 @@ pub fn stepCpu(gb: *Gb) usize {
         0x14 => inc8(gb, Dst8.D),
         0x15 => dec8(gb, Dst8.D),
         0x16 => ld8(gb, Dst8.D, Src8{ .Imm = n8 }),
+        0x17 => rla(gb),
         0x18 => jr(gb, n8),
+        0x19 => add16(gb, Dst16.HL, Src16.DE),
         0x1a => ld8(gb, Dst8.A, Src8.IndDE),
         0x1b => dec16(gb, Dst16.DE),
         0x1c => inc8(gb, Dst8.E),
         0x1d => dec8(gb, Dst8.E),
         0x1e => ld8(gb, Dst8.E, Src8{ .Imm = n8 }),
+        0x1f => rra(gb),
 
         0x20 => jrCond(gb, n8, !gb.zero),
         0x21 => ld16(gb, Dst16.HL, Src16{ .Imm = n16 }),
@@ -61,12 +78,15 @@ pub fn stepCpu(gb: *Gb) usize {
         0x24 => inc8(gb, Dst8.H),
         0x25 => dec8(gb, Dst8.H),
         0x26 => ld8(gb, Dst8.D, Src8{ .Imm = n8 }),
+        0x27 => daa(gb),
         0x28 => jrCond(gb, n8, gb.zero),
+        0x29 => add16(gb, Dst16.HL, Src16.HL),
         0x2a => ld8(gb, Dst8.A, Src8.IndHLInc),
         0x2b => dec16(gb, Dst16.HL),
         0x2c => inc8(gb, Dst8.L),
         0x2d => dec8(gb, Dst8.L),
         0x2e => ld8(gb, Dst8.L, Src8{ .Imm = n8 }),
+        0x2f => cpl(gb),
 
         0x30 => jrCond(gb, n8, !gb.carry),
         0x31 => ld16(gb, Dst16.SP, Src16{ .Imm = n16 }),
@@ -75,12 +95,15 @@ pub fn stepCpu(gb: *Gb) usize {
         0x34 => inc8(gb, Dst8.IndHL),
         0x35 => dec8(gb, Dst8.IndHL),
         0x36 => ld8(gb, Dst8.IndHL, Src8{ .Imm = n8 }),
+        0x37 => scf(gb),
         0x38 => jrCond(gb, n8, gb.carry),
+        0x39 => add16(gb, Dst16.HL, Src16.SP),
         0x3a => ld8(gb, Dst8.A, Src8.IndHLDec),
         0x3b => dec16(gb, Dst16.SP),
         0x3c => inc8(gb, Dst8.A),
         0x3d => dec8(gb, Dst8.A),
         0x3e => ld8(gb, Dst8.A, Src8{ .Imm = n8 }),
+        0x3f => ccf(gb),
 
         0x40...0x47 => ld8(gb, Dst8.B, opcodeReg),
         0x48...0x4f => ld8(gb, Dst8.C, opcodeReg),
@@ -90,7 +113,7 @@ pub fn stepCpu(gb: *Gb) usize {
         0x68...0x6f => ld8(gb, Dst8.L, opcodeReg),
         0x70...0x75 => ld8(gb, Dst8.IndHL, opcodeReg),
         0x76 => halt(gb),
-        0x77 => ld8(gb, Dst8.IndHL, opcodeReg),
+        0x77 => ld8(gb, Dst8.IndHL, Src8.A),
         0x78...0x7f => ld8(gb, Dst8.A, opcodeReg),
 
         0x80...0x87 => add(gb, opcodeReg),
@@ -113,6 +136,43 @@ pub fn stepCpu(gb: *Gb) usize {
         0xc8 => retCond(gb, gb.zero),
         0xc9 => ret(gb),
         0xca => jpCond(gb, n16, gb.zero),
+        0xcb => switch (n8) {
+            0x00...0x07 => rlc(gb, opcodeRegCb),
+            0x08...0x0f => rrc(gb, opcodeRegCb),
+            0x10...0x17 => rl(gb, opcodeRegCb),
+            0x18...0x1f => rr(gb, opcodeRegCb),
+            0x20...0x27 => sla(gb, opcodeRegCb),
+            0x28...0x2f => sra(gb, opcodeRegCb),
+            0x30...0x37 => swap(gb, opcodeRegCb),
+            0x38...0x3f => srl(gb, opcodeRegCb),
+
+            0x40...0x47 => bit(gb, opcodeRegCb, 0),
+            0x48...0x4f => bit(gb, opcodeRegCb, 1),
+            0x50...0x57 => bit(gb, opcodeRegCb, 2),
+            0x58...0x5f => bit(gb, opcodeRegCb, 3),
+            0x60...0x67 => bit(gb, opcodeRegCb, 4),
+            0x68...0x6f => bit(gb, opcodeRegCb, 5),
+            0x70...0x77 => bit(gb, opcodeRegCb, 6),
+            0x78...0x7f => bit(gb, opcodeRegCb, 7),
+
+            0x80...0x87 => res(gb, opcodeRegCb, 0),
+            0x88...0x8f => res(gb, opcodeRegCb, 1),
+            0x90...0x97 => res(gb, opcodeRegCb, 2),
+            0x98...0x9f => res(gb, opcodeRegCb, 3),
+            0xa0...0xa7 => res(gb, opcodeRegCb, 4),
+            0xa8...0xaf => res(gb, opcodeRegCb, 5),
+            0xb0...0xb7 => res(gb, opcodeRegCb, 6),
+            0xb8...0xbf => res(gb, opcodeRegCb, 7),
+
+            0xc0...0xc7 => set(gb, opcodeRegCb, 0),
+            0xc8...0xcf => set(gb, opcodeRegCb, 1),
+            0xd0...0xd7 => set(gb, opcodeRegCb, 2),
+            0xd8...0xdf => set(gb, opcodeRegCb, 3),
+            0xe0...0xe7 => set(gb, opcodeRegCb, 4),
+            0xe8...0xef => set(gb, opcodeRegCb, 5),
+            0xf0...0xf7 => set(gb, opcodeRegCb, 6),
+            0xf8...0xff => set(gb, opcodeRegCb, 7),
+        },
         0xcc => callCond(gb, n16, gb.zero),
         0xcd => call(gb, n16),
         0xce => adc(gb, Src8{ .Imm = n8 }),
@@ -168,15 +228,11 @@ pub fn stepCpu(gb: *Gb) usize {
         0xfd => invalidOpcode(opcode),
         0xfe => cp(gb, Src8{ .Imm = n8 }),
         0xff => rst(gb, 0x38),
-
-        else => {
-            std.debug.print("unhandled opcode: {}\n", .{opcode});
-        },
     }
 
     gb.*.pc += instrSize(opcode);
 
-    return instrCycles(opcode, gb.branchCond);
+    return instrCycles(opcode, n8, gb.branchCond);
 }
 
 fn invalidOpcode(opcode: u8) void {
@@ -440,7 +496,7 @@ fn instrSize(opcode: u8) u16 {
     return size;
 }
 
-fn instrCycles(opcode: u8, cond: bool) usize {
+fn instrCycles(opcode: u8, opcodeCb: u8, cond: bool) usize {
     const cycles: usize = switch (opcode) {
         0x00 => 1,
         0x01 => 3,
@@ -645,7 +701,88 @@ fn instrCycles(opcode: u8, cond: bool) usize {
         0xc8 => if (cond) 5 else 2,
         0xc9 => 4,
         0xca => if (cond) 4 else 3,
-        0xcb => 2,
+        0xcb => switch (opcodeCb) {
+            0x00...0x05 => 2,
+            0x06 => 4,
+            0x07...0x0d => 2,
+            0x0e => 4,
+            0x0f => 2,
+            0x10...0x15 => 2,
+            0x16 => 4,
+            0x17...0x1d => 2,
+            0x1e => 4,
+            0x1f => 2,
+            0x20...0x25 => 2,
+            0x26 => 4,
+            0x27...0x2d => 2,
+            0x2e => 4,
+            0x2f => 2,
+            0x30...0x35 => 2,
+            0x36 => 4,
+            0x37...0x3d => 2,
+            0x3e => 4,
+            0x3f => 2,
+            0x40...0x45 => 2,
+            0x46 => 4,
+            0x47...0x4d => 2,
+            0x4e => 4,
+            0x4f => 2,
+            0x50...0x55 => 2,
+            0x56 => 4,
+            0x57...0x5d => 2,
+            0x5e => 4,
+            0x5f => 2,
+            0x60...0x65 => 2,
+            0x66 => 4,
+            0x67...0x6d => 2,
+            0x6e => 4,
+            0x6f => 2,
+            0x70...0x75 => 2,
+            0x76 => 4,
+            0x77...0x7d => 2,
+            0x7e => 4,
+            0x7f => 2,
+            0x80...0x85 => 2,
+            0x86 => 4,
+            0x87...0x8d => 2,
+            0x8e => 4,
+            0x8f => 2,
+            0x90...0x95 => 2,
+            0x96 => 4,
+            0x97...0x9d => 2,
+            0x9e => 4,
+            0x9f => 2,
+            0xa0...0xa5 => 2,
+            0xa6 => 4,
+            0xa7...0xad => 2,
+            0xae => 4,
+            0xaf => 2,
+            0xb0...0xb5 => 2,
+            0xb6 => 4,
+            0xb7...0xbd => 2,
+            0xbe => 4,
+            0xbf => 2,
+            0xc0...0xc5 => 2,
+            0xc6 => 4,
+            0xc7...0xcd => 2,
+            0xce => 4,
+            0xcf => 2,
+            0xd0...0xd5 => 2,
+            0xd6 => 4,
+            0xd7...0xdd => 2,
+            0xde => 4,
+            0xdf => 2,
+            0xe0...0xe5 => 2,
+            0xe6 => 4,
+            0xe7...0xed => 2,
+            0xee => 4,
+            0xef => 2,
+            0xf0...0xf5 => 2,
+            0xf6 => 4,
+            0xf7...0xfd => 2,
+            0xfe => 4,
+            0xff => 2,
+        },
         0xcc => if (cond) 6 else 3,
         0xcd => 6,
         0xce => 2,
@@ -716,10 +853,10 @@ const Dst16 = union(Dst16Tag) {
 
 fn readDst16(gb: *const Gb, dst: Dst16) u16 {
     return switch (dst) {
-        Dst16.AF => as16(gb.a, Gb.readFlags(gb)),
-        Dst16.BC => as16(gb.b, gb.c),
-        Dst16.DE => as16(gb.d, gb.e),
-        Dst16.HL => as16(gb.h, gb.l),
+        Dst16.AF => util.as16(gb.a, Gb.readFlags(gb)),
+        Dst16.BC => util.as16(gb.b, gb.c),
+        Dst16.DE => util.as16(gb.d, gb.e),
+        Dst16.HL => util.as16(gb.h, gb.l),
         Dst16.SP => gb.sp,
         Dst16.Ind => |ind| Gb.read(gb, ind),
     };
@@ -778,10 +915,10 @@ const Src16 = union(Src16Tag) {
 
 fn readSrc16(gb: *const Gb, src: Src16) u16 {
     return switch (src) {
-        Src16.AF => as16(gb.a, Gb.readFlags(gb)),
-        Src16.BC => as16(gb.b, gb.c),
-        Src16.DE => as16(gb.d, gb.e),
-        Src16.HL => as16(gb.h, gb.l),
+        Src16.AF => util.as16(gb.a, Gb.readFlags(gb)),
+        Src16.BC => util.as16(gb.b, gb.c),
+        Src16.DE => util.as16(gb.d, gb.e),
+        Src16.HL => util.as16(gb.h, gb.l),
         Src16.SP => gb.sp,
         Src16.SPOffset => |offset| gb.sp + @as(u16, offset),
         Src16.Imm => |imm| imm,
@@ -841,16 +978,16 @@ fn readDst8(gb: *Gb, dst: Dst8) u8 {
         Dst8.Ind => |ind| Gb.read(gb, ind),
         Dst8.IndIoReg => |ind| Gb.read(gb, 0xff00 + @as(u16, ind)),
         Dst8.IndC => Gb.read(gb, 0xff00 + @as(u16, gb.c)),
-        Dst8.IndBC => Gb.read(gb, as16(gb.b, gb.c)),
-        Dst8.IndDE => Gb.read(gb, as16(gb.d, gb.e)),
-        Dst8.IndHL => Gb.read(gb, as16(gb.h, gb.l)),
+        Dst8.IndBC => Gb.read(gb, util.as16(gb.b, gb.c)),
+        Dst8.IndDE => Gb.read(gb, util.as16(gb.d, gb.e)),
+        Dst8.IndHL => Gb.read(gb, util.as16(gb.h, gb.l)),
         Dst8.IndHLInc => blk: {
-            const x = Gb.read(gb, as16(gb.h, gb.l));
+            const x = Gb.read(gb, util.as16(gb.h, gb.l));
             incHL(gb);
             break :blk x;
         },
         Dst8.IndHLDec => blk: {
-            const x = Gb.read(gb, as16(gb.h, gb.l));
+            const x = Gb.read(gb, util.as16(gb.h, gb.l));
             decHL(gb);
             break :blk x;
         },
@@ -871,15 +1008,15 @@ fn writeDst8(gb: *Gb, dst: Dst8, val: u8) void {
         Dst8.Ind => |ind| Gb.write(gb, ind, val),
         Dst8.IndIoReg => |ind| Gb.write(gb, 0xff00 + @as(u16, ind), val),
         Dst8.IndC => Gb.write(gb, 0xff00 + @as(u16, gb.c), val),
-        Dst8.IndBC => Gb.write(gb, as16(gb.b, gb.c), val),
-        Dst8.IndDE => Gb.write(gb, as16(gb.d, gb.e), val),
-        Dst8.IndHL => Gb.write(gb, as16(gb.h, gb.l), val),
+        Dst8.IndBC => Gb.write(gb, util.as16(gb.b, gb.c), val),
+        Dst8.IndDE => Gb.write(gb, util.as16(gb.d, gb.e), val),
+        Dst8.IndHL => Gb.write(gb, util.as16(gb.h, gb.l), val),
         Dst8.IndHLInc => {
-            Gb.write(gb, as16(gb.h, gb.l), val);
+            Gb.write(gb, util.as16(gb.h, gb.l), val);
             incHL(gb);
         },
         Dst8.IndHLDec => {
-            Gb.write(gb, as16(gb.h, gb.l), val);
+            Gb.write(gb, util.as16(gb.h, gb.l), val);
             decHL(gb);
         },
     }
@@ -935,16 +1072,16 @@ fn readSrc8(gb: *Gb, src: Src8) u8 {
         Src8.Ind => |ind| Gb.read(gb, ind),
         Src8.IndIoReg => |ind| Gb.read(gb, 0xff00 + @as(u16, ind)),
         Src8.IndC => Gb.read(gb, 0xff00 + @as(u16, gb.c)),
-        Src8.IndBC => Gb.read(gb, as16(gb.b, gb.c)),
-        Src8.IndDE => Gb.read(gb, as16(gb.d, gb.e)),
-        Src8.IndHL => Gb.read(gb, as16(gb.h, gb.l)),
+        Src8.IndBC => Gb.read(gb, util.as16(gb.b, gb.c)),
+        Src8.IndDE => Gb.read(gb, util.as16(gb.d, gb.e)),
+        Src8.IndHL => Gb.read(gb, util.as16(gb.h, gb.l)),
         Src8.IndHLInc => blk: {
-            const x = Gb.read(gb, as16(gb.h, gb.l));
+            const x = Gb.read(gb, util.as16(gb.h, gb.l));
             incHL(gb);
             break :blk x;
         },
         Src8.IndHLDec => blk: {
-            const x = Gb.read(gb, as16(gb.h, gb.l));
+            const x = Gb.read(gb, util.as16(gb.h, gb.l));
             decHL(gb);
             break :blk x;
         },
@@ -955,14 +1092,14 @@ fn readSrc8(gb: *Gb, src: Src8) u8 {
 }
 
 fn incHL(gb: *Gb) void {
-    const hl = as16(gb.h, gb.l);
+    const hl = util.as16(gb.h, gb.l);
     const hlInc = hl + 1;
     gb.h = @truncate(hlInc >> 8);
     gb.l = @truncate(hlInc);
 }
 
 fn decHL(gb: *Gb) void {
-    const hl = as16(gb.h, gb.l);
+    const hl = util.as16(gb.h, gb.l);
     const hlDec = hl - 1;
     gb.h = @truncate(hlDec >> 8);
     gb.l = @truncate(hlDec);
@@ -974,13 +1111,13 @@ fn ld8(gb: *Gb, dst: Dst8, src: Src8) void {
 }
 
 fn checkHalfCarry(x: u8, y: u8) bool {
-    const sum4Bit = (x & 0b0000_1111) + (y & 0b0000_1111);
-    return (sum4Bit & 0b0001_0000) > 0;
+    const sum4Bit = (x & 0x0f) + (y & 0x0f);
+    return sum4Bit > 0x0f;
 }
 
 fn checkCarry(x: u8, y: u8) bool {
     const sum = @as(u16, x) + @as(u16, y);
-    return (sum & 0b0000_0001_0000_0000) > 0;
+    return sum > 0xff;
 }
 
 fn add(gb: *Gb, src: Src8) void {
@@ -993,6 +1130,27 @@ fn add(gb: *Gb, src: Src8) void {
     gb.negative = false;
     gb.halfCarry = checkHalfCarry(x, y);
     gb.carry = checkCarry(x, y);
+}
+
+fn checkHalfCarry16(x: u16, y: u16) bool {
+    const sum12Bit = (x & 0x0fff) + (y & 0x0fff);
+    return sum12Bit > 0x0fff;
+}
+
+fn checkCarry16(x: u16, y: u16) bool {
+    const sum = @as(u32, x) + @as(u32, y);
+    return sum > 0xffff;
+}
+
+fn add16(gb: *Gb, dst: Dst16, src: Src16) void {
+    const x = readSrc16(gb, src);
+    const y = readDst16(gb, dst);
+    const sum = x + y;
+    writeDst16(gb, dst, sum);
+
+    gb.negative = false;
+    gb.halfCarry = checkHalfCarry16(x, y);
+    gb.carry = checkCarry16(x, y);
 }
 
 fn adc(gb: *Gb, src: Src8) void {
@@ -1159,7 +1317,7 @@ fn pop16(gb: *Gb) u16 {
     gb.sp += 1;
     const high = Gb.read(gb, gb.sp);
     gb.sp += 1;
-    return as16(low, high);
+    return util.as16(low, high);
 }
 
 fn calcRetDestAddr(address: u16) u16 {
@@ -1255,4 +1413,203 @@ fn addSp(gb: *Gb, value: u8) void {
     gb.negative = false;
     gb.halfCarry = checkHalfCarry(@truncate(initialSp), value);
     gb.carry = checkCarry(@truncate(initialSp), value);
+}
+
+fn rlca(gb: *Gb) void {
+    const bit7 = gb.a & 0b1000_0000;
+    gb.a = (gb.a << 1) | (bit7 >> 7);
+
+    gb.zero = false;
+    gb.negative = false;
+    gb.halfCarry = false;
+    gb.carry = bit7 > 0;
+}
+
+fn rlc(gb: *Gb, dst: Dst8) void {
+    const value = readDst8(gb, dst);
+
+    const bit7 = value & 0b1000_0000;
+    const result = (value << 1) | (bit7 >> 7);
+    writeDst8(gb, dst, result);
+
+    gb.zero = readDst8(gb, dst) == 0;
+    gb.negative = false;
+    gb.halfCarry = false;
+    gb.carry = bit7 > 0;
+}
+
+fn rrca(gb: *Gb) void {
+    const bit0 = gb.a & 0b0000_0001;
+    gb.a = (gb.a >> 1) | (bit0 << 7);
+
+    gb.zero = false;
+    gb.negative = false;
+    gb.halfCarry = false;
+    gb.carry = bit0 > 0;
+}
+
+fn rrc(gb: *Gb, dst: Dst8) void {
+    const value = readDst8(gb, dst);
+
+    const bit0 = value & 0b0000_0001;
+    const result = (value >> 1) | (bit0 << 7);
+    writeDst8(gb, dst, result);
+
+    gb.zero = result == 0;
+    gb.negative = false;
+    gb.halfCarry = false;
+    gb.carry = bit0 > 0;
+}
+
+fn rla(gb: *Gb) void {
+    const newBit0: u8 = if (gb.carry) 1 else 0;
+    const bit7 = gb.a & 0b1000_0000;
+    gb.a = (gb.a << 1) | newBit0;
+
+    gb.zero = false;
+    gb.negative = false;
+    gb.halfCarry = false;
+    gb.carry = bit7 > 0;
+}
+
+fn rl(gb: *Gb, dst: Dst8) void {
+    const value = readDst8(gb, dst);
+
+    const newBit0: u8 = if (gb.carry) 1 else 0;
+    const bit7 = value & 0b1000_0000;
+    const result = (gb.a << 1) | newBit0;
+    writeDst8(gb, dst, result);
+
+    gb.zero = result == 0;
+    gb.negative = false;
+    gb.halfCarry = false;
+    gb.carry = bit7 > 0;
+}
+
+fn rra(gb: *Gb) void {
+    const newBit7: u8 = if (gb.carry) 1 else 0;
+    const bit0 = gb.a & 0b0000_0001;
+    gb.a = (gb.a >> 1) | (newBit7 << 7);
+
+    gb.zero = false;
+    gb.negative = false;
+    gb.halfCarry = false;
+    gb.carry = bit0 > 0;
+}
+
+fn rr(gb: *Gb, dst: Dst8) void {
+    const value = readDst8(gb, dst);
+
+    const newBit7: u8 = if (gb.carry) 1 else 0;
+    const bit0 = value & 0b0000_0001;
+    const result = (gb.a >> 1) | (newBit7 << 7);
+    writeDst8(gb, dst, result);
+
+    gb.zero = result == 0;
+    gb.negative = false;
+    gb.halfCarry = false;
+    gb.carry = bit0 > 0;
+}
+
+fn sla(gb: *Gb, dst: Dst8) void {
+    const value = readDst8(gb, dst);
+
+    const bit7 = value & 0b1000_0000;
+    const result = value << 1;
+    writeDst8(gb, dst, result);
+
+    gb.zero = result == 0;
+    gb.negative = false;
+    gb.halfCarry = false;
+    gb.carry = bit7 > 0;
+}
+
+fn sra(gb: *Gb, dst: Dst8) void {
+    const value = readDst8(gb, dst);
+
+    const bit7 = value & 0b1000_0000;
+    const bit0 = value & 0b0000_0001;
+    const result = bit7 | (value >> 1);
+    writeDst8(gb, dst, result);
+
+    gb.zero = result == 0;
+    gb.negative = false;
+    gb.halfCarry = false;
+    gb.carry = bit0 > 0;
+}
+
+fn swap(gb: *Gb, dst: Dst8) void {
+    const value = readDst8(gb, dst);
+
+    const low = value & 0b0000_1111;
+    const high = value & 0b1111_0000;
+    const result = (low << 4) | (high >> 4);
+    writeDst8(gb, dst, result);
+
+    gb.zero = result == 0;
+    gb.negative = false;
+    gb.halfCarry = false;
+    gb.carry = false;
+}
+
+fn srl(gb: *Gb, dst: Dst8) void {
+    const value = readDst8(gb, dst);
+
+    const bit0 = value & 0b0000_0001;
+    const result = value >> 1;
+    writeDst8(gb, dst, result);
+
+    gb.zero = result == 0;
+    gb.negative = false;
+    gb.halfCarry = false;
+    gb.carry = bit0 > 0;
+}
+
+fn bit(gb: *Gb, dst: Dst8, n: u3) void {
+    const value = readDst8(gb, dst);
+
+    const result = value & (@as(u8, 1) << n);
+
+    gb.zero = result == 0;
+    gb.negative = false;
+    gb.halfCarry = true;
+}
+
+fn res(gb: *Gb, dst: Dst8, n: u3) void {
+    const value = readDst8(gb, dst);
+
+    const mask = ~(@as(u8, 1) << n);
+    const result = value & mask;
+    writeDst8(gb, dst, result);
+}
+
+fn set(gb: *Gb, dst: Dst8, n: u3) void {
+    const value = readDst8(gb, dst);
+
+    const mask = (@as(u8, 1) << n);
+    const result = value | mask;
+    writeDst8(gb, dst, result);
+}
+
+fn daa(_: *Gb) void {
+    // TODO implement
+}
+
+fn cpl(gb: *Gb) void {
+    gb.a = ~gb.a;
+
+    gb.negative = true;
+    gb.halfCarry = true;
+}
+
+fn ccf(gb: *Gb) void {
+    gb.negative = false;
+    gb.halfCarry = false;
+    gb.carry = !gb.carry;
+}
+
+fn scf(gb: *Gb) void {
+    gb.negative = false;
+    gb.halfCarry = false;
+    gb.carry = true;
 }
