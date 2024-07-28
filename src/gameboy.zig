@@ -48,7 +48,7 @@ pub const Gb = struct {
         const ioRegs = try alloc.alloc(u8, 128);
         const hram = try alloc.alloc(u8, 128);
         return Gb{
-            .pc = 0,
+            .pc = 0x0100,
             .sp = 0,
             .a = 0,
             .b = 0,
