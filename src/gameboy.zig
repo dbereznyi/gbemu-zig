@@ -1,4 +1,5 @@
 const std = @import("std");
+const Pixel = @import("pixel.zig").Pixel;
 
 pub const IoReg = .{
     .IF = 0xff0f,
@@ -42,11 +43,23 @@ pub const Gb = struct {
     rom: []const u8,
     cycles: u64,
 
+    screen: [144][160]Pixel,
+
     pub fn init(alloc: std.mem.Allocator, rom: []const u8) !Gb {
         const vram = try alloc.alloc(u8, 8 * 1024);
         const wram = try alloc.alloc(u8, 8 * 1024);
         const ioRegs = try alloc.alloc(u8, 128);
         const hram = try alloc.alloc(u8, 128);
+
+        var screen: [144][160]Pixel = undefined;
+        for (screen, 0..) |row, y| {
+            for (row, 0..) |_, x| {
+                screen[y][x].r = 0;
+                screen[y][x].g = 0;
+                screen[y][x].b = 0;
+            }
+        }
+
         return Gb{
             .pc = 0x0100,
             .sp = 0,
@@ -71,6 +84,7 @@ pub const Gb = struct {
             .ie = 0,
             .rom = rom,
             .cycles = 0,
+            .screen = screen,
         };
     }
 
