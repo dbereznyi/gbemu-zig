@@ -13,12 +13,6 @@ pub fn main() !void {
     defer arena.deinit();
     const alloc = arena.allocator();
 
-    const rom = try std.fs.cwd().readFileAlloc(alloc, "roms/hello-world.gb", 1024 * 1024 * 1024);
-    var gb = try Gb.init(alloc, rom);
-
-    const cycles = stepCpu(&gb);
-    std.debug.print("cycles = {}\n", .{cycles});
-
     if (c.SDL_Init(c.SDL_INIT_VIDEO) != 0) {
         c.SDL_Log("Unable to initialize SDL: %s", c.SDL_GetError());
         return error.SDLInitializationFailed;
@@ -44,13 +38,17 @@ pub fn main() !void {
     defer c.SDL_DestroyTexture(texture);
 
     const pixels = try alloc.alloc(Pixel, 160 * 144);
-    for (pixels, 0..) |*pixel, i| {
-        pixel.*.r = @truncate((i + 64) % 256);
-        pixel.*.g = @truncate((i + 32) % 256);
-        pixel.*.b = @truncate(i % 256);
+    defer alloc.free(pixels);
+    for (pixels) |*pixel| {
+        pixel.*.r = 0xff;
+        pixel.*.g = 0xff;
+        pixel.*.b = 0xff;
     }
 
-    _ = c.SDL_UpdateTexture(texture, null, @ptrCast(pixels), 160 * 3);
+    var rwl = std.Thread.RwLock{};
+
+    var gameboyThread = try std.Thread.spawn(.{}, runGameboy, .{ pixels, &rwl, alloc });
+    gameboyThread.detach();
 
     var quit = false;
     while (!quit) {
@@ -64,10 +62,37 @@ pub fn main() !void {
             }
         }
 
+        rwl.lockShared();
+        _ = c.SDL_UpdateTexture(texture, null, @ptrCast(pixels), 160 * 3);
+        rwl.unlockShared();
+
         _ = c.SDL_RenderClear(renderer);
         _ = c.SDL_RenderCopy(renderer, texture, null, null);
         c.SDL_RenderPresent(renderer);
 
         c.SDL_Delay(17);
+    }
+}
+
+fn runGameboy(pixels: []Pixel, rwl: *std.Thread.RwLock, alloc: std.mem.Allocator) !void {
+    const rom = try std.fs.cwd().readFileAlloc(alloc, "roms/hello-world.gb", 1024 * 1024 * 1024);
+    var gb = try Gb.init(alloc, rom);
+
+    const cycles = stepCpu(&gb);
+    std.debug.print("cycles = {}\n", .{cycles});
+
+    var i: u8 = 0;
+    while (true) {
+        rwl.lock();
+        for (pixels) |*pixel| {
+            pixel.*.r = i;
+            pixel.*.g = i;
+            pixel.*.b = i;
+        }
+        rwl.unlock();
+
+        i +%= 1;
+
+        std.time.sleep(16666666); // ~1/60 sec
     }
 }
