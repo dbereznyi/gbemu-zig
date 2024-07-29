@@ -43,7 +43,7 @@ pub const Gb = struct {
     rom: []const u8,
     cycles: u64,
 
-    screen: [144][160]Pixel,
+    screen: []Pixel,
 
     pub fn init(alloc: std.mem.Allocator, rom: []const u8) !Gb {
         const vram = try alloc.alloc(u8, 8 * 1024);
@@ -51,13 +51,11 @@ pub const Gb = struct {
         const ioRegs = try alloc.alloc(u8, 128);
         const hram = try alloc.alloc(u8, 128);
 
-        var screen: [144][160]Pixel = undefined;
-        for (screen, 0..) |row, y| {
-            for (row, 0..) |_, x| {
-                screen[y][x].r = 0;
-                screen[y][x].g = 0;
-                screen[y][x].b = 0;
-            }
+        const screen: []Pixel = try alloc.alloc(Pixel, 160 * 144);
+        for (screen) |*pixel| {
+            pixel.*.r = 0;
+            pixel.*.g = 0;
+            pixel.*.b = 0;
         }
 
         return Gb{

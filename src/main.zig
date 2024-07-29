@@ -37,17 +37,12 @@ pub fn main() !void {
     };
     defer c.SDL_DestroyTexture(texture);
 
-    const pixels = try alloc.alloc(Pixel, 160 * 144);
-    defer alloc.free(pixels);
-    for (pixels) |*pixel| {
-        pixel.*.r = 0xff;
-        pixel.*.g = 0xff;
-        pixel.*.b = 0xff;
-    }
-
     var rwl = std.Thread.RwLock{};
 
-    var gameboyThread = try std.Thread.spawn(.{}, runGameboy, .{ pixels, &rwl, alloc });
+    const rom = try std.fs.cwd().readFileAlloc(alloc, "roms/hello-world.gb", 1024 * 1024 * 1024);
+    var gb = try Gb.init(alloc, rom);
+
+    var gameboyThread = try std.Thread.spawn(.{}, runGameboy, .{ &gb, &rwl });
     gameboyThread.detach();
 
     var quit = false;
@@ -63,7 +58,7 @@ pub fn main() !void {
         }
 
         rwl.lockShared();
-        _ = c.SDL_UpdateTexture(texture, null, @ptrCast(pixels), 160 * 3);
+        _ = c.SDL_UpdateTexture(texture, null, @ptrCast(gb.screen), 160 * 3);
         rwl.unlockShared();
 
         _ = c.SDL_RenderClear(renderer);
@@ -74,17 +69,18 @@ pub fn main() !void {
     }
 }
 
-fn runGameboy(pixels: []Pixel, rwl: *std.Thread.RwLock, alloc: std.mem.Allocator) !void {
-    const rom = try std.fs.cwd().readFileAlloc(alloc, "roms/hello-world.gb", 1024 * 1024 * 1024);
-    var gb = try Gb.init(alloc, rom);
-
-    const cycles = stepCpu(&gb);
+fn runGameboy(gb: *Gb, rwl: *std.Thread.RwLock) !void {
+    const cycles = stepCpu(gb);
     std.debug.print("cycles = {}\n", .{cycles});
 
     var i: u8 = 0;
     while (true) {
+        // TODO
+        // stepCpu(...)
+        // stepPpu(...)
+
         rwl.lock();
-        for (pixels) |*pixel| {
+        for (gb.screen) |*pixel| {
             pixel.*.r = i;
             pixel.*.g = i;
             pixel.*.b = i;
