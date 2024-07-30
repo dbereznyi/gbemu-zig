@@ -851,7 +851,7 @@ const Dst16 = union(Dst16Tag) {
     Ind: u16,
 };
 
-fn readDst16(gb: *const Gb, dst: Dst16) u16 {
+fn readDst16(gb: *Gb, dst: Dst16) u16 {
     return switch (dst) {
         Dst16.AF => util.as16(gb.a, Gb.readFlags(gb)),
         Dst16.BC => util.as16(gb.b, gb.c),

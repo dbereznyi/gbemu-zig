@@ -1,8 +1,22 @@
 const std = @import("std");
 const Pixel = @import("pixel.zig").Pixel;
+const AtomicOrder = std.builtin.AtomicOrder;
 
 pub const IoReg = .{
+    .JOYP = 0xff00,
     .IF = 0xff0f,
+    .LCDC = 0xff40,
+    .STAT = 0xff41,
+    .SCY = 0xff42,
+    .SCX = 0xff43,
+    .LY = 0xff44,
+    .LYC = 0xff45,
+    .DMA = 0xff46,
+    .BGP = 0xff47,
+    .OBP0 = 0xff48,
+    .OBP1 = 0xff49,
+    .WY = 0xff4a,
+    .WX = 0xff4b,
     .IE = 0xffff,
 };
 
@@ -36,8 +50,9 @@ pub const Gb = struct {
     execState: ExecState,
 
     vram: []u8,
+    vramMutex: std.Thread.Mutex,
     wram: []u8,
-    ioRegs: []u8,
+    ioRegs: []std.atomic.Value(u8),
     hram: []u8,
     ie: u8,
     rom: []const u8,
@@ -46,7 +61,10 @@ pub const Gb = struct {
     pub fn init(alloc: std.mem.Allocator, rom: []const u8) !Gb {
         const vram = try alloc.alloc(u8, 8 * 1024);
         const wram = try alloc.alloc(u8, 8 * 1024);
-        const ioRegs = try alloc.alloc(u8, 128);
+        var ioRegs = try alloc.alloc(std.atomic.Value(u8), 128);
+        for (ioRegs, 0..) |_, i| {
+            ioRegs[i] = std.atomic.Value(u8).init(0);
+        }
         const hram = try alloc.alloc(u8, 128);
 
         return Gb{
@@ -67,6 +85,7 @@ pub const Gb = struct {
             .ime = false,
             .execState = ExecState.running,
             .vram = vram,
+            .vramMutex = std.Thread.Mutex{},
             .wram = wram,
             .ioRegs = ioRegs,
             .hram = hram,
@@ -74,6 +93,13 @@ pub const Gb = struct {
             .rom = rom,
             .cycles = 0,
         };
+    }
+
+    pub fn deinit(gb: *const Gb, alloc: std.mem.Allocator) void {
+        alloc.free(gb.vram);
+        alloc.free(gb.wram);
+        alloc.free(gb.ioRegs);
+        alloc.free(gb.hram);
     }
 
     pub fn readFlags(gb: *const Gb) u8 {
@@ -92,18 +118,24 @@ pub const Gb = struct {
         gb.carry = flags & 0b0001_0000 > 0;
     }
 
-    pub fn read(gb: *const Gb, addr: u16) u8 {
+    pub fn read(gb: *Gb, addr: u16) u8 {
         if (addr < 0x8000) {
-            // ROM
             return gb.rom[addr];
         } else if (addr < 0xa000) {
             // VRAM
-            return gb.vram[addr - 0xa000];
+            if (gb.vramMutex.tryLock()) {
+                const val = gb.vram[addr - 0x8000];
+                gb.vramMutex.unlock();
+                return val;
+            } else {
+                // garbage data is returned when VRAM is in use by the PPU
+                return 0xff;
+            }
         } else if (addr < 0xc000) {
             // external RAM
         } else if (addr < 0xe000) {
             // WRAM
-            return gb.wram[addr - 0xe000];
+            return gb.wram[addr - 0xc000];
         } else if (addr < 0xfe00) {
             // echo RAM
         } else if (addr < 0xfea0) {
@@ -112,10 +144,10 @@ pub const Gb = struct {
             // not useable
         } else if (addr < 0xff80) {
             // I/O registers
-            return gb.ioRegs[addr - 0xff80];
+            return gb.ioRegs[addr - 0xff00].load(AtomicOrder.monotonic);
         } else if (addr < 0xffff) {
             // HRAM
-            return gb.hram[addr - 0xffff];
+            return gb.hram[addr - 0xff80];
         } else {
             // IE
             return gb.ie;
@@ -131,12 +163,15 @@ pub const Gb = struct {
             // ROM bank 01~NN
         } else if (addr < 0xa000) {
             // VRAM
-            gb.vram[addr - 0xa000] = val;
+            if (gb.vramMutex.tryLock()) {
+                gb.vram[addr - 0x8000] = val;
+                gb.vramMutex.unlock();
+            }
         } else if (addr < 0xc000) {
             // external RAM
         } else if (addr < 0xe000) {
             // WRAM
-            gb.wram[addr - 0xe000] = val;
+            gb.wram[addr - 0xc000] = val;
         } else if (addr < 0xfe00) {
             // echo RAM
         } else if (addr < 0xfea0) {
@@ -145,10 +180,10 @@ pub const Gb = struct {
             // not useable
         } else if (addr < 0xff80) {
             // I/O registers
-            gb.ioRegs[addr - 0xff80] = val;
+            gb.ioRegs[addr - 0xff00].store(val, AtomicOrder.monotonic);
         } else if (addr < 0xffff) {
             // HRAM
-            gb.hram[addr - 0xffff] = val;
+            gb.hram[addr - 0xff80] = val;
         } else {
             // IE
             gb.ie = val;
