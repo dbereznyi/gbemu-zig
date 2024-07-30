@@ -20,6 +20,17 @@ pub const IoReg = .{
     .IE = 0xffff,
 };
 
+pub const LcdcFlag = .{
+    .ON = 0b1000_0000,
+    .WIN_TILE_MAP = 0b0100_0000,
+    .WIN_ENABLE = 0b0010_0000,
+    .TILE_DATA = 0b0001_0000,
+    .BG_TILE_MAP = 0b0000_1000,
+    .OBJ_SIZE = 0b0000_0100,
+    .OBJ_ENABLE = 0b0000_0010,
+    .BG_ENABLE = 0b0000_0001,
+};
+
 pub const ExecState = enum {
     running,
     halted,

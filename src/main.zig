@@ -4,6 +4,8 @@ const c = @cImport({
 const std = @import("std");
 const Pixel = @import("pixel.zig").Pixel;
 const Gb = @import("gameboy.zig").Gb;
+const IoReg = @import("gameboy.zig").IoReg;
+const LcdcFlag = @import("gameboy.zig").LcdcFlag;
 const stepCpu = @import("cpu.zig").stepCpu;
 const runPpu = @import("ppu.zig").runPpu;
 const AtomicOrder = std.builtin.AtomicOrder;
@@ -66,6 +68,11 @@ pub fn main() !void {
         var event: c.SDL_Event = undefined;
         while (c.SDL_PollEvent(&event) != 0) {
             switch (event.type) {
+                c.SDL_KEYUP => {
+                    if (event.key.keysym.sym == c.SDLK_l) {
+                        gb.write(IoReg.LCDC, gb.read(IoReg.LCDC) ^ LcdcFlag.ON);
+                    }
+                },
                 c.SDL_QUIT => {
                     quit.store(true, AtomicOrder.monotonic);
                 },
@@ -153,9 +160,6 @@ fn initVramForTesting(gb: *Gb, alloc: std.mem.Allocator) !void {
         std.debug.print("{} ", .{val});
     }
     std.debug.print("\n", .{});
-
-    const LCD_ENABLE = 0b1000_0000;
-    const BG_ENABLE = 0b0000_0001;
-    gb.write(0xff40, LCD_ENABLE | BG_ENABLE);
-    gb.write(0xff47, 0b11_10_01_00);
+    gb.write(IoReg.LCDC, LcdcFlag.ON | LcdcFlag.BG_ENABLE);
+    gb.write(IoReg.BGP, 0b11_10_01_00);
 }

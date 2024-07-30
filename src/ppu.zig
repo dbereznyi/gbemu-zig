@@ -2,16 +2,8 @@ const std = @import("std");
 const Pixel = @import("pixel.zig").Pixel;
 const Gb = @import("gameboy.zig").Gb;
 const IoReg = @import("gameboy.zig").IoReg;
+const LcdcFlag = @import("gameboy.zig").LcdcFlag;
 const AtomicOrder = std.builtin.AtomicOrder;
-
-const LCDC_ON: u8 = 0b1000_0000;
-const LCDC_WIN_TILE_MAP: u8 = 0b0100_0000;
-const LCDC_WIN_DISP: u8 = 0b0010_0000;
-const LCDC_TILE_DATA: u8 = 0b0001_0000;
-const LCDC_BG_TILE_MAP: u8 = 0b0000_1000;
-const LCDC_OBJ_SIZE: u8 = 0b0000_0100;
-const LCDC_OBJ_DISP: u8 = 0b0000_0010;
-const LCDC_BG_DISP: u8 = 0b0000_0001;
 
 const PALETTE_GREY = [_]Pixel{
     .{ .r = 255, .g = 255, .b = 255 },
@@ -26,6 +18,7 @@ const HBLANK_TIME_NS: u64 = 48_600;
 const LINE_TIME_NS: u64 = 108_718;
 
 pub fn runPpu(gb: *Gb, screenRwl: *std.Thread.RwLock, screen: []Pixel, quit: *std.atomic.Value(bool)) !void {
+    const palette = PALETTE_GREY;
     while (true) {
         for (0..144) |y| {
             // Mode 2 - OAM scan
@@ -39,19 +32,28 @@ pub fn runPpu(gb: *Gb, screenRwl: *std.Thread.RwLock, screen: []Pixel, quit: *st
             gb.vramMutex.lock();
 
             for (0..160) |x| {
+                screenRwl.lock();
+                screen[y * 160 + x] = palette[0];
+                screenRwl.unlock();
+
                 const lcdc = gb.read(IoReg.LCDC);
-                const bgTileData = if (lcdc & LCDC_TILE_DATA > 0) gb.vram[0x0000..0x1000] else gb.vram[0x0800..0x1800];
-                const bgTileMap = if (lcdc & LCDC_BG_TILE_MAP > 0) gb.vram[0x1c00..0x2000] else gb.vram[0x1800..0x1c00];
+
+                if (lcdc & LcdcFlag.ON == 0) {
+                    continue;
+                }
+
+                const bgTileData = if (lcdc & LcdcFlag.TILE_DATA > 0) gb.vram[0x0000..0x1000] else gb.vram[0x0800..0x1800];
+                const bgTileMap = if (lcdc & LcdcFlag.BG_TILE_MAP > 0) gb.vram[0x1c00..0x2000] else gb.vram[0x1800..0x1c00];
 
                 const bgp = gb.read(IoReg.BGP);
                 const scx = gb.read(IoReg.SCX);
                 const scy = gb.read(IoReg.SCY);
 
-                if (lcdc & LCDC_BG_DISP > 0) {
+                if (lcdc & LcdcFlag.BG_ENABLE > 0) {
                     const scrolledX = x +% @as(usize, @intCast(scx));
                     const scrolledY = y +% @as(usize, @intCast(scy));
                     const currentTileIndex: usize = (@divTrunc(scrolledY, 8)) * 32 + (@divTrunc(scrolledX, 8));
-                    const tileDataIndex: usize = if (lcdc & LCDC_TILE_DATA > 0) @as(usize, @intCast(bgTileMap[currentTileIndex])) else @as(usize, @intCast(bgTileMap[currentTileIndex] +% 128));
+                    const tileDataIndex: usize = if (lcdc & LcdcFlag.TILE_DATA > 0) @as(usize, @intCast(bgTileMap[currentTileIndex])) else @as(usize, @intCast(bgTileMap[currentTileIndex] +% 128));
                     const rowIndex = scrolledY % 8;
                     const colIndex = scrolledX % 8;
                     const rowStart = (tileDataIndex * 16) + (rowIndex * 2);
@@ -64,7 +66,7 @@ pub fn runPpu(gb: *Gb, screenRwl: *std.Thread.RwLock, screen: []Pixel, quit: *st
                     const bgpPaletteIndex = @as(usize, @intCast((bgp & bgpMask) >> @as(u3, @truncate(paletteIndex * 2))));
 
                     screenRwl.lock();
-                    screen[y * 160 + x] = PALETTE_GREY[bgpPaletteIndex];
+                    screen[y * 160 + x] = palette[bgpPaletteIndex];
                     screenRwl.unlock();
                 }
             }
