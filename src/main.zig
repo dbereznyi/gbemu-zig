@@ -19,13 +19,13 @@ pub fn main() !void {
     }
     defer c.SDL_Quit();
 
-    const screen = c.SDL_CreateWindow("gameboy", c.SDL_WINDOWPOS_UNDEFINED, c.SDL_WINDOWPOS_UNDEFINED, 160 * SCALE, 144 * SCALE, c.SDL_WINDOW_OPENGL) orelse {
+    const window = c.SDL_CreateWindow("gameboy", c.SDL_WINDOWPOS_UNDEFINED, c.SDL_WINDOWPOS_UNDEFINED, 160 * SCALE, 144 * SCALE, c.SDL_WINDOW_OPENGL) orelse {
         c.SDL_Log("Unable to create window: %s", c.SDL_GetError());
         return error.SDLInitializationFailed;
     };
-    defer c.SDL_DestroyWindow(screen);
+    defer c.SDL_DestroyWindow(window);
 
-    const renderer = c.SDL_CreateRenderer(screen, -1, 0) orelse {
+    const renderer = c.SDL_CreateRenderer(window, -1, 0) orelse {
         c.SDL_Log("Unable to create renderer: %s", c.SDL_GetError());
         return error.SDLInitializationFailed;
     };
@@ -37,12 +37,19 @@ pub fn main() !void {
     };
     defer c.SDL_DestroyTexture(texture);
 
-    var rwl = std.Thread.RwLock{};
-
     const rom = try std.fs.cwd().readFileAlloc(alloc, "roms/hello-world.gb", 1024 * 1024 * 1024);
     var gb = try Gb.init(alloc, rom);
 
-    var gameboyThread = try std.Thread.spawn(.{}, runGameboy, .{ &gb, &rwl });
+    const screen: []Pixel = try alloc.alloc(Pixel, 160 * 144);
+    for (screen) |*pixel| {
+        pixel.*.r = 0;
+        pixel.*.g = 0;
+        pixel.*.b = 0;
+    }
+
+    var screen_rwl = std.Thread.RwLock{};
+
+    var gameboyThread = try std.Thread.spawn(.{}, runGameboy, .{ &gb, &screen_rwl, screen });
     gameboyThread.detach();
 
     var quit = false;
@@ -57,9 +64,9 @@ pub fn main() !void {
             }
         }
 
-        rwl.lockShared();
-        _ = c.SDL_UpdateTexture(texture, null, @ptrCast(gb.screen), 160 * 3);
-        rwl.unlockShared();
+        screen_rwl.lockShared();
+        _ = c.SDL_UpdateTexture(texture, null, @ptrCast(screen), 160 * 3);
+        screen_rwl.unlockShared();
 
         _ = c.SDL_RenderClear(renderer);
         _ = c.SDL_RenderCopy(renderer, texture, null, null);
@@ -69,7 +76,7 @@ pub fn main() !void {
     }
 }
 
-fn runGameboy(gb: *Gb, rwl: *std.Thread.RwLock) !void {
+fn runGameboy(gb: *Gb, screen_rwl: *std.Thread.RwLock, screen: []Pixel) !void {
     const cycles = stepCpu(gb);
     std.debug.print("cycles = {}\n", .{cycles});
 
@@ -79,13 +86,13 @@ fn runGameboy(gb: *Gb, rwl: *std.Thread.RwLock) !void {
         // stepCpu(...)
         // stepPpu(...)
 
-        rwl.lock();
-        for (gb.screen) |*pixel| {
+        screen_rwl.lock();
+        for (screen) |*pixel| {
             pixel.*.r = i;
             pixel.*.g = i;
             pixel.*.b = i;
         }
-        rwl.unlock();
+        screen_rwl.unlock();
 
         i +%= 1;
 

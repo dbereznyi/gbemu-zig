@@ -43,20 +43,11 @@ pub const Gb = struct {
     rom: []const u8,
     cycles: u64,
 
-    screen: []Pixel,
-
     pub fn init(alloc: std.mem.Allocator, rom: []const u8) !Gb {
         const vram = try alloc.alloc(u8, 8 * 1024);
         const wram = try alloc.alloc(u8, 8 * 1024);
         const ioRegs = try alloc.alloc(u8, 128);
         const hram = try alloc.alloc(u8, 128);
-
-        const screen: []Pixel = try alloc.alloc(Pixel, 160 * 144);
-        for (screen) |*pixel| {
-            pixel.*.r = 0;
-            pixel.*.g = 0;
-            pixel.*.b = 0;
-        }
 
         return Gb{
             .pc = 0x0100,
@@ -82,7 +73,6 @@ pub const Gb = struct {
             .ie = 0,
             .rom = rom,
             .cycles = 0,
-            .screen = screen,
         };
     }
 
