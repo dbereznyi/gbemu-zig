@@ -47,7 +47,6 @@ pub fn runPpu(gb: *Gb, screenRwl: *std.Thread.RwLock, screen: []Pixel, quit: *st
                 const scx = gb.read(IoReg.SCX);
                 const scy = gb.read(IoReg.SCY);
 
-                // std.debug.print("bg enabled: {}\n", .{lcdc & LCDC_BG_DISP > 0});
                 if (lcdc & LCDC_BG_DISP > 0) {
                     const scrolledX = x +% @as(usize, @intCast(scx));
                     const scrolledY = y +% @as(usize, @intCast(scy));

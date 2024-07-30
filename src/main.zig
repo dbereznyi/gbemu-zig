@@ -116,20 +116,20 @@ fn initVramForTesting(gb: *Gb, alloc: std.mem.Allocator) !void {
         bgTileData[i] = 0;
     }
 
-    const myTile = [_]u8{ 0x3c, 0x7e, 0x42, 0x42, 0x42, 0x42, 0x42, 0x42, 0x7e, 0x5e, 0x7e, 0x0a, 0x7c, 0x56, 0x38, 0x7c };
-    for (myTile, 0..) |_, i| {
-        bgTileData[2 + i] = myTile[i];
+    const tileData = [_]u8{ 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x3c, 0x7e, 0x42, 0x42, 0x42, 0x42, 0x42, 0x42, 0x7e, 0x5e, 0x7e, 0x0a, 0x7c, 0x56, 0x38, 0x7c };
+    for (tileData, 0..) |_, i| {
+        bgTileData[i] = tileData[i];
     }
 
     const bgTileMap = try alloc.alloc(u8, 128);
     defer alloc.free(bgTileMap);
     for (bgTileMap, 0..) |_, i| {
-        bgTileMap[i] = 0;
+        bgTileMap[i] = 0x80;
     }
 
-    bgTileMap[1] = 1;
+    bgTileMap[1] = 0x81; // -127
 
-    const bgTileDataStartAddr = 0x8000;
+    const bgTileDataStartAddr = 0x8800;
     for (bgTileData, 0..) |_, i| {
         gb.write(@truncate(bgTileDataStartAddr + i), bgTileData[i]);
     }
@@ -139,7 +139,23 @@ fn initVramForTesting(gb: *Gb, alloc: std.mem.Allocator) !void {
         gb.write(@truncate(bgTileMapStartAddr + i), bgTileMap[i]);
     }
 
+    for (bgTileDataStartAddr..bgTileDataStartAddr + 16 * 128) |i| {
+        const val = gb.read(@truncate(i));
+        std.debug.print("{x} ", .{val});
+        if ((i + 1) % 16 == 0) {
+            std.debug.print("\n", .{});
+        }
+    }
+    std.debug.print("\n", .{});
+
+    for (bgTileMapStartAddr..bgTileMapStartAddr + 128) |i| {
+        const val = gb.read(@truncate(i));
+        std.debug.print("{} ", .{val});
+    }
+    std.debug.print("\n", .{});
+
     const LCD_ENABLE = 0b1000_0000;
     const BG_ENABLE = 0b0000_0001;
     gb.write(0xff40, LCD_ENABLE | BG_ENABLE);
+    gb.write(0xff47, 0b11_10_01_00);
 }
