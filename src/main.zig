@@ -144,7 +144,7 @@ fn initVramForTesting(gb: *Gb, alloc: std.mem.Allocator) !void {
     const winTileMap = try alloc.alloc(u8, 32 * 32);
     defer alloc.free(bgTileMap);
     for (winTileMap, 0..) |_, i| {
-        winTileMap[i] = if (i % 2 == 1 and i % 8 == 1) tileIndexStart else tileIndexStart + 1;
+        winTileMap[i] = tileIndexStart + 1;
     }
 
     const bgTileDataStartAddr = if (lcdc & LcdcFlag.TILE_DATA > 0) 0x8000 else 0x8800;

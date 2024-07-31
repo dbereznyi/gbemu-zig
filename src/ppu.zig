@@ -23,8 +23,6 @@ pub fn runPpu(gb: *Gb, screenRwl: *std.Thread.RwLock, screen: []Pixel, quit: *st
         const wy = gb.read(IoReg.WY); // WY is only checked once per frame
         var windowY: usize = 0;
 
-        screenRwl.lock();
-
         for (0..144) |y| {
             // Mode 2 - OAM scan
 
@@ -37,8 +35,9 @@ pub fn runPpu(gb: *Gb, screenRwl: *std.Thread.RwLock, screen: []Pixel, quit: *st
             gb.vramMutex.lock();
 
             for (0..160) |x| {
+                screenRwl.lock();
+
                 screen[y * 160 + x] = palette[0];
-                // screen[y * 160 + x] = .{ .r = 171, .g = 0, .b = 168 };
 
                 const lcdc = gb.read(IoReg.LCDC);
 
@@ -104,6 +103,8 @@ pub fn runPpu(gb: *Gb, screenRwl: *std.Thread.RwLock, screen: []Pixel, quit: *st
                         }
                     }
                 }
+
+                screenRwl.unlock();
             }
 
             gb.vramMutex.unlock();
@@ -115,8 +116,6 @@ pub fn runPpu(gb: *Gb, screenRwl: *std.Thread.RwLock, screen: []Pixel, quit: *st
 
             std.time.sleep(HBLANK_TIME_NS);
         }
-
-        screenRwl.unlock();
 
         // Mode 1 - Vertical blank
 
