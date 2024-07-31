@@ -80,9 +80,10 @@ pub fn main() !void {
             }
         }
 
-        screenRwl.lockShared();
-        _ = c.SDL_UpdateTexture(texture, null, @ptrCast(screen), 160 * 3);
-        screenRwl.unlockShared();
+        if (screenRwl.tryLockShared()) {
+            _ = c.SDL_UpdateTexture(texture, null, @ptrCast(screen), 160 * 3);
+            screenRwl.unlockShared();
+        }
 
         _ = c.SDL_RenderClear(renderer);
         _ = c.SDL_RenderCopy(renderer, texture, null, null);

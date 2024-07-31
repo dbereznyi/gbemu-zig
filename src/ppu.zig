@@ -23,6 +23,8 @@ pub fn runPpu(gb: *Gb, screenRwl: *std.Thread.RwLock, screen: []Pixel, quit: *st
         const wy = gb.read(IoReg.WY); // WY is only checked once per frame
         var windowY: usize = 0;
 
+        screenRwl.lock();
+
         for (0..144) |y| {
             // Mode 2 - OAM scan
 
@@ -35,9 +37,8 @@ pub fn runPpu(gb: *Gb, screenRwl: *std.Thread.RwLock, screen: []Pixel, quit: *st
             gb.vramMutex.lock();
 
             for (0..160) |x| {
-                screenRwl.lock();
                 screen[y * 160 + x] = palette[0];
-                screenRwl.unlock();
+                // screen[y * 160 + x] = .{ .r = 171, .g = 0, .b = 168 };
 
                 const lcdc = gb.read(IoReg.LCDC);
 
@@ -70,9 +71,7 @@ pub fn runPpu(gb: *Gb, screenRwl: *std.Thread.RwLock, screen: []Pixel, quit: *st
                     const bgpMask = @as(u8, 0b11) << @as(u3, @truncate(paletteIndex * 2));
                     const bgpPaletteIndex = @as(usize, @intCast((bgp & bgpMask) >> @as(u3, @truncate(paletteIndex * 2))));
 
-                    screenRwl.lock();
                     screen[y * 160 + x] = palette[bgpPaletteIndex];
-                    screenRwl.unlock();
                 }
 
                 if (lcdc & LcdcFlag.BG_WIN_ENABLE > 0 and lcdc & LcdcFlag.WIN_ENABLE > 0) {
@@ -96,14 +95,12 @@ pub fn runPpu(gb: *Gb, screenRwl: *std.Thread.RwLock, screen: []Pixel, quit: *st
                         const bgpMask = @as(u8, 0b11) << @as(u3, @truncate(paletteIndex * 2));
                         const bgpPaletteIndex = @as(usize, @intCast((bgp & bgpMask) >> @as(u3, @truncate(paletteIndex * 2))));
 
-                        screenRwl.lock();
                         screen[y * 160 + x] = palette[bgpPaletteIndex];
-                        screenRwl.unlock();
 
                         // If the window gets disabled during HBlank and then re-enabled later on,
                         // we want to continue drawing from where we left off
                         if (x == 159) {
-                            windowY = (windowY + 1) % 144;
+                            windowY += 1;
                         }
                     }
                 }
@@ -118,6 +115,8 @@ pub fn runPpu(gb: *Gb, screenRwl: *std.Thread.RwLock, screen: []Pixel, quit: *st
 
             std.time.sleep(HBLANK_TIME_NS);
         }
+
+        screenRwl.unlock();
 
         // Mode 1 - Vertical blank
 
