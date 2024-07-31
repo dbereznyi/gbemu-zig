@@ -128,22 +128,37 @@ fn initVramForTesting(gb: *Gb, alloc: std.mem.Allocator) !void {
         bgTileData[i] = tileData[i];
     }
 
-    const bgTileMap = try alloc.alloc(u8, 128);
+    const lcdc = LcdcFlag.ON | LcdcFlag.WIN_TILE_MAP | LcdcFlag.WIN_ENABLE | LcdcFlag.BG_WIN_ENABLE;
+
+    const tileIndexStart = if (lcdc & LcdcFlag.TILE_DATA > 0) 0 else 128;
+
+    const bgTileMap = try alloc.alloc(u8, 32 * 32);
     defer alloc.free(bgTileMap);
     for (bgTileMap, 0..) |_, i| {
-        bgTileMap[i] = 0x80;
+        bgTileMap[i] = tileIndexStart;
     }
 
-    bgTileMap[1] = 0x81; // -127
+    bgTileMap[1] = tileIndexStart + 1;
 
-    const bgTileDataStartAddr = 0x8800;
+    const winTileMap = try alloc.alloc(u8, 32 * 32);
+    defer alloc.free(bgTileMap);
+    for (winTileMap, 0..) |_, i| {
+        winTileMap[i] = if (i % 2 == 1 and i % 8 == 1) tileIndexStart else tileIndexStart + 1;
+    }
+
+    const bgTileDataStartAddr = if (lcdc & LcdcFlag.TILE_DATA > 0) 0x8000 else 0x8800;
     for (bgTileData, 0..) |_, i| {
         gb.write(@truncate(bgTileDataStartAddr + i), bgTileData[i]);
     }
 
-    const bgTileMapStartAddr = 0x9800;
+    const bgTileMapStartAddr = if (lcdc & LcdcFlag.BG_TILE_MAP > 0) 0x9c00 else 0x9800;
     for (bgTileMap, 0..) |_, i| {
         gb.write(@truncate(bgTileMapStartAddr + i), bgTileMap[i]);
+    }
+
+    const winTileMapStartAddr = if (lcdc & LcdcFlag.WIN_TILE_MAP > 0) 0x9c00 else 0x9800;
+    for (winTileMap, 0..) |_, i| {
+        gb.write(@truncate(winTileMapStartAddr + i), winTileMap[i]);
     }
 
     for (bgTileDataStartAddr..bgTileDataStartAddr + 16 * 128) |i| {
@@ -153,13 +168,22 @@ fn initVramForTesting(gb: *Gb, alloc: std.mem.Allocator) !void {
             std.debug.print("\n", .{});
         }
     }
-    std.debug.print("\n", .{});
+    std.debug.print("\nbgTileMap:\n", .{});
 
     for (bgTileMapStartAddr..bgTileMapStartAddr + 128) |i| {
         const val = gb.read(@truncate(i));
         std.debug.print("{} ", .{val});
     }
+    std.debug.print("\n\nwinTileMap:\n", .{});
+
+    for (winTileMapStartAddr..winTileMapStartAddr + 128) |i| {
+        const val = gb.read(@truncate(i));
+        std.debug.print("{} ", .{val});
+    }
     std.debug.print("\n", .{});
-    gb.write(IoReg.LCDC, LcdcFlag.ON | LcdcFlag.BG_ENABLE);
+
+    gb.write(IoReg.LCDC, lcdc);
     gb.write(IoReg.BGP, 0b11_10_01_00);
+    gb.write(IoReg.WX, 7);
+    gb.write(IoReg.WY, 8);
 }
