@@ -17,8 +17,14 @@ const DRAW_TIME_NS: u64 = 41_000;
 const HBLANK_TIME_NS: u64 = 48_600;
 const LINE_TIME_NS: u64 = 108_718;
 
+const TileDataAddressingMode = enum {
+    unsigned, // "$8000 method"
+    signed, // "$8800 method"
+};
+
 pub fn runPpu(gb: *Gb, screenRwl: *std.Thread.RwLock, screen: []Pixel, quit: *std.atomic.Value(bool)) !void {
     const palette = PALETTE_GREY;
+
     while (true) {
         const wy = gb.read(IoReg.WY); // WY is only checked once per frame
         var windowY: usize = 0;
@@ -57,20 +63,10 @@ pub fn runPpu(gb: *Gb, screenRwl: *std.Thread.RwLock, screen: []Pixel, quit: *st
                 if (lcdc & LcdcFlag.BG_WIN_ENABLE > 0) {
                     const scrolledX = x +% @as(usize, @intCast(scx));
                     const scrolledY = y +% @as(usize, @intCast(scy));
-                    const currentTileIndex: usize = (@divTrunc(scrolledY, 8)) * 32 + (@divTrunc(scrolledX, 8));
-                    const tileDataIndex: usize = if (lcdc & LcdcFlag.TILE_DATA > 0) @as(usize, @intCast(bgTileMap[currentTileIndex])) else @as(usize, @intCast(bgTileMap[currentTileIndex] +% 128));
-                    const rowIndex = scrolledY % 8;
-                    const colIndex = scrolledX % 8;
-                    const rowStart = (tileDataIndex * 16) + (rowIndex * 2);
-                    const row = bgTileData[rowStart .. rowStart + 2];
-                    const colMask = @as(u8, 1) << @as(u3, @truncate(7 - colIndex));
-                    const highBit = (row[1] & colMask) >> @as(u3, @truncate(7 - colIndex));
-                    const lowBit = (row[0] & colMask) >> @as(u3, @truncate(7 - colIndex));
-                    const paletteIndex = 2 * highBit + lowBit;
-                    const bgpMask = @as(u8, 0b11) << @as(u3, @truncate(paletteIndex * 2));
-                    const bgpPaletteIndex = @as(usize, @intCast((bgp & bgpMask) >> @as(u3, @truncate(paletteIndex * 2))));
+                    const addrMode: TileDataAddressingMode = if (lcdc & LcdcFlag.TILE_DATA > 0) .unsigned else .signed;
+                    const colorId = calcColorIdForPixelAt(scrolledX, scrolledY, bgp, addrMode, bgTileData, bgTileMap);
 
-                    screen[y * 160 + x] = palette[bgpPaletteIndex];
+                    screen[y * 160 + x] = palette[colorId];
                 }
 
                 if (lcdc & LcdcFlag.BG_WIN_ENABLE > 0 and lcdc & LcdcFlag.WIN_ENABLE > 0) {
@@ -81,20 +77,10 @@ pub fn runPpu(gb: *Gb, screenRwl: *std.Thread.RwLock, screen: []Pixel, quit: *st
 
                     if (wxInRange and wyInRange and xInRange and yInRange) {
                         const windowX = x + 7 - @as(usize, @intCast(wx));
-                        const currentTileIndex = @divTrunc(windowY, 8) * 32 + @divTrunc(windowX, 8);
-                        const tileDataIndex = if (lcdc & LcdcFlag.TILE_DATA > 0) @as(usize, @intCast(winTileMap[currentTileIndex])) else @as(usize, @intCast(winTileMap[currentTileIndex] +% 128));
-                        const rowIndex = windowY % 8;
-                        const colIndex = windowX % 8;
-                        const rowStart = (tileDataIndex * 16) + (rowIndex * 2);
-                        const row = bgTileData[rowStart .. rowStart + 2];
-                        const colMask = @as(u8, 1) << @as(u3, @truncate(7 - colIndex));
-                        const highBit = (row[1] & colMask) >> @as(u3, @truncate(7 - colIndex));
-                        const lowBit = (row[0] & colMask) >> @as(u3, @truncate(7 - colIndex));
-                        const paletteIndex = 2 * highBit + lowBit;
-                        const bgpMask = @as(u8, 0b11) << @as(u3, @truncate(paletteIndex * 2));
-                        const bgpPaletteIndex = @as(usize, @intCast((bgp & bgpMask) >> @as(u3, @truncate(paletteIndex * 2))));
+                        const addrMode: TileDataAddressingMode = if (lcdc & LcdcFlag.TILE_DATA > 0) .unsigned else .signed;
+                        const colorId = calcColorIdForPixelAt(windowX, windowY, bgp, addrMode, bgTileData, winTileMap);
 
-                        screen[y * 160 + x] = palette[bgpPaletteIndex];
+                        screen[y * 160 + x] = palette[colorId];
 
                         // If the window gets disabled during HBlank and then re-enabled later on,
                         // we want to continue drawing from where we left off
@@ -127,4 +113,21 @@ pub fn runPpu(gb: *Gb, screenRwl: *std.Thread.RwLock, screen: []Pixel, quit: *st
             return;
         }
     }
+}
+
+fn calcColorIdForPixelAt(x: usize, y: usize, palette: u8, addrMode: TileDataAddressingMode, tileData: []u8, tileMap: []u8) usize {
+    const currentTile = @divTrunc(y, 8) * 32 + @divTrunc(x, 8);
+    const tileNumber = if (addrMode == .unsigned) @as(usize, @intCast(tileMap[currentTile])) else @as(usize, @intCast(tileMap[currentTile] +% 128));
+    const rowIndex = y % 8;
+    const colIndex = x % 8;
+    const rowStart = (tileNumber * 16) + (rowIndex * 2);
+    const row = tileData[rowStart .. rowStart + 2];
+    const colMask = @as(u8, 1) << @as(u3, @truncate(7 - colIndex));
+    const highBit = (row[1] & colMask) >> @as(u3, @truncate(7 - colIndex));
+    const lowBit = (row[0] & colMask) >> @as(u3, @truncate(7 - colIndex));
+    const paletteIndex = 2 * highBit + lowBit;
+    const paletteMask = @as(u8, 0b11) << @as(u3, @truncate(paletteIndex * 2));
+    const colorId = @as(usize, @intCast((palette & paletteMask) >> @as(u3, @truncate(paletteIndex * 2))));
+
+    return colorId;
 }

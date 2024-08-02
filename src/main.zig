@@ -142,7 +142,7 @@ fn initVramForTesting(gb: *Gb, alloc: std.mem.Allocator) !void {
     bgTileMap[1] = tileIndexStart + 1;
 
     const winTileMap = try alloc.alloc(u8, 32 * 32);
-    defer alloc.free(bgTileMap);
+    defer alloc.free(winTileMap);
     for (winTileMap, 0..) |_, i| {
         winTileMap[i] = tileIndexStart + 1;
     }
