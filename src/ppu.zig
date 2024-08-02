@@ -27,6 +27,10 @@ pub fn runPpu(gb: *Gb, screenRwl: *std.Thread.RwLock, screen: []Pixel, quit: *st
 
     while (true) {
         const wy = gb.read(IoReg.WY); // WY is only checked once per frame
+
+        // If the window gets disabled during HBlank and then re-enabled later on,
+        // we want to continue drawing from where we left off.
+        // To do this, the current Y position of the window is tracked separately.
         var windowY: usize = 0;
 
         for (0..144) |y| {
@@ -82,8 +86,6 @@ pub fn runPpu(gb: *Gb, screenRwl: *std.Thread.RwLock, screen: []Pixel, quit: *st
 
                         screen[y * 160 + x] = palette[colorId];
 
-                        // If the window gets disabled during HBlank and then re-enabled later on,
-                        // we want to continue drawing from where we left off
                         if (x == 159) {
                             windowY += 1;
                         }
@@ -116,15 +118,22 @@ pub fn runPpu(gb: *Gb, screenRwl: *std.Thread.RwLock, screen: []Pixel, quit: *st
 }
 
 fn calcColorIdForPixelAt(x: usize, y: usize, palette: u8, addrMode: TileDataAddressingMode, tileData: []u8, tileMap: []u8) usize {
+    // Figure out which tile is at (x, y).
     const currentTile = @divTrunc(y, 8) * 32 + @divTrunc(x, 8);
     const tileNumber = if (addrMode == .unsigned) @as(usize, @intCast(tileMap[currentTile])) else @as(usize, @intCast(tileMap[currentTile] +% 128));
-    const rowIndex = y % 8;
-    const colIndex = x % 8;
-    const rowStart = (tileNumber * 16) + (rowIndex * 2);
-    const row = tileData[rowStart .. rowStart + 2];
-    const colMask = @as(u8, 1) << @as(u3, @truncate(7 - colIndex));
-    const highBit = (row[1] & colMask) >> @as(u3, @truncate(7 - colIndex));
-    const lowBit = (row[0] & colMask) >> @as(u3, @truncate(7 - colIndex));
+
+    // Figure out which pixel of the tile is at (x, y), and look up the corresponding tile data.
+    const tileX = x % 8;
+    const tileY = y % 8;
+    const tileDataIndex = (tileNumber * 16) + (tileY * 2);
+    const tile = tileData[tileDataIndex .. tileDataIndex + 2];
+
+    // Look up the 2 bits that define the the pixel at (tileX, tileY) of this tile.
+    const pixelMask = @as(u8, 1) << @as(u3, @truncate(7 - tileX));
+    const highBit = (tile[1] & pixelMask) >> @as(u3, @truncate(7 - tileX));
+    const lowBit = (tile[0] & pixelMask) >> @as(u3, @truncate(7 - tileX));
+
+    // Calculate the color ID by indexing into the palette.
     const paletteIndex = 2 * highBit + lowBit;
     const paletteMask = @as(u8, 0b11) << @as(u3, @truncate(paletteIndex * 2));
     const colorId = @as(usize, @intCast((palette & paletteMask) >> @as(u3, @truncate(paletteIndex * 2))));
