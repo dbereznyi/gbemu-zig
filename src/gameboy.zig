@@ -63,6 +63,7 @@ pub const Gb = struct {
     vram: []u8,
     vramMutex: std.Thread.Mutex,
     wram: []u8,
+    oam: []u8,
     ioRegs: []std.atomic.Value(u8),
     hram: []u8,
     ie: u8,
@@ -72,6 +73,7 @@ pub const Gb = struct {
     pub fn init(alloc: std.mem.Allocator, rom: []const u8) !Gb {
         const vram = try alloc.alloc(u8, 8 * 1024);
         const wram = try alloc.alloc(u8, 8 * 1024);
+        const oam = try alloc.alloc(u8, 160);
         var ioRegs = try alloc.alloc(std.atomic.Value(u8), 128);
         for (ioRegs, 0..) |_, i| {
             ioRegs[i] = std.atomic.Value(u8).init(0);
@@ -98,6 +100,7 @@ pub const Gb = struct {
             .vram = vram,
             .vramMutex = std.Thread.Mutex{},
             .wram = wram,
+            .oam = oam,
             .ioRegs = ioRegs,
             .hram = hram,
             .ie = 0,
@@ -130,74 +133,85 @@ pub const Gb = struct {
     }
 
     pub fn read(gb: *Gb, addr: u16) u8 {
-        if (addr < 0x8000) {
-            return gb.rom[addr];
-        } else if (addr < 0xa000) {
+        return switch (addr) {
+            // ROM bank 00
+            0x0000...0x3fff => gb.rom[addr],
+            // ROM bank 01-NN
+            0x4000...0x7fff => gb.rom[addr], // TODO handle bank switching
             // VRAM
-            if (gb.vramMutex.tryLock()) {
-                const val = gb.vram[addr - 0x8000];
-                gb.vramMutex.unlock();
-                return val;
-            } else {
-                // garbage data is returned when VRAM is in use by the PPU
-                return 0xff;
-            }
-        } else if (addr < 0xc000) {
-            // external RAM
-        } else if (addr < 0xe000) {
+            0x8000...0x9fff => blk: {
+                if (gb.vramMutex.tryLock()) {
+                    const val = gb.vram[addr - 0x8000];
+                    gb.vramMutex.unlock();
+                    break :blk val;
+                } else {
+                    // garbage data is returned when VRAM is in use by the PPU
+                    break :blk 0xff;
+                }
+            },
+            // External RAM
+            0xa000...0xbfff => 0xff, // TODO implement
             // WRAM
-            return gb.wram[addr - 0xc000];
-        } else if (addr < 0xfe00) {
-            // echo RAM
-        } else if (addr < 0xfea0) {
+            0xc000...0xdfff => gb.wram[addr - 0xc000],
+            // Echo RAM
+            0xe000...0xfdff => gb.wram[addr - 0xc000],
             // OAM
-        } else if (addr < 0xff00) {
-            // not useable
-        } else if (addr < 0xff80) {
-            // I/O registers
-            return gb.ioRegs[addr - 0xff00].load(AtomicOrder.monotonic);
-        } else if (addr < 0xffff) {
+            0xfe00...0xfe9f => gb.oam[addr - 0xfe00],
+            // Not useable
+            0xfea0...0xfeff => std.debug.panic("Attempted to read from prohibited memory at ${x}\n", .{addr}),
+            // I/O Registers
+            0xff00...0xff7f => gb.ioRegs[addr - 0xff00].load(AtomicOrder.monotonic),
             // HRAM
-            return gb.hram[addr - 0xff80];
-        } else {
+            0xff80...0xfffe => gb.hram[addr - 0xff80],
             // IE
-            return gb.ie;
-        }
-
-        return 0; // TODO implement rest of branches above
+            0xffff => gb.ie,
+        };
     }
 
     pub fn write(gb: *Gb, addr: u16, val: u8) void {
-        if (addr < 0x4000) {
+        switch (addr) {
             // ROM bank 00
-        } else if (addr < 0x8000) {
-            // ROM bank 01~NN
-        } else if (addr < 0xa000) {
+            0x0000...0x3fff => std.debug.panic("Attempted to write to ROM bank 0 (${x} -> ${x})\n", .{ val, addr }),
+            // ROM bank 01-NN
+            0x4000...0x7fff => std.debug.panic("Cartridge operation are not yet implemented (${x} -> ${x})\n", .{ val, addr }), // TODO handle bank switching
             // VRAM
-            if (gb.vramMutex.tryLock()) {
-                gb.vram[addr - 0x8000] = val;
-                gb.vramMutex.unlock();
-            }
-        } else if (addr < 0xc000) {
-            // external RAM
-        } else if (addr < 0xe000) {
+            0x8000...0x9fff => {
+                if (gb.vramMutex.tryLock()) {
+                    gb.vram[addr - 0x8000] = val;
+                    gb.vramMutex.unlock();
+                } else {
+                    std.debug.print("Warning: attempted to write to VRAM outside of HBLANK/VBLANK (${x} -> {x})\n", .{ val, addr });
+                }
+            },
+            // External RAM
+            0xa000...0xbfff => std.debug.panic("Writing to external RAM is not implemented (${x} -> {x})\n", .{ val, addr }), // TODO implement
             // WRAM
-            gb.wram[addr - 0xc000] = val;
-        } else if (addr < 0xfe00) {
-            // echo RAM
-        } else if (addr < 0xfea0) {
+            0xc000...0xdfff => {
+                gb.wram[addr - 0xc000] = val;
+            },
+            // Echo RAM
+            0xe000...0xfdff => {
+                std.debug.print("Warning: writing to Echo RAM (${x} -> {x})\n", .{ val, addr });
+                gb.wram[addr - 0xc000] = val;
+            },
             // OAM
-        } else if (addr < 0xff00) {
-            // not useable
-        } else if (addr < 0xff80) {
-            // I/O registers
-            gb.ioRegs[addr - 0xff00].store(val, AtomicOrder.monotonic);
-        } else if (addr < 0xffff) {
+            0xfe00...0xfe9f => {
+                gb.oam[addr - 0xfe00] = val;
+            },
+            // Not useable
+            0xfea0...0xfeff => std.debug.panic("Attempted to write to prohibited memory (${x} -> ${x})\n", .{ val, addr }),
+            // I/O Registers
+            0xff00...0xff7f => {
+                gb.ioRegs[addr - 0xff00].store(val, AtomicOrder.monotonic);
+            },
             // HRAM
-            gb.hram[addr - 0xff80] = val;
-        } else {
+            0xff80...0xfffe => {
+                gb.hram[addr - 0xff80] = val;
+            },
             // IE
-            gb.ie = val;
+            0xffff => {
+                gb.ie = val;
+            },
         }
     }
 };

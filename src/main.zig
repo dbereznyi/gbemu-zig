@@ -164,22 +164,28 @@ fn initVramForTesting(gb: *Gb, alloc: std.mem.Allocator) !void {
 
     for (bgTileDataStartAddr..bgTileDataStartAddr + 16 * 128) |i| {
         const val = gb.read(@truncate(i));
-        std.debug.print("{x} ", .{val});
+        std.debug.print("{x:0>2} ", .{val});
         if ((i + 1) % 16 == 0) {
             std.debug.print("\n", .{});
         }
     }
     std.debug.print("\nbgTileMap:\n", .{});
 
-    for (bgTileMapStartAddr..bgTileMapStartAddr + 128) |i| {
+    for (bgTileMapStartAddr..bgTileMapStartAddr + 32 * 32) |i| {
         const val = gb.read(@truncate(i));
-        std.debug.print("{} ", .{val});
+        std.debug.print("{d:1} ", .{val - tileIndexStart});
+        if ((i + 1) % 32 == 0) {
+            std.debug.print("\n", .{});
+        }
     }
     std.debug.print("\n\nwinTileMap:\n", .{});
 
-    for (winTileMapStartAddr..winTileMapStartAddr + 128) |i| {
+    for (winTileMapStartAddr..winTileMapStartAddr + 32 * 32) |i| {
         const val = gb.read(@truncate(i));
-        std.debug.print("{} ", .{val});
+        std.debug.print("{d:1} ", .{val - tileIndexStart});
+        if ((i + 1) % 32 == 0) {
+            std.debug.print("\n", .{});
+        }
     }
     std.debug.print("\n", .{});
 
