@@ -4,6 +4,7 @@ const Gb = @import("gameboy.zig").Gb;
 const IoReg = @import("gameboy.zig").IoReg;
 const LcdcFlag = @import("gameboy.zig").LcdcFlag;
 const ObjFlag = @import("gameboy.zig").ObjFlag;
+const StatMode = @import("gameboy.zig").StatMode;
 const AtomicOrder = std.builtin.AtomicOrder;
 
 const PALETTE_GREY = [_]Pixel{
@@ -55,6 +56,7 @@ pub fn runPpu(gb: *Gb, screenRwl: *std.Thread.RwLock, screen: []Pixel, quit: *st
             gb.oamMutex.lock();
 
             const oamStart = try std.time.Instant.now();
+            gb.setStatMode(StatMode.MODE_2);
 
             var objAttrsLineArr: [10]ObjectAttribute = undefined;
             var objAttrsLineLen: usize = 0;
@@ -69,8 +71,12 @@ pub fn runPpu(gb: *Gb, screenRwl: *std.Thread.RwLock, screen: []Pixel, quit: *st
             // Mode 3 - Drawing pixels
 
             const drawStart = try std.time.Instant.now();
-
             gb.vramMutex.lock();
+
+            gb.write(IoReg.LY, @truncate(y));
+            const lycIncident = y == gb.read(IoReg.LYC);
+            gb.setStatLYCIncident(lycIncident);
+            if (lycIncident) {}
 
             for (0..160) |x| {
                 screenRwl.lock();
@@ -80,16 +86,18 @@ pub fn runPpu(gb: *Gb, screenRwl: *std.Thread.RwLock, screen: []Pixel, quit: *st
             }
 
             gb.vramMutex.unlock();
-
             const actualDrawTime = (try std.time.Instant.now()).since(drawStart);
             std.time.sleep(DRAW_TIME_NS -| actualDrawTime);
 
             // Mode 0 - Horizontal blank
 
+            gb.setStatMode(StatMode.MODE_0);
             std.time.sleep(HBLANK_TIME_NS);
         }
 
         // Mode 1 - Vertical blank
+
+        gb.setStatMode(StatMode.MODE_1);
 
         for (0..10) |_| {
             std.time.sleep(LINE_TIME_NS);

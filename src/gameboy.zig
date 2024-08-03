@@ -63,6 +63,21 @@ pub const ExecState = enum {
     stopped,
 };
 
+pub const Interrupt = .{
+    .VBLANK = 0b0000_0001,
+    .STAT = 0b0000_0010,
+    .TIMER = 0b0000_0100,
+    .SERIAL = 0b0000_1000,
+    .JOYPAD = 0b0001_0000,
+};
+
+pub const StatMode = .{
+    .NONE = 0b00_000_000,
+    .MODE_0 = 0b00_001_000,
+    .MODE_1 = 0b00_010_000,
+    .MODE_2 = 0b00_100_000,
+};
+
 pub const Gb = struct {
     pc: u16,
     sp: u16,
@@ -210,7 +225,7 @@ pub const Gb = struct {
             // Not useable
             0xfea0...0xfeff => std.debug.panic("Attempted to read from prohibited memory at ${x}\n", .{addr}),
             // I/O Registers
-            0xff00...0xff7f => gb.ioRegs[addr - 0xff00].load(AtomicOrder.monotonic),
+            0xff00...0xff7f => gb.ioRegs[addr - 0xff00].load(.monotonic),
             // HRAM
             0xff80...0xfffe => gb.hram[addr - 0xff80],
             // IE
@@ -252,7 +267,7 @@ pub const Gb = struct {
             0xfea0...0xfeff => std.debug.panic("Attempted to write to prohibited memory (${x} -> ${x})\n", .{ val, addr }),
             // I/O Registers
             0xff00...0xff7f => {
-                gb.ioRegs[addr - 0xff00].store(val, AtomicOrder.monotonic);
+                gb.ioRegs[addr - 0xff00].store(val, .monotonic);
             },
             // HRAM
             0xff80...0xfffe => {
@@ -263,5 +278,22 @@ pub const Gb = struct {
                 gb.ie = val;
             },
         }
+    }
+
+    pub fn setStatMode(gb: *Gb, mode: u8) void {
+        _ = gb.ioRegs[IoReg.STAT - 0xff00].fetchAnd(0b11_000_111, .monotonic);
+        _ = gb.ioRegs[IoReg.STAT - 0xff00].fetchOr(mode, .monotonic);
+    }
+
+    pub fn setStatLYCIncident(gb: *Gb, isIncident: bool) void {
+        if (isIncident) {
+            _ = gb.ioRegs[IoReg.STAT - 0xff00].fetchOr(0b0000_0100, .monotonic);
+        } else {
+            _ = gb.ioRegs[IoReg.STAT - 0xff00].fetchOr(0b1111_1011, .monotonic);
+        }
+    }
+
+    pub fn requestInterrupt(gb: *Gb, interrupt: u8) void {
+        _ = gb.ioRegs[IoReg.IF - 0xff00].fetchOr(interrupt, .monotonic);
     }
 };

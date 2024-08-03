@@ -1093,14 +1093,14 @@ fn readSrc8(gb: *Gb, src: Src8) u8 {
 
 fn incHL(gb: *Gb) void {
     const hl = util.as16(gb.h, gb.l);
-    const hlInc = hl + 1;
+    const hlInc = hl +% 1;
     gb.h = @truncate(hlInc >> 8);
     gb.l = @truncate(hlInc);
 }
 
 fn decHL(gb: *Gb) void {
     const hl = util.as16(gb.h, gb.l);
-    const hlDec = hl - 1;
+    const hlDec = hl -% 1;
     gb.h = @truncate(hlDec >> 8);
     gb.l = @truncate(hlDec);
 }
@@ -1123,7 +1123,7 @@ fn checkCarry(x: u8, y: u8) bool {
 fn add(gb: *Gb, src: Src8) void {
     const x = readSrc8(gb, src);
     const y = gb.a;
-    const sum = x + y;
+    const sum = x +% y;
     gb.a = sum;
 
     gb.zero = sum == 0;
@@ -1145,7 +1145,7 @@ fn checkCarry16(x: u16, y: u16) bool {
 fn add16(gb: *Gb, dst: Dst16, src: Src16) void {
     const x = readSrc16(gb, src);
     const y = readDst16(gb, dst);
-    const sum = x + y;
+    const sum = x +% y;
     writeDst16(gb, dst, sum);
 
     gb.negative = false;
@@ -1157,7 +1157,7 @@ fn adc(gb: *Gb, src: Src8) void {
     const x = readSrc8(gb, src);
     const y = gb.a;
     const carry: u8 = if (gb.carry) 1 else 0;
-    const sum = x + y + carry;
+    const sum = x +% y +% carry;
     gb.a = sum;
 
     gb.zero = sum == 0;
@@ -1168,7 +1168,7 @@ fn adc(gb: *Gb, src: Src8) void {
 
 fn sub(gb: *Gb, src: Src8) void {
     const x = readSrc8(gb, src);
-    const diff = gb.a - x;
+    const diff = gb.a -% x;
     gb.a = diff;
 
     gb.zero = diff == 0;
@@ -1180,7 +1180,7 @@ fn sub(gb: *Gb, src: Src8) void {
 fn sbc(gb: *Gb, src: Src8) void {
     const x = readSrc8(gb, src);
     const carry: u8 = if (gb.carry) 1 else 0;
-    const diff = gb.a - x - carry;
+    const diff = gb.a -% x -% carry;
     gb.a = diff;
 
     gb.zero = diff == 0;
@@ -1224,7 +1224,7 @@ fn or_(gb: *Gb, src: Src8) void {
 
 fn cp(gb: *Gb, src: Src8) void {
     const x = readSrc8(gb, src);
-    const result = gb.a - x;
+    const result = gb.a -% x;
 
     gb.zero = result == 0;
     gb.negative = true;
@@ -1234,7 +1234,7 @@ fn cp(gb: *Gb, src: Src8) void {
 
 fn inc8(gb: *Gb, dst: Dst8) void {
     const initialValue = readDst8(gb, dst);
-    const result = initialValue + 1;
+    const result = initialValue +% 1;
     writeDst8(gb, dst, result);
 
     gb.zero = result == 0;
@@ -1244,7 +1244,7 @@ fn inc8(gb: *Gb, dst: Dst8) void {
 
 fn dec8(gb: *Gb, dst: Dst8) void {
     const initialValue = readDst8(gb, dst);
-    const result = initialValue - 1;
+    const result = initialValue -% 1;
     writeDst8(gb, dst, result);
 
     gb.zero = result == 0;
@@ -1254,13 +1254,13 @@ fn dec8(gb: *Gb, dst: Dst8) void {
 
 fn inc16(gb: *Gb, dst: Dst16) void {
     const initialValue = readDst16(gb, dst);
-    const result = initialValue + 1;
+    const result = initialValue +% 1;
     writeDst16(gb, dst, result);
 }
 
 fn dec16(gb: *Gb, dst: Dst16) void {
     const initialValue = readDst16(gb, dst);
-    const result = initialValue - 1;
+    const result = initialValue -% 1;
     writeDst16(gb, dst, result);
 }
 
@@ -1268,7 +1268,7 @@ fn calcJrDestAddr(pc: u16, offset: u8) u16 {
     const offsetI8: i8 = @bitCast(offset);
     const pcI16: i16 = @intCast(pc);
     // subtract 2 bytes to account for PC getting incremented by the size of JR (2 bytes)
-    return @intCast(pcI16 + offsetI8 - 2);
+    return @intCast(pcI16 +% offsetI8 -% 2);
 }
 
 test "calcJrDestAddr" {
@@ -1293,7 +1293,7 @@ fn jrCond(gb: *Gb, offset: u8, cond: bool) void {
 
 fn calcJpDestAddr(address: u16) u16 {
     // subtract 3 bytes to account for PC getting incremented by the size of JP (3 bytes)
-    return address - 3;
+    return address -% 3;
 }
 
 fn jp(gb: *Gb, address: u16) void {
@@ -1314,15 +1314,15 @@ fn jpHl(gb: *Gb) void {
 
 fn pop16(gb: *Gb) u16 {
     const low = Gb.read(gb, gb.sp);
-    gb.sp += 1;
+    gb.sp +%= 1;
     const high = Gb.read(gb, gb.sp);
-    gb.sp += 1;
+    gb.sp +%= 1;
     return util.as16(low, high);
 }
 
 fn calcRetDestAddr(address: u16) u16 {
     // subtract 1 byte to account for PC getting incremented by the size of RET (1 byte)
-    return address - 1;
+    return address -% 1;
 }
 
 fn ret(gb: *Gb) void {
@@ -1349,22 +1349,22 @@ fn push16(gb: *Gb, value: u16) void {
 }
 
 fn call(gb: *Gb, address: u16) void {
-    push16(gb, gb.pc + 3);
+    push16(gb, gb.pc +% 3);
     gb.pc = address;
 }
 
 fn callCond(gb: *Gb, address: u16, cond: bool) void {
     if (cond) {
-        push16(gb, gb.pc + 3);
+        push16(gb, gb.pc +% 3);
         gb.pc = address;
         gb.branchCond = true;
     }
 }
 
 fn rst(gb: *Gb, address: u8) void {
-    push16(gb, gb.pc + 1);
+    push16(gb, gb.pc +% 1);
     // subtract 1 byte to account for PC getting incremented by the size of RST (1 byte)
-    gb.pc = address - 1;
+    gb.pc = address -% 1;
 }
 
 fn pop(gb: *Gb, dst: Dst16) void {
@@ -1407,7 +1407,7 @@ fn addSp(gb: *Gb, value: u8) void {
     const spI16: i16 = @intCast(gb.sp);
 
     const initialSp = gb.sp;
-    gb.sp = @intCast(spI16 + valueI8);
+    gb.sp = @intCast(spI16 +% valueI8);
 
     gb.zero = false;
     gb.negative = false;
