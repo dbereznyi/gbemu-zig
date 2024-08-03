@@ -22,13 +22,38 @@ pub const IoReg = .{
 
 pub const LcdcFlag = .{
     .ON = 0b1000_0000,
+    .OFF = 0b0000_0000,
+
     .WIN_TILE_MAP = 0b0100_0000,
+
     .WIN_ENABLE = 0b0010_0000,
+    .WIN_DISABLE = 0b0000_0000,
+
     .TILE_DATA = 0b0001_0000,
     .BG_TILE_MAP = 0b0000_1000,
-    .OBJ_SIZE = 0b0000_0100,
+
+    .OBJ_SIZE_LARGE = 0b0000_0100,
+    .OBJ_SIZE_NORMAL = 0b0000_0000,
+
     .OBJ_ENABLE = 0b0000_0010,
+    .OBJ_DISABLE = 0b0000_0000,
+
     .BG_WIN_ENABLE = 0b0000_0001,
+    .BG_WIN_DISABLE = 0b0000_0000,
+};
+
+pub const ObjFlag = .{
+    .PRIORITY_LOW = 0b1000_0000,
+    .PRIORITY_NORMAL = 0b0000_0000,
+
+    .Y_FLIP_ON = 0b0100_0000,
+    .Y_FLIP_OFF = 0b0000_0000,
+
+    .X_FLIP_ON = 0b0010_0000,
+    .X_FLIP_OFF = 0b0000_0000,
+
+    .PALETTE_1 = 0b0001_0000,
+    .PALETTE_0 = 0b0000_0000,
 };
 
 pub const ExecState = enum {
@@ -64,6 +89,7 @@ pub const Gb = struct {
     vramMutex: std.Thread.Mutex,
     wram: []u8,
     oam: []u8,
+    oamMutex: std.Thread.Mutex,
     ioRegs: []std.atomic.Value(u8),
     hram: []u8,
     ie: u8,
@@ -72,13 +98,25 @@ pub const Gb = struct {
 
     pub fn init(alloc: std.mem.Allocator, rom: []const u8) !Gb {
         const vram = try alloc.alloc(u8, 8 * 1024);
+        for (vram, 0..) |_, i| {
+            vram[i] = 0;
+        }
         const wram = try alloc.alloc(u8, 8 * 1024);
+        for (wram, 0..) |_, i| {
+            wram[i] = 0;
+        }
         const oam = try alloc.alloc(u8, 160);
+        for (oam, 0..) |_, i| {
+            oam[i] = 0;
+        }
         var ioRegs = try alloc.alloc(std.atomic.Value(u8), 128);
         for (ioRegs, 0..) |_, i| {
             ioRegs[i] = std.atomic.Value(u8).init(0);
         }
         const hram = try alloc.alloc(u8, 128);
+        for (hram, 0..) |_, i| {
+            hram[i] = 0;
+        }
 
         return Gb{
             .pc = 0x0100,
@@ -101,6 +139,7 @@ pub const Gb = struct {
             .vramMutex = std.Thread.Mutex{},
             .wram = wram,
             .oam = oam,
+            .oamMutex = std.Thread.Mutex{},
             .ioRegs = ioRegs,
             .hram = hram,
             .ie = 0,
@@ -146,6 +185,7 @@ pub const Gb = struct {
                     break :blk val;
                 } else {
                     // garbage data is returned when VRAM is in use by the PPU
+                    std.log.warn("Attempted to read from VRAM outside of HBLANK/VBLANK (${x})\n", .{addr});
                     break :blk 0xff;
                 }
             },
@@ -156,7 +196,17 @@ pub const Gb = struct {
             // Echo RAM
             0xe000...0xfdff => gb.wram[addr - 0xc000],
             // OAM
-            0xfe00...0xfe9f => gb.oam[addr - 0xfe00],
+            0xfe00...0xfe9f => blk: {
+                if (gb.oamMutex.tryLock()) {
+                    const val = gb.oam[addr - 0xfe00];
+                    gb.oamMutex.unlock();
+                    break :blk val;
+                } else {
+                    // garbage data is returned when ORAM is in use by the PPU
+                    std.log.warn("Attempted to read from VRAM outside of HBLANK/VBLANK (${x})\n", .{addr});
+                    break :blk 0xff;
+                }
+            },
             // Not useable
             0xfea0...0xfeff => std.debug.panic("Attempted to read from prohibited memory at ${x}\n", .{addr}),
             // I/O Registers
@@ -173,14 +223,14 @@ pub const Gb = struct {
             // ROM bank 00
             0x0000...0x3fff => std.debug.panic("Attempted to write to ROM bank 0 (${x} -> ${x})\n", .{ val, addr }),
             // ROM bank 01-NN
-            0x4000...0x7fff => std.debug.panic("Cartridge operation are not yet implemented (${x} -> ${x})\n", .{ val, addr }), // TODO handle bank switching
+            0x4000...0x7fff => std.debug.panic("Cartridge operations are not yet implemented (${x} -> ${x})\n", .{ val, addr }), // TODO handle bank switching
             // VRAM
             0x8000...0x9fff => {
                 if (gb.vramMutex.tryLock()) {
                     gb.vram[addr - 0x8000] = val;
                     gb.vramMutex.unlock();
                 } else {
-                    std.debug.print("Warning: attempted to write to VRAM outside of HBLANK/VBLANK (${x} -> {x})\n", .{ val, addr });
+                    std.log.warn("Attempted to write to VRAM outside of HBLANK/VBLANK (${x} -> {x})\n", .{ val, addr });
                 }
             },
             // External RAM
@@ -191,7 +241,7 @@ pub const Gb = struct {
             },
             // Echo RAM
             0xe000...0xfdff => {
-                std.debug.print("Warning: writing to Echo RAM (${x} -> {x})\n", .{ val, addr });
+                std.log.warn("Writing to Echo RAM (${x} -> {x})\n", .{ val, addr });
                 gb.wram[addr - 0xc000] = val;
             },
             // OAM

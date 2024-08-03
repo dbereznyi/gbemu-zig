@@ -6,6 +6,7 @@ const Pixel = @import("pixel.zig").Pixel;
 const Gb = @import("gameboy.zig").Gb;
 const IoReg = @import("gameboy.zig").IoReg;
 const LcdcFlag = @import("gameboy.zig").LcdcFlag;
+const ObjFlag = @import("gameboy.zig").ObjFlag;
 const stepCpu = @import("cpu.zig").stepCpu;
 const runPpu = @import("ppu.zig").runPpu;
 const AtomicOrder = std.builtin.AtomicOrder;
@@ -73,6 +74,46 @@ pub fn main() !void {
                         gb.write(IoReg.LCDC, gb.read(IoReg.LCDC) ^ LcdcFlag.ON);
                     }
                 },
+                c.SDL_KEYDOWN => {
+                    gb.oamMutex.lock();
+                    switch (event.key.keysym.sym) {
+                        c.SDLK_RIGHT => {
+                            gb.write(IoReg.SCX, gb.read(IoReg.SCX) +% 1);
+                        },
+                        c.SDLK_LEFT => {
+                            gb.write(IoReg.SCX, gb.read(IoReg.SCX) -% 1);
+                        },
+                        c.SDLK_UP => {
+                            gb.write(IoReg.SCY, gb.read(IoReg.SCY) +% 1);
+                        },
+                        c.SDLK_DOWN => {
+                            gb.write(IoReg.SCY, gb.read(IoReg.SCY) -% 1);
+                        },
+                        c.SDLK_d => {
+                            gb.oam[1] +%= 1;
+                        },
+                        c.SDLK_a => {
+                            gb.oam[1] -%= 1;
+                        },
+                        c.SDLK_w => {
+                            gb.oam[0] -%= 1;
+                        },
+                        c.SDLK_s => {
+                            gb.oam[0] +%= 1;
+                        },
+                        c.SDLK_x => {
+                            gb.oam[3] ^= ObjFlag.X_FLIP_ON;
+                        },
+                        c.SDLK_y => {
+                            gb.oam[3] ^= ObjFlag.Y_FLIP_ON;
+                        },
+                        c.SDLK_p => {
+                            gb.oam[3] ^= ObjFlag.PALETTE_1;
+                        },
+                        else => {},
+                    }
+                    gb.oamMutex.unlock();
+                },
                 c.SDL_QUIT => {
                     quit.store(true, AtomicOrder.monotonic);
                 },
@@ -124,12 +165,12 @@ fn initVramForTesting(gb: *Gb, alloc: std.mem.Allocator) !void {
         bgTileData[i] = 0;
     }
 
-    const tileData = [_]u8{ 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x3c, 0x7e, 0x42, 0x42, 0x42, 0x42, 0x42, 0x42, 0x7e, 0x5e, 0x7e, 0x0a, 0x7c, 0x56, 0x38, 0x7c };
+    const tileData = [_]u8{ 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x3c, 0x7e, 0x42, 0x42, 0x42, 0x42, 0x42, 0x42, 0x7e, 0x5e, 0x7e, 0x0a, 0x7c, 0x56, 0x38, 0x7c, 0xff, 0x0, 0x7e, 0xff, 0x85, 0x81, 0x89, 0x83, 0x93, 0x85, 0xa5, 0x8b, 0xc9, 0x97, 0x7e, 0xff, 0x7c, 0x7c, 0x00, 0xc6, 0xc6, 0x00, 0x00, 0xfe, 0xc6, 0xc6, 0x00, 0xc6, 0xc6, 0x00, 0x00, 0x00 };
     for (tileData, 0..) |_, i| {
         bgTileData[i] = tileData[i];
     }
 
-    const lcdc = LcdcFlag.ON | LcdcFlag.WIN_TILE_MAP | LcdcFlag.WIN_ENABLE | LcdcFlag.BG_WIN_ENABLE;
+    const lcdc = LcdcFlag.ON | LcdcFlag.WIN_TILE_MAP | LcdcFlag.WIN_ENABLE | LcdcFlag.OBJ_SIZE_LARGE | LcdcFlag.OBJ_ENABLE | LcdcFlag.BG_WIN_ENABLE;
 
     const tileIndexStart = if (lcdc & LcdcFlag.TILE_DATA > 0) 0 else 128;
 
@@ -145,6 +186,11 @@ fn initVramForTesting(gb: *Gb, alloc: std.mem.Allocator) !void {
     defer alloc.free(winTileMap);
     for (winTileMap, 0..) |_, i| {
         winTileMap[i] = tileIndexStart + 1;
+    }
+
+    const objAttrData = [_]u8{ 16, 37, 2, ObjFlag.PRIORITY_NORMAL | ObjFlag.Y_FLIP_OFF | ObjFlag.X_FLIP_OFF | ObjFlag.PALETTE_0 };
+    for (objAttrData, 0..) |_, i| {
+        gb.write(0xfe00 + @as(u16, @truncate(i)), objAttrData[i]);
     }
 
     const bgTileDataStartAddr = if (lcdc & LcdcFlag.TILE_DATA > 0) 0x8000 else 0x8800;
@@ -191,6 +237,8 @@ fn initVramForTesting(gb: *Gb, alloc: std.mem.Allocator) !void {
 
     gb.write(IoReg.LCDC, lcdc);
     gb.write(IoReg.BGP, 0b11_10_01_00);
+    gb.write(IoReg.OBP0, 0b11_10_01_00);
+    gb.write(IoReg.OBP1, 0b00_01_10_11);
     gb.write(IoReg.WX, 7);
     gb.write(IoReg.WY, 8);
 }
