@@ -259,9 +259,9 @@ pub const Instr = union(InstrTag) {
             .SRA => |dst| try dst.toStr(&dstBuf),
             .SWAP => |dst| try dst.toStr(&dstBuf),
             .SRL => |dst| try dst.toStr(&dstBuf),
-            .BIT => |args| try args.dst.toStr(&dstBuf),
-            .RES => |args| try args.dst.toStr(&dstBuf),
-            .SET => |args| try args.dst.toStr(&dstBuf),
+            .BIT => |args| try std.fmt.bufPrint(&dstBuf, "{d}", .{args.bit}),
+            .RES => |args| try std.fmt.bufPrint(&dstBuf, "{d}", .{args.bit}),
+            .SET => |args| try std.fmt.bufPrint(&dstBuf, "{d}", .{args.bit}),
 
             else => null,
         };
@@ -283,6 +283,10 @@ pub const Instr = union(InstrTag) {
 
             .PUSH => |src| try src.toStr(&srcBuf),
 
+            .BIT => |args| try args.dst.toStr(&srcBuf),
+            .RES => |args| try args.dst.toStr(&srcBuf),
+            .SET => |args| try args.dst.toStr(&srcBuf),
+
             else => null,
         };
 
@@ -295,5 +299,137 @@ pub const Instr = union(InstrTag) {
             if (param1 != null and param2 != null) ", " else "",
             param2 orelse "",
         });
+    }
+
+    pub fn size(instr: Instr) u16 {
+        return switch (instr) {
+            .INVALID => 0,
+
+            .NOP => 1,
+            .HALT => 1,
+            .STOP => 2,
+            .EI => 1,
+            .DI => 1,
+            .DAA => 1,
+            .CPL => 1,
+            .SCF => 1,
+            .CCF => 1,
+
+            .LD_8 => |args| 1 + args.dst.size() + args.src.size(),
+            .LD_16 => |args| 1 + args.dst.size() + args.src.size(),
+
+            .INC_8 => |dst| 1 + dst.size(),
+            .INC_16 => |dst| 1 + dst.size(),
+            .DEC_8 => |dst| 1 + dst.size(),
+            .DEC_16 => |dst| 1 + dst.size(),
+            .ADD => |src| 1 + src.size(),
+            .ADC => |src| 1 + src.size(),
+            .SUB => |src| 1 + src.size(),
+            .SBC => |src| 1 + src.size(),
+            .AND => |src| 1 + src.size(),
+            .XOR => |src| 1 + src.size(),
+            .OR => |src| 1 + src.size(),
+            .CP => |src| 1 + src.size(),
+            .ADD_16 => 1,
+            .ADD_SP => 2,
+
+            .JP => 3,
+            .JP_COND => 3,
+            .JP_HL => 1,
+            .JR => 2,
+            .JR_COND => 2,
+            .CALL => 3,
+            .CALL_COND => 3,
+            .RET => 1,
+            .RET_COND => 1,
+            .RETI => 1,
+            .RST => 1,
+
+            .POP => 1,
+            .PUSH => 1,
+
+            .RLCA => 1,
+            .RRCA => 1,
+            .RLA => 1,
+            .RRA => 1,
+
+            .RLC => 2,
+            .RRC => 2,
+            .RL => 2,
+            .RR => 2,
+            .SLA => 2,
+            .SRA => 2,
+            .SWAP => 2,
+            .SRL => 2,
+            .BIT => 2,
+            .RES => 2,
+            .SET => 2,
+        };
+    }
+
+    pub fn cycles(instr: Instr, condEvaluated: bool) usize {
+        return switch (instr) {
+            .INVALID => 0,
+
+            .NOP => 1,
+            .HALT => 1,
+            .STOP => 1,
+            .EI => 1,
+            .DI => 1,
+            .DAA => 1,
+            .CPL => 1,
+            .SCF => 1,
+            .CCF => 1,
+
+            .LD_8 => |args| 1 + args.dst.cycles() + args.src.cycles(),
+            .LD_16 => |args| 1 + args.dst.cycles() + args.src.cycles(),
+
+            .INC_8 => 1,
+            .INC_16 => 2,
+            .DEC_8 => 1,
+            .DEC_16 => 2,
+            .ADD => |src| 1 + src.cycles(),
+            .ADC => |src| 1 + src.cycles(),
+            .SUB => |src| 1 + src.cycles(),
+            .SBC => |src| 1 + src.cycles(),
+            .AND => |src| 1 + src.cycles(),
+            .XOR => |src| 1 + src.cycles(),
+            .OR => |src| 1 + src.cycles(),
+            .CP => |src| 1 + src.cycles(),
+            .ADD_16 => 2,
+            .ADD_SP => 4,
+
+            .JP => 4,
+            .JP_COND => if (condEvaluated) 4 else 3,
+            .JP_HL => 1,
+            .JR => 3,
+            .JR_COND => if (condEvaluated) 3 else 2,
+            .CALL => 6,
+            .CALL_COND => if (condEvaluated) 6 else 3,
+            .RET => 4,
+            .RET_COND => if (condEvaluated) 5 else 2,
+            .RETI => 4,
+            .RST => 4,
+
+            .POP => 3,
+            .PUSH => 3,
+
+            .RLCA => 1,
+            .RRCA => 1,
+            .RLA => 1,
+            .RRA => 1,
+
+            .RLC => 2,
+            .RRC => 2,
+            .RL => 2,
+            .RR => 2,
+            .SLA => 2,
+            .SRA => 2,
+            .SWAP => 2,
+            .SRL => 2,
+            .BIT => 2,
+            .RES => 2,
+            .SET => 2,
+        };
     }
 };

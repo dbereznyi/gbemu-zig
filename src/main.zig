@@ -46,7 +46,9 @@ pub fn main() !void {
     var gb = try Gb.init(alloc, rom);
     defer gb.deinit(alloc);
 
-    try initVramForTesting(&gb, alloc);
+    if (false) {
+        try initVramForTesting(&gb, alloc);
+    }
 
     const screen: []Pixel = try alloc.alloc(Pixel, 160 * 144);
     defer alloc.free(screen);

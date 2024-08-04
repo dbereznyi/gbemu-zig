@@ -72,10 +72,11 @@ pub const Interrupt = .{
 };
 
 pub const StatFlag = .{
-    .MODE_0 = 0b1111_1100,
-    .MODE_1 = 0b1111_1101,
-    .MODE_2 = 0b1111_1110,
-    .MODE_3 = 0b1111_1111,
+    .MODE_CLEAR = 0b1111_1100,
+    .MODE_0 = 0b0000_0000,
+    .MODE_1 = 0b0000_0001,
+    .MODE_2 = 0b0000_0010,
+    .MODE_3 = 0b0000_0011,
 
     .LYC_INCIDENT_TRUE = 0b0000_0100,
     .LYC_INCIDENT_FALSE = 0b1111_1011,
@@ -91,6 +92,12 @@ pub const StatFlag = .{
 
     .INT_LYC_INCIDENT_ENABLE = 0b0100_0000,
     .INT_LYC_INCIDENT_DISABLE = 0b1011_1111,
+};
+
+const Debug = struct {
+    stepModeEnabled: bool,
+    paused: std.atomic.Value(bool),
+    sem: std.Thread.Semaphore,
 };
 
 pub const Gb = struct {
@@ -127,7 +134,8 @@ pub const Gb = struct {
     hram: []u8,
     ie: u8,
     rom: []const u8,
-    cycles: u64,
+
+    debug: Debug,
 
     pub fn init(alloc: std.mem.Allocator, rom: []const u8) !Gb {
         const vram = try alloc.alloc(u8, 8 * 1024);
@@ -178,7 +186,11 @@ pub const Gb = struct {
             .hram = hram,
             .ie = 0,
             .rom = rom,
-            .cycles = 0,
+            .debug = .{
+                .stepModeEnabled = false,
+                .paused = std.atomic.Value(bool).init(false),
+                .sem = std.Thread.Semaphore{},
+            },
         };
     }
 
@@ -310,7 +322,7 @@ pub const Gb = struct {
     }
 
     pub fn setStatMode(gb: *Gb, mode: u8) void {
-        _ = gb.ioRegs[IoReg.STAT - 0xff00].fetchAnd(StatFlag.MODE_0, .monotonic);
+        _ = gb.ioRegs[IoReg.STAT - 0xff00].fetchAnd(StatFlag.MODE_CLEAR, .monotonic);
         _ = gb.ioRegs[IoReg.STAT - 0xff00].fetchOr(mode, .monotonic);
     }
 
@@ -325,5 +337,20 @@ pub const Gb = struct {
     pub fn requestInterrupt(gb: *Gb, interrupt: u8) void {
         // TODO handle "STAT blocking" behavior
         _ = gb.ioRegs[IoReg.IF - 0xff00].fetchOr(interrupt, .monotonic);
+    }
+
+    pub fn debugPause(gb: *Gb) void {
+        gb.debug.paused.store(true, .monotonic);
+    }
+
+    pub fn debugUnpause(gb: *Gb) void {
+        gb.debug.paused.store(false, .monotonic);
+        gb.debug.sem.post();
+    }
+
+    pub fn waitForDebugUnpause(gb: *Gb) void {
+        if (gb.debug.paused.load(.monotonic)) {
+            gb.debug.sem.wait();
+        }
     }
 };

@@ -114,6 +114,8 @@ pub fn runPpu(gb: *Gb, screenRwl: *std.Thread.RwLock, screen: []Pixel, quit: *st
             }
 
             std.time.sleep(HBLANK_TIME_NS);
+
+            gb.waitForDebugUnpause();
         }
 
         // Mode 1 - Vertical blank
@@ -127,6 +129,7 @@ pub fn runPpu(gb: *Gb, screenRwl: *std.Thread.RwLock, screen: []Pixel, quit: *st
         }
 
         for (0..10) |_| {
+            gb.waitForDebugUnpause();
             std.time.sleep(LINE_TIME_NS);
         }
 

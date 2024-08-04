@@ -96,6 +96,28 @@ pub const Dst16 = union(Dst16Tag) {
             Dst16.Ind => |ind| try std.fmt.bufPrint(buf, "${x:0>4}", .{ind}),
         };
     }
+
+    pub fn size(dst: Dst16) u16 {
+        return switch (dst) {
+            Dst16.AF => 0,
+            Dst16.BC => 0,
+            Dst16.DE => 0,
+            Dst16.HL => 0,
+            Dst16.SP => 0,
+            Dst16.Ind => 2,
+        };
+    }
+
+    pub fn cycles(dst: Dst16) usize {
+        return switch (dst) {
+            Dst16.AF => 0,
+            Dst16.BC => 0,
+            Dst16.DE => 0,
+            Dst16.HL => 0,
+            Dst16.SP => 0,
+            Dst16.Ind => 3,
+        };
+    }
 };
 
 const Src16Tag = enum {
@@ -138,6 +160,30 @@ pub const Src16 = union(Src16Tag) {
             Src16.SP => try std.fmt.bufPrint(buf, "sp", .{}),
             Src16.SPOffset => |offset| try std.fmt.bufPrint(buf, "sp + ${x:0>2}", .{offset}),
             Src16.Imm => |imm| try std.fmt.bufPrint(buf, "${x:0>2}", .{imm}),
+        };
+    }
+
+    pub fn size(src: Src16) u16 {
+        return switch (src) {
+            Src16.AF => 0,
+            Src16.BC => 0,
+            Src16.DE => 0,
+            Src16.HL => 0,
+            Src16.SP => 0,
+            Src16.SPOffset => 1,
+            Src16.Imm => 2,
+        };
+    }
+
+    pub fn cycles(src: Src16) usize {
+        return switch (src) {
+            Src16.AF => 0,
+            Src16.BC => 0,
+            Src16.DE => 0,
+            Src16.HL => 0,
+            Src16.SP => 0,
+            Src16.SPOffset => 1,
+            Src16.Imm => 2,
         };
     }
 };
@@ -257,6 +303,46 @@ pub const Dst8 = union(Dst8Tag) {
             Dst8.IndHLDec => try std.fmt.bufPrint(buf, "[hld]", .{}),
         };
     }
+
+    pub fn size(dst: Dst8) u16 {
+        return switch (dst) {
+            Dst8.A => 0,
+            Dst8.B => 0,
+            Dst8.C => 0,
+            Dst8.D => 0,
+            Dst8.E => 0,
+            Dst8.H => 0,
+            Dst8.L => 0,
+            Dst8.Ind => 2,
+            Dst8.IndIoReg => 1,
+            Dst8.IndC => 0,
+            Dst8.IndBC => 0,
+            Dst8.IndDE => 0,
+            Dst8.IndHL => 0,
+            Dst8.IndHLInc => 0,
+            Dst8.IndHLDec => 0,
+        };
+    }
+
+    pub fn cycles(dst: Dst8) usize {
+        return switch (dst) {
+            Dst8.A => 0,
+            Dst8.B => 0,
+            Dst8.C => 0,
+            Dst8.D => 0,
+            Dst8.E => 0,
+            Dst8.H => 0,
+            Dst8.L => 0,
+            Dst8.Ind => 2,
+            Dst8.IndIoReg => 2,
+            Dst8.IndC => 1,
+            Dst8.IndBC => 1,
+            Dst8.IndDE => 1,
+            Dst8.IndHL => 1,
+            Dst8.IndHLInc => 1,
+            Dst8.IndHLDec => 1,
+        };
+    }
 };
 
 const Src8Tag = enum {
@@ -343,6 +429,48 @@ pub const Src8 = union(Src8Tag) {
             Src8.IndHLInc => try std.fmt.bufPrint(buf, "[hli]", .{}),
             Src8.IndHLDec => try std.fmt.bufPrint(buf, "[hld]", .{}),
             Src8.Imm => |imm| try std.fmt.bufPrint(buf, "${x:0>2}", .{imm}),
+        };
+    }
+
+    pub fn size(src: Src8) u16 {
+        return switch (src) {
+            Src8.A => 0,
+            Src8.B => 0,
+            Src8.C => 0,
+            Src8.D => 0,
+            Src8.E => 0,
+            Src8.H => 0,
+            Src8.L => 0,
+            Src8.Ind => 2,
+            Src8.IndIoReg => 1,
+            Src8.IndC => 0,
+            Src8.IndBC => 0,
+            Src8.IndDE => 0,
+            Src8.IndHL => 0,
+            Src8.IndHLInc => 0,
+            Src8.IndHLDec => 0,
+            Src8.Imm => 1,
+        };
+    }
+
+    pub fn cycles(src: Src8) usize {
+        return switch (src) {
+            Src8.A => 0,
+            Src8.B => 0,
+            Src8.C => 0,
+            Src8.D => 0,
+            Src8.E => 0,
+            Src8.H => 0,
+            Src8.L => 0,
+            Src8.Ind => 2,
+            Src8.IndIoReg => 2,
+            Src8.IndC => 1,
+            Src8.IndBC => 1,
+            Src8.IndDE => 1,
+            Src8.IndHL => 1,
+            Src8.IndHLInc => 1,
+            Src8.IndHLDec => 1,
+            Src8.Imm => 1,
         };
     }
 };
