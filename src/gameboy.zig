@@ -71,11 +71,26 @@ pub const Interrupt = .{
     .JOYPAD = 0b0001_0000,
 };
 
-pub const StatMode = .{
-    .NONE = 0b00_000_000,
-    .MODE_0 = 0b00_001_000,
-    .MODE_1 = 0b00_010_000,
-    .MODE_2 = 0b00_100_000,
+pub const StatFlag = .{
+    .MODE_0 = 0b1111_1100,
+    .MODE_1 = 0b1111_1101,
+    .MODE_2 = 0b1111_1110,
+    .MODE_3 = 0b1111_1111,
+
+    .LYC_INCIDENT_TRUE = 0b0000_0100,
+    .LYC_INCIDENT_FALSE = 0b1111_1011,
+
+    .INT_MODE_0_ENABLE = 0b0000_1000,
+    .INT_MODE_0_DISABLE = 0b1111_0111,
+
+    .INT_MODE_1_ENABLE = 0b0001_0000,
+    .INT_MODE_1_DISABLE = 0b1110_1111,
+
+    .INT_MODE_2_ENABLE = 0b0010_0000,
+    .INT_MODE_2_DISABLE = 0b1101_1111,
+
+    .INT_LYC_INCIDENT_ENABLE = 0b0100_0000,
+    .INT_LYC_INCIDENT_DISABLE = 0b1011_1111,
 };
 
 pub const Gb = struct {
@@ -166,6 +181,7 @@ pub const Gb = struct {
     pub fn deinit(gb: *const Gb, alloc: std.mem.Allocator) void {
         alloc.free(gb.vram);
         alloc.free(gb.wram);
+        alloc.free(gb.oam);
         alloc.free(gb.ioRegs);
         alloc.free(gb.hram);
     }
@@ -281,19 +297,20 @@ pub const Gb = struct {
     }
 
     pub fn setStatMode(gb: *Gb, mode: u8) void {
-        _ = gb.ioRegs[IoReg.STAT - 0xff00].fetchAnd(0b11_000_111, .monotonic);
+        _ = gb.ioRegs[IoReg.STAT - 0xff00].fetchAnd(StatFlag.MODE_0, .monotonic);
         _ = gb.ioRegs[IoReg.STAT - 0xff00].fetchOr(mode, .monotonic);
     }
 
-    pub fn setStatLYCIncident(gb: *Gb, isIncident: bool) void {
+    pub fn setStatLycIncident(gb: *Gb, isIncident: bool) void {
         if (isIncident) {
-            _ = gb.ioRegs[IoReg.STAT - 0xff00].fetchOr(0b0000_0100, .monotonic);
+            _ = gb.ioRegs[IoReg.STAT - 0xff00].fetchOr(StatFlag.LYC_INCIDENT_TRUE, .monotonic);
         } else {
-            _ = gb.ioRegs[IoReg.STAT - 0xff00].fetchOr(0b1111_1011, .monotonic);
+            _ = gb.ioRegs[IoReg.STAT - 0xff00].fetchAnd(StatFlag.LYC_INCIDENT_FALSE, .monotonic);
         }
     }
 
     pub fn requestInterrupt(gb: *Gb, interrupt: u8) void {
+        // TODO handle "STAT blocking" behavior
         _ = gb.ioRegs[IoReg.IF - 0xff00].fetchOr(interrupt, .monotonic);
     }
 };

@@ -2,9 +2,10 @@ const std = @import("std");
 const Pixel = @import("pixel.zig").Pixel;
 const Gb = @import("gameboy.zig").Gb;
 const IoReg = @import("gameboy.zig").IoReg;
+const Interrupt = @import("gameboy.zig").Interrupt;
 const LcdcFlag = @import("gameboy.zig").LcdcFlag;
 const ObjFlag = @import("gameboy.zig").ObjFlag;
-const StatMode = @import("gameboy.zig").StatMode;
+const StatFlag = @import("gameboy.zig").StatFlag;
 const AtomicOrder = std.builtin.AtomicOrder;
 
 const PALETTE_GREY = [_]Pixel{
@@ -51,12 +52,25 @@ pub fn runPpu(gb: *Gb, screenRwl: *std.Thread.RwLock, screen: []Pixel, quit: *st
         // To do this, the current Y position of the window is tracked separately.
         var windowY: usize = 0;
 
+        const ie = gb.read(IoReg.IE);
+        const stat = gb.read(IoReg.STAT);
+        const vblankInterruptsEnabled = ie & Interrupt.VBLANK > 0;
+        const statInterruptsEnabled = ie & Interrupt.STAT > 0;
+        const intOnMode0 = stat & StatFlag.INT_MODE_0_ENABLE > 0;
+        const intOnMode1 = stat & StatFlag.INT_MODE_1_ENABLE > 0;
+        const intOnMode2 = stat & StatFlag.INT_MODE_2_ENABLE > 0;
+        const intOnLycIncident = stat & StatFlag.INT_LYC_INCIDENT_ENABLE > 0;
+
         for (0..144) |y| {
             // Mode 2 - OAM scan
             gb.oamMutex.lock();
 
+            if (gb.ime and statInterruptsEnabled and intOnMode2) {
+                gb.requestInterrupt(Interrupt.STAT);
+            }
+
             const oamStart = try std.time.Instant.now();
-            gb.setStatMode(StatMode.MODE_2);
+            gb.setStatMode(StatFlag.MODE_2);
 
             var objAttrsLineArr: [10]ObjectAttribute = undefined;
             var objAttrsLineLen: usize = 0;
@@ -71,12 +85,15 @@ pub fn runPpu(gb: *Gb, screenRwl: *std.Thread.RwLock, screen: []Pixel, quit: *st
             // Mode 3 - Drawing pixels
 
             const drawStart = try std.time.Instant.now();
+            gb.setStatMode(StatFlag.MODE_3);
             gb.vramMutex.lock();
 
             gb.write(IoReg.LY, @truncate(y));
             const lycIncident = y == gb.read(IoReg.LYC);
-            gb.setStatLYCIncident(lycIncident);
-            if (lycIncident) {}
+            gb.setStatLycIncident(lycIncident);
+            if (gb.ime and statInterruptsEnabled and intOnLycIncident and lycIncident) {
+                gb.requestInterrupt(Interrupt.STAT);
+            }
 
             for (0..160) |x| {
                 screenRwl.lock();
@@ -91,13 +108,23 @@ pub fn runPpu(gb: *Gb, screenRwl: *std.Thread.RwLock, screen: []Pixel, quit: *st
 
             // Mode 0 - Horizontal blank
 
-            gb.setStatMode(StatMode.MODE_0);
+            gb.setStatMode(StatFlag.MODE_0);
+            if (gb.ime and statInterruptsEnabled and intOnMode0) {
+                gb.requestInterrupt(Interrupt.STAT);
+            }
+
             std.time.sleep(HBLANK_TIME_NS);
         }
 
         // Mode 1 - Vertical blank
 
-        gb.setStatMode(StatMode.MODE_1);
+        gb.setStatMode(StatFlag.MODE_1);
+        if (gb.ime and statInterruptsEnabled and intOnMode1) {
+            gb.requestInterrupt(Interrupt.STAT);
+        }
+        if (gb.ime and vblankInterruptsEnabled) {
+            gb.requestInterrupt(Interrupt.VBLANK);
+        }
 
         for (0..10) |_| {
             std.time.sleep(LINE_TIME_NS);
