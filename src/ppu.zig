@@ -7,6 +7,7 @@ const LcdcFlag = @import("gameboy.zig").LcdcFlag;
 const ObjFlag = @import("gameboy.zig").ObjFlag;
 const StatFlag = @import("gameboy.zig").StatFlag;
 const AtomicOrder = std.builtin.AtomicOrder;
+const sleepPrecise = @import("util.zig").sleepPrecise;
 
 const PALETTE_GREY = [_]Pixel{
     .{ .r = 255, .g = 255, .b = 255 },
@@ -78,7 +79,7 @@ pub fn runPpu(gb: *Gb, screenRwl: *std.Thread.RwLock, screen: []Pixel, quit: *st
             const objAttrsLine = objAttrsLineArr[0..objAttrsLineLen];
 
             const actualOamTime = (try std.time.Instant.now()).since(oamStart);
-            std.time.sleep(OAM_TIME_NS -| actualOamTime);
+            try sleepPrecise(OAM_TIME_NS -| actualOamTime);
 
             gb.oamMutex.unlock();
 
@@ -95,7 +96,7 @@ pub fn runPpu(gb: *Gb, screenRwl: *std.Thread.RwLock, screen: []Pixel, quit: *st
             }
 
             const actualDrawTime = (try std.time.Instant.now()).since(drawStart);
-            std.time.sleep(DRAW_TIME_NS -| actualDrawTime);
+            try sleepPrecise(DRAW_TIME_NS -| actualDrawTime);
 
             // Mode 0 - Horizontal blank
 
@@ -111,7 +112,7 @@ pub fn runPpu(gb: *Gb, screenRwl: *std.Thread.RwLock, screen: []Pixel, quit: *st
                 gb.requestInterrupt(Interrupt.STAT);
             }
 
-            std.time.sleep(HBLANK_TIME_NS);
+            try sleepPrecise(HBLANK_TIME_NS);
 
             gb.waitForDebugUnpause();
         }
@@ -130,7 +131,7 @@ pub fn runPpu(gb: *Gb, screenRwl: *std.Thread.RwLock, screen: []Pixel, quit: *st
             const ly = gb.read(IoReg.LY);
             gb.write(IoReg.LY, ly +% 1);
 
-            std.time.sleep(LINE_TIME_NS);
+            try sleepPrecise(LINE_TIME_NS);
 
             gb.waitForDebugUnpause();
         }

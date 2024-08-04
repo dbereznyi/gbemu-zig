@@ -4,6 +4,7 @@ const Interrupt = @import("../gameboy.zig").Interrupt;
 const IoReg = @import("../gameboy.zig").IoReg;
 const LcdcFlag = @import("../gameboy.zig").LcdcFlag;
 const ObjFlag = @import("../gameboy.zig").ObjFlag;
+const sleepPrecise = @import("../util.zig").sleepPrecise;
 const stepCpu = @import("step.zig").stepCpu;
 const decodeInstrAt = @import("decode.zig").decodeInstrAt;
 
@@ -14,8 +15,6 @@ pub fn runCpu(gb: *Gb, quit: *std.atomic.Value(bool)) !void {
 
         switch (gb.execState) {
             .running => {
-                const start = try std.time.Instant.now();
-
                 if (interruptPending) {
                     handleInterrupt(gb, if_, false);
                 }
@@ -48,24 +47,25 @@ pub fn runCpu(gb: *Gb, quit: *std.atomic.Value(bool)) !void {
                     const inputLen = try std.io.getStdIn().read(&inputBuf);
                     if (inputLen > 0 and inputBuf[0] == 'q') {
                         quit.store(true, .monotonic);
-                        gb.debugUnpause();
-                        return;
                     }
 
                     gb.debugUnpause();
                 }
 
+                const start = try std.time.Instant.now();
+
                 const cyclesElapsed = stepCpu(gb);
 
                 const actualElapsed = (try std.time.Instant.now()).since(start);
-                std.time.sleep(cyclesElapsed * 1000 -| actualElapsed);
+
+                try sleepPrecise(cyclesElapsed * 1000 -| actualElapsed);
             },
             .halted => {
                 if (interruptPending) {
                     gb.execState = .running;
                     handleInterrupt(gb, if_, false);
                 } else {
-                    std.time.sleep(1000);
+                    try sleepPrecise(1000);
                 }
             },
             .haltedSkipInterrupt => {
@@ -73,7 +73,7 @@ pub fn runCpu(gb: *Gb, quit: *std.atomic.Value(bool)) !void {
                     gb.execState = .running;
                     handleInterrupt(gb, if_, true);
                 } else {
-                    std.time.sleep(1000);
+                    try sleepPrecise(1000);
                 }
             },
             .stopped => {
