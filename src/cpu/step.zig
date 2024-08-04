@@ -86,11 +86,6 @@ pub fn stepCpu(gb: *Gb) usize {
     return instr.cycles(gb.branchCond);
 }
 
-fn invalidOpcode(opcode: u8) void {
-    std.debug.print("invalid opcode: {}\n", .{opcode});
-    std.process.exit(1);
-}
-
 fn incHL(gb: *Gb) void {
     const hl = util.as16(gb.h, gb.l);
     const hlInc = hl +% 1;
@@ -122,7 +117,6 @@ fn checkHalfCarry(x: u8, y: u8) bool {
 
 fn checkCarry(x: u8, y: u8) bool {
     const sum = @as(u16, x) + @as(u16, y);
-    std.debug.print("x={x:0>2} y={x:0>2}, x+y={x:0>4}\n", .{ x, y, sum });
     return sum > 0xff;
 }
 
@@ -179,8 +173,8 @@ fn sub(gb: *Gb, src: Src8) void {
 
     gb.zero = diff == 0;
     gb.negative = true;
-    gb.halfCarry = checkHalfCarry(gb.a, (x ^ 0xff) + 1);
-    gb.carry = checkCarry(gb.a, (x ^ 0xff) + 1);
+    gb.halfCarry = !checkHalfCarry(gb.a, ~x + 1);
+    gb.carry = !checkCarry(gb.a, ~x + 1);
 }
 
 fn sbc(gb: *Gb, src: Src8) void {
@@ -191,8 +185,8 @@ fn sbc(gb: *Gb, src: Src8) void {
 
     gb.zero = diff == 0;
     gb.negative = true;
-    gb.halfCarry = checkHalfCarry(gb.a, ((x + carry) ^ 0xff) + 1);
-    gb.carry = checkCarry(gb.a, ((x + carry) ^ 0xff) + 1);
+    gb.halfCarry = !checkHalfCarry(gb.a, ~(x + carry) + 1);
+    gb.carry = !checkCarry(gb.a, ~(x + carry) + 1);
 }
 
 fn and_(gb: *Gb, src: Src8) void {
@@ -234,8 +228,8 @@ fn cp(gb: *Gb, src: Src8) void {
 
     gb.zero = result == 0;
     gb.negative = true;
-    gb.halfCarry = checkHalfCarry(gb.a, ~x + 1);
-    gb.carry = checkCarry(gb.a, ~x + 1);
+    gb.halfCarry = !checkHalfCarry(gb.a, ~x + 1);
+    gb.carry = !checkCarry(gb.a, ~x + 1);
 }
 
 fn inc8(gb: *Gb, dst: Dst8) void {

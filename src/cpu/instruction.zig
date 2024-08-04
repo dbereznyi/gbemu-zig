@@ -244,6 +244,7 @@ pub const Instr = union(InstrTag) {
             .ADD_SP => |n8| try std.fmt.bufPrint(&dstBuf, "${x:0>2}", .{n8}),
 
             .JP => |n16| try std.fmt.bufPrint(&dstBuf, "${x:0>4}", .{n16}),
+            .JP_COND => |args| try std.fmt.bufPrint(&dstBuf, "${x:0>4}", .{args.addr}),
             .JR => |n8| try std.fmt.bufPrint(&dstBuf, "${x:0>2}", .{n8}),
             .CALL => |n16| try std.fmt.bufPrint(&dstBuf, "${x:0>4}", .{n16}),
             .CALL_COND => |args| try std.fmt.bufPrint(&dstBuf, "${x:0>4}", .{args.addr}),
@@ -291,7 +292,7 @@ pub const Instr = union(InstrTag) {
         };
 
         const param1: ?[]u8 = condStr orelse (dstStr orelse null);
-        const param2: ?[]u8 = srcStr orelse null;
+        const param2: ?[]u8 = srcStr orelse (if (condStr != null) dstStr else null);
 
         return try std.fmt.bufPrint(buf, "{s} {s}{s}{s}", .{
             mnemonic,

@@ -1,5 +1,5 @@
-pub fn as16(x: u8, y: u8) u16 {
-    const x16: u16 = x;
-    const y16: u16 = y;
-    return (y16 << 8) | x16;
+pub fn as16(high: u8, low: u8) u16 {
+    const high16: u16 = high;
+    const low16: u16 = low;
+    return (high16 << 8) | low16;
 }

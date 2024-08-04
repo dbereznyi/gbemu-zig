@@ -227,6 +227,10 @@ pub const Gb = struct {
         gb.write(gb.sp, low);
     }
 
+    pub fn getIoReg(gb: *Gb, ioReg: u16) *std.atomic.Value(u8) {
+        return &gb.ioRegs[0xff00 - ioReg];
+    }
+
     pub fn read(gb: *Gb, addr: u16) u8 {
         return switch (addr) {
             // ROM bank 00

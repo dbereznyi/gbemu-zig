@@ -86,7 +86,6 @@ pub fn runPpu(gb: *Gb, screenRwl: *std.Thread.RwLock, screen: []Pixel, quit: *st
 
             const drawStart = try std.time.Instant.now();
             gb.setStatMode(StatFlag.MODE_3);
-            gb.vramMutex.lock();
 
             for (0..160) |x| {
                 screenRwl.lock();
@@ -95,7 +94,6 @@ pub fn runPpu(gb: *Gb, screenRwl: *std.Thread.RwLock, screen: []Pixel, quit: *st
                 screenRwl.unlock();
             }
 
-            gb.vramMutex.unlock();
             const actualDrawTime = (try std.time.Instant.now()).since(drawStart);
             std.time.sleep(DRAW_TIME_NS -| actualDrawTime);
 
@@ -129,8 +127,12 @@ pub fn runPpu(gb: *Gb, screenRwl: *std.Thread.RwLock, screen: []Pixel, quit: *st
         }
 
         for (0..10) |_| {
-            gb.waitForDebugUnpause();
+            const ly = gb.read(IoReg.LY);
+            gb.write(IoReg.LY, ly +% 1);
+
             std.time.sleep(LINE_TIME_NS);
+
+            gb.waitForDebugUnpause();
         }
 
         if (quit.load(AtomicOrder.monotonic)) {
@@ -185,6 +187,8 @@ fn colorIdAt(x: usize, y: usize, gb: *Gb, objAttrs: []const ObjectAttribute, win
     if (lcdc & LcdcFlag.ON == 0) {
         return 0;
     }
+
+    gb.vramMutex.lock();
 
     const bgTileData = if (lcdc & LcdcFlag.TILE_DATA > 0) gb.vram[0x0000..0x1000] else gb.vram[0x0800..0x1800];
     const bgTileMap = if (lcdc & LcdcFlag.BG_TILE_MAP > 0) gb.vram[0x1c00..0x2000] else gb.vram[0x1800..0x1c00];
@@ -256,6 +260,8 @@ fn colorIdAt(x: usize, y: usize, gb: *Gb, objAttrs: []const ObjectAttribute, win
             colorId = @as(usize, @intCast((objPalette & paletteMask) >> @as(u3, @truncate(paletteIndex * 2))));
         }
     }
+
+    gb.vramMutex.unlock();
 
     return colorId;
 }

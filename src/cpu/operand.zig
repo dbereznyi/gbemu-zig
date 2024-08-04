@@ -51,7 +51,7 @@ pub const Dst16 = union(Dst16Tag) {
             Dst16.DE => util.as16(gb.d, gb.e),
             Dst16.HL => util.as16(gb.h, gb.l),
             Dst16.SP => gb.sp,
-            Dst16.Ind => |ind| Gb.read(gb, ind),
+            Dst16.Ind => |ind| gb.read(ind),
         };
     }
 
@@ -80,8 +80,8 @@ pub const Dst16 = union(Dst16Tag) {
                 gb.*.sp = val;
             },
             Dst16.Ind => |ind| {
-                Gb.write(gb, ind, valLow);
-                Gb.write(gb, ind + 1, valHigh);
+                gb.write(ind, valLow);
+                gb.write(ind + 1, valHigh);
             },
         }
     }
@@ -159,7 +159,7 @@ pub const Src16 = union(Src16Tag) {
             Src16.HL => try std.fmt.bufPrint(buf, "hl", .{}),
             Src16.SP => try std.fmt.bufPrint(buf, "sp", .{}),
             Src16.SPOffset => |offset| try std.fmt.bufPrint(buf, "sp + ${x:0>2}", .{offset}),
-            Src16.Imm => |imm| try std.fmt.bufPrint(buf, "${x:0>2}", .{imm}),
+            Src16.Imm => |imm| try std.fmt.bufPrint(buf, "${x:0>4}", .{imm}),
         };
     }
 
@@ -232,14 +232,14 @@ pub const Dst8 = union(Dst8Tag) {
             Dst8.E => gb.e,
             Dst8.H => gb.h,
             Dst8.L => gb.l,
-            Dst8.Ind => |ind| Gb.read(gb, ind),
-            Dst8.IndIoReg => |ind| Gb.read(gb, 0xff00 + @as(u16, ind)),
-            Dst8.IndC => Gb.read(gb, 0xff00 + @as(u16, gb.c)),
-            Dst8.IndBC => Gb.read(gb, util.as16(gb.b, gb.c)),
-            Dst8.IndDE => Gb.read(gb, util.as16(gb.d, gb.e)),
-            Dst8.IndHL => Gb.read(gb, util.as16(gb.h, gb.l)),
+            Dst8.Ind => |ind| gb.read(ind),
+            Dst8.IndIoReg => |ind| gb.read(0xff00 + @as(u16, ind)),
+            Dst8.IndC => gb.read(0xff00 + @as(u16, gb.c)),
+            Dst8.IndBC => gb.read(util.as16(gb.b, gb.c)),
+            Dst8.IndDE => gb.read(util.as16(gb.d, gb.e)),
+            Dst8.IndHL => gb.read(util.as16(gb.h, gb.l)),
             Dst8.IndHLInc => blk: {
-                const x = Gb.read(gb, util.as16(gb.h, gb.l));
+                const x = gb.read(util.as16(gb.h, gb.l));
 
                 const hl = util.as16(gb.h, gb.l);
                 const hlInc = hl +% 1;
@@ -249,7 +249,7 @@ pub const Dst8 = union(Dst8Tag) {
                 break :blk x;
             },
             Dst8.IndHLDec => blk: {
-                const x = Gb.read(gb, util.as16(gb.h, gb.l));
+                const x = gb.read(util.as16(gb.h, gb.l));
                 decHL(gb);
                 break :blk x;
             },
@@ -267,18 +267,18 @@ pub const Dst8 = union(Dst8Tag) {
             Dst8.E => gb.*.e = val,
             Dst8.H => gb.*.h = val,
             Dst8.L => gb.*.l = val,
-            Dst8.Ind => |ind| Gb.write(gb, ind, val),
-            Dst8.IndIoReg => |ind| Gb.write(gb, 0xff00 + @as(u16, ind), val),
-            Dst8.IndC => Gb.write(gb, 0xff00 + @as(u16, gb.c), val),
-            Dst8.IndBC => Gb.write(gb, util.as16(gb.b, gb.c), val),
-            Dst8.IndDE => Gb.write(gb, util.as16(gb.d, gb.e), val),
-            Dst8.IndHL => Gb.write(gb, util.as16(gb.h, gb.l), val),
+            Dst8.Ind => |ind| gb.write(ind, val),
+            Dst8.IndIoReg => |ind| gb.write(0xff00 + @as(u16, ind), val),
+            Dst8.IndC => gb.write(0xff00 + @as(u16, gb.c), val),
+            Dst8.IndBC => gb.write(util.as16(gb.b, gb.c), val),
+            Dst8.IndDE => gb.write(util.as16(gb.d, gb.e), val),
+            Dst8.IndHL => gb.write(util.as16(gb.h, gb.l), val),
             Dst8.IndHLInc => {
-                Gb.write(gb, util.as16(gb.h, gb.l), val);
+                gb.write(util.as16(gb.h, gb.l), val);
                 incHL(gb);
             },
             Dst8.IndHLDec => {
-                Gb.write(gb, util.as16(gb.h, gb.l), val);
+                gb.write(util.as16(gb.h, gb.l), val);
                 decHL(gb);
             },
         }
@@ -391,19 +391,19 @@ pub const Src8 = union(Src8Tag) {
             Src8.E => gb.e,
             Src8.H => gb.h,
             Src8.L => gb.l,
-            Src8.Ind => |ind| Gb.read(gb, ind),
-            Src8.IndIoReg => |ind| Gb.read(gb, 0xff00 + @as(u16, ind)),
-            Src8.IndC => Gb.read(gb, 0xff00 + @as(u16, gb.c)),
-            Src8.IndBC => Gb.read(gb, util.as16(gb.b, gb.c)),
-            Src8.IndDE => Gb.read(gb, util.as16(gb.d, gb.e)),
-            Src8.IndHL => Gb.read(gb, util.as16(gb.h, gb.l)),
+            Src8.Ind => |ind| gb.read(ind),
+            Src8.IndIoReg => |ind| gb.read(0xff00 + @as(u16, ind)),
+            Src8.IndC => gb.read(0xff00 + @as(u16, gb.c)),
+            Src8.IndBC => gb.read(util.as16(gb.b, gb.c)),
+            Src8.IndDE => gb.read(util.as16(gb.d, gb.e)),
+            Src8.IndHL => gb.read(util.as16(gb.h, gb.l)),
             Src8.IndHLInc => blk: {
-                const x = Gb.read(gb, util.as16(gb.h, gb.l));
+                const x = gb.read(util.as16(gb.h, gb.l));
                 incHL(gb);
                 break :blk x;
             },
             Src8.IndHLDec => blk: {
-                const x = Gb.read(gb, util.as16(gb.h, gb.l));
+                const x = gb.read(util.as16(gb.h, gb.l));
                 decHL(gb);
                 break :blk x;
             },

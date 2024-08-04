@@ -20,14 +20,14 @@ pub fn runCpu(gb: *Gb, quit: *std.atomic.Value(bool)) !void {
                     handleInterrupt(gb, if_, false);
                 }
 
-                if (true) {
+                if (false) {
                     gb.debugPause();
 
-                    std.debug.print("PC: {X:0>4} SP: {:0>4}\n", .{ gb.pc, gb.sp });
+                    std.debug.print("PC: ${X:0>4} SP: ${:0>4}\n", .{ gb.pc, gb.sp });
                     std.debug.print("Z: {} N: {} H: {} C: {}\n", .{ gb.zero, gb.negative, gb.halfCarry, gb.carry });
-                    std.debug.print("A: {X:0>2} B: {X:0>2} D: {X:0>2} H {X:0>2}\n", .{ gb.a, gb.b, gb.d, gb.h });
-                    std.debug.print("F: {X:0>2} C: {X:0>2} E: {X:0>2} L {X:0>2}\n", .{ gb.readFlags(), gb.c, gb.e, gb.l });
-                    std.debug.print("LY: {X:0>2} LCDC: {b:0>8} STAT: {b:0>8}\n", .{
+                    std.debug.print("A: ${X:0>2} B: ${X:0>2} D: ${X:0>2} H: ${X:0>2}\n", .{ gb.a, gb.b, gb.d, gb.h });
+                    std.debug.print("F: ${X:0>2} C: ${X:0>2} E: ${X:0>2} L: ${X:0>2}\n", .{ gb.readFlags(), gb.c, gb.e, gb.l });
+                    std.debug.print("LY: ${X:0>2} LCDC: %{b:0>8} STAT: %{b:0>8}\n", .{
                         gb.read(IoReg.LY),
                         gb.read(IoReg.LCDC),
                         gb.read(IoReg.STAT),
@@ -36,7 +36,7 @@ pub fn runCpu(gb: *Gb, quit: *std.atomic.Value(bool)) !void {
                     const instr = decodeInstrAt(gb.pc, gb);
                     var instrStrBuf: [64]u8 = undefined;
                     const instrStr = try instr.toStr(&instrStrBuf);
-                    std.debug.print("\n${X:0>4}: {s} ({X:0>2} {X:0>2} {X:0>2}) \n", .{
+                    std.debug.print("\n${X:0>4}: {s} (${X:0>2} ${X:0>2} ${X:0>2}) \n", .{
                         gb.pc,
                         instrStr,
                         gb.read(gb.pc),
