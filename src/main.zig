@@ -7,7 +7,7 @@ const Gb = @import("gameboy.zig").Gb;
 const IoReg = @import("gameboy.zig").IoReg;
 const LcdcFlag = @import("gameboy.zig").LcdcFlag;
 const ObjFlag = @import("gameboy.zig").ObjFlag;
-const stepCpu = @import("cpu.zig").stepCpu;
+const runCpu = @import("cpu/run.zig").runCpu;
 const runPpu = @import("ppu.zig").runPpu;
 const AtomicOrder = std.builtin.AtomicOrder;
 
@@ -59,7 +59,7 @@ pub fn main() !void {
 
     var quit = std.atomic.Value(bool).init(false);
 
-    var cpuThread = try std.Thread.spawn(.{}, runCpu, .{&gb});
+    var cpuThread = try std.Thread.spawn(.{}, runCpu, .{ &gb, &quit });
     defer cpuThread.join();
 
     var ppuThread = try std.Thread.spawn(.{}, runPpu, .{ &gb, &screenRwl, screen, &quit });
@@ -132,30 +132,6 @@ pub fn main() !void {
 
         c.SDL_Delay(17);
     }
-}
-
-fn runCpu(gb: *Gb) void {
-    const cycles = stepCpu(gb);
-    std.debug.print("cycles = {}\n", .{cycles});
-
-    // var i: u8 = 0;
-    // while (true) {
-    //     // TODO
-    //     // stepCpu(...)
-    //     // stepPpu(...)
-
-    //     screenRwl.lock();
-    //     for (screen) |*pixel| {
-    //         pixel.*.r = i;
-    //         pixel.*.g = i;
-    //         pixel.*.b = i;
-    //     }
-    //     screenRwl.unlock();
-
-    //     i +%= 1;
-
-    //     std.time.sleep(16666666); // ~1/60 sec
-    // }
 }
 
 fn initVramForTesting(gb: *Gb, alloc: std.mem.Allocator) !void {

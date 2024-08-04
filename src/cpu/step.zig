@@ -1,8 +1,13 @@
 const std = @import("std");
-const Gb = @import("gameboy.zig").Gb;
-const IoReg = @import("gameboy.zig").IoReg;
-const ExecState = @import("gameboy.zig").ExecState;
-const util = @import("util.zig");
+const Gb = @import("../gameboy.zig").Gb;
+const IoReg = @import("../gameboy.zig").IoReg;
+const ExecState = @import("../gameboy.zig").ExecState;
+const util = @import("../util.zig");
+const Src8 = @import("operand.zig").Src8;
+const Dst8 = @import("operand.zig").Dst8;
+const Src16 = @import("operand.zig").Src16;
+const Dst16 = @import("operand.zig").Dst16;
+const decodeInstrAt = @import("decode.zig").decodeInstrAt;
 
 pub fn stepCpu(gb: *Gb) usize {
     const opcode = gb.rom[gb.pc];
@@ -35,6 +40,8 @@ pub fn stepCpu(gb: *Gb) usize {
     };
 
     gb.branchCond = false;
+
+    _ = decodeInstrAt(gb.pc, gb);
 
     switch (opcode) {
         0x00 => {},
@@ -230,7 +237,11 @@ pub fn stepCpu(gb: *Gb) usize {
         0xff => rst(gb, 0x38),
     }
 
-    gb.*.pc += instrSize(opcode);
+    if (!gb.skipPcIncrement) {
+        gb.*.pc += instrSize(opcode);
+    } else {
+        gb.skipPcIncrement = false;
+    }
 
     return instrCycles(opcode, n8, gb.branchCond);
 }
@@ -833,264 +844,6 @@ fn instrCycles(opcode: u8, opcodeCb: u8, cond: bool) usize {
     return cycles;
 }
 
-const Dst16Tag = enum {
-    AF,
-    BC,
-    DE,
-    HL,
-    SP,
-    Ind,
-};
-
-const Dst16 = union(Dst16Tag) {
-    AF: void,
-    BC: void,
-    DE: void,
-    HL: void,
-    SP: void,
-    Ind: u16,
-};
-
-fn readDst16(gb: *Gb, dst: Dst16) u16 {
-    return switch (dst) {
-        Dst16.AF => util.as16(gb.a, Gb.readFlags(gb)),
-        Dst16.BC => util.as16(gb.b, gb.c),
-        Dst16.DE => util.as16(gb.d, gb.e),
-        Dst16.HL => util.as16(gb.h, gb.l),
-        Dst16.SP => gb.sp,
-        Dst16.Ind => |ind| Gb.read(gb, ind),
-    };
-}
-
-fn writeDst16(gb: *Gb, dst: Dst16, val: u16) void {
-    const valLow: u8 = @truncate(val);
-    const valHigh: u8 = @truncate(val >> 8);
-
-    switch (dst) {
-        Dst16.AF => {
-            gb.*.a = valHigh;
-            Gb.writeFlags(gb, valLow);
-        },
-        Dst16.BC => {
-            gb.*.b = valHigh;
-            gb.*.c = valLow;
-        },
-        Dst16.DE => {
-            gb.*.d = valHigh;
-            gb.*.e = valLow;
-        },
-        Dst16.HL => {
-            gb.*.h = valHigh;
-            gb.*.l = valLow;
-        },
-        Dst16.SP => {
-            gb.*.sp = val;
-        },
-        Dst16.Ind => |ind| {
-            Gb.write(gb, ind, valLow);
-            Gb.write(gb, ind + 1, valHigh);
-        },
-    }
-}
-
-const Src16Tag = enum {
-    AF,
-    BC,
-    DE,
-    HL,
-    SP,
-    SPOffset,
-    Imm,
-};
-
-const Src16 = union(Src16Tag) {
-    AF: void,
-    BC: void,
-    DE: void,
-    HL: void,
-    SP: void,
-    SPOffset: u8,
-    Imm: u16,
-};
-
-fn readSrc16(gb: *const Gb, src: Src16) u16 {
-    return switch (src) {
-        Src16.AF => util.as16(gb.a, Gb.readFlags(gb)),
-        Src16.BC => util.as16(gb.b, gb.c),
-        Src16.DE => util.as16(gb.d, gb.e),
-        Src16.HL => util.as16(gb.h, gb.l),
-        Src16.SP => gb.sp,
-        Src16.SPOffset => |offset| gb.sp + @as(u16, offset),
-        Src16.Imm => |imm| imm,
-    };
-}
-
-fn ld16(gb: *Gb, dst: Dst16, src: Src16) void {
-    const val = readSrc16(gb, src);
-    writeDst16(gb, dst, val);
-}
-
-const Dst8Tag = enum {
-    A,
-    B,
-    C,
-    D,
-    E,
-    H,
-    L,
-    Ind,
-    IndIoReg,
-    IndC,
-    IndBC,
-    IndDE,
-    IndHL,
-    IndHLInc,
-    IndHLDec,
-};
-
-const Dst8 = union(Dst8Tag) {
-    A: void,
-    B: void,
-    C: void,
-    D: void,
-    E: void,
-    H: void,
-    L: void,
-    Ind: u16,
-    IndIoReg: u8,
-    IndC: void,
-    IndBC: void,
-    IndDE: void,
-    IndHL: void,
-    IndHLInc: void,
-    IndHLDec: void,
-};
-
-fn readDst8(gb: *Gb, dst: Dst8) u8 {
-    const val = switch (dst) {
-        Dst8.A => gb.a,
-        Dst8.B => gb.b,
-        Dst8.C => gb.c,
-        Dst8.D => gb.d,
-        Dst8.E => gb.e,
-        Dst8.H => gb.h,
-        Dst8.L => gb.l,
-        Dst8.Ind => |ind| Gb.read(gb, ind),
-        Dst8.IndIoReg => |ind| Gb.read(gb, 0xff00 + @as(u16, ind)),
-        Dst8.IndC => Gb.read(gb, 0xff00 + @as(u16, gb.c)),
-        Dst8.IndBC => Gb.read(gb, util.as16(gb.b, gb.c)),
-        Dst8.IndDE => Gb.read(gb, util.as16(gb.d, gb.e)),
-        Dst8.IndHL => Gb.read(gb, util.as16(gb.h, gb.l)),
-        Dst8.IndHLInc => blk: {
-            const x = Gb.read(gb, util.as16(gb.h, gb.l));
-            incHL(gb);
-            break :blk x;
-        },
-        Dst8.IndHLDec => blk: {
-            const x = Gb.read(gb, util.as16(gb.h, gb.l));
-            decHL(gb);
-            break :blk x;
-        },
-    };
-
-    return val;
-}
-
-fn writeDst8(gb: *Gb, dst: Dst8, val: u8) void {
-    switch (dst) {
-        Dst8.A => gb.*.a = val,
-        Dst8.B => gb.*.b = val,
-        Dst8.C => gb.*.c = val,
-        Dst8.D => gb.*.d = val,
-        Dst8.E => gb.*.e = val,
-        Dst8.H => gb.*.h = val,
-        Dst8.L => gb.*.l = val,
-        Dst8.Ind => |ind| Gb.write(gb, ind, val),
-        Dst8.IndIoReg => |ind| Gb.write(gb, 0xff00 + @as(u16, ind), val),
-        Dst8.IndC => Gb.write(gb, 0xff00 + @as(u16, gb.c), val),
-        Dst8.IndBC => Gb.write(gb, util.as16(gb.b, gb.c), val),
-        Dst8.IndDE => Gb.write(gb, util.as16(gb.d, gb.e), val),
-        Dst8.IndHL => Gb.write(gb, util.as16(gb.h, gb.l), val),
-        Dst8.IndHLInc => {
-            Gb.write(gb, util.as16(gb.h, gb.l), val);
-            incHL(gb);
-        },
-        Dst8.IndHLDec => {
-            Gb.write(gb, util.as16(gb.h, gb.l), val);
-            decHL(gb);
-        },
-    }
-}
-
-const Src8Tag = enum {
-    A,
-    B,
-    C,
-    D,
-    E,
-    H,
-    L,
-    Ind,
-    IndIoReg,
-    IndC,
-    IndBC,
-    IndDE,
-    IndHL,
-    IndHLInc,
-    IndHLDec,
-    Imm,
-};
-
-const Src8 = union(Src8Tag) {
-    A: void,
-    B: void,
-    C: void,
-    D: void,
-    E: void,
-    H: void,
-    L: void,
-    Ind: u16,
-    IndIoReg: u8,
-    IndC: void,
-    IndBC: void,
-    IndDE: void,
-    IndHL: void,
-    IndHLInc: void,
-    IndHLDec: void,
-    Imm: u8,
-};
-
-fn readSrc8(gb: *Gb, src: Src8) u8 {
-    const val = switch (src) {
-        Src8.A => gb.a,
-        Src8.B => gb.b,
-        Src8.C => gb.c,
-        Src8.D => gb.d,
-        Src8.E => gb.e,
-        Src8.H => gb.h,
-        Src8.L => gb.l,
-        Src8.Ind => |ind| Gb.read(gb, ind),
-        Src8.IndIoReg => |ind| Gb.read(gb, 0xff00 + @as(u16, ind)),
-        Src8.IndC => Gb.read(gb, 0xff00 + @as(u16, gb.c)),
-        Src8.IndBC => Gb.read(gb, util.as16(gb.b, gb.c)),
-        Src8.IndDE => Gb.read(gb, util.as16(gb.d, gb.e)),
-        Src8.IndHL => Gb.read(gb, util.as16(gb.h, gb.l)),
-        Src8.IndHLInc => blk: {
-            const x = Gb.read(gb, util.as16(gb.h, gb.l));
-            incHL(gb);
-            break :blk x;
-        },
-        Src8.IndHLDec => blk: {
-            const x = Gb.read(gb, util.as16(gb.h, gb.l));
-            decHL(gb);
-            break :blk x;
-        },
-        Src8.Imm => |imm| imm,
-    };
-
-    return val;
-}
-
 fn incHL(gb: *Gb) void {
     const hl = util.as16(gb.h, gb.l);
     const hlInc = hl +% 1;
@@ -1105,9 +858,14 @@ fn decHL(gb: *Gb) void {
     gb.l = @truncate(hlDec);
 }
 
+fn ld16(gb: *Gb, dst: Dst16, src: Src16) void {
+    const val = src.read(gb);
+    dst.write(val, gb);
+}
+
 fn ld8(gb: *Gb, dst: Dst8, src: Src8) void {
-    const val = readSrc8(gb, src);
-    writeDst8(gb, dst, val);
+    const val = src.read(gb);
+    dst.write(val, gb);
 }
 
 fn checkHalfCarry(x: u8, y: u8) bool {
@@ -1121,7 +879,7 @@ fn checkCarry(x: u8, y: u8) bool {
 }
 
 fn add(gb: *Gb, src: Src8) void {
-    const x = readSrc8(gb, src);
+    const x = src.read(gb);
     const y = gb.a;
     const sum = x +% y;
     gb.a = sum;
@@ -1143,10 +901,10 @@ fn checkCarry16(x: u16, y: u16) bool {
 }
 
 fn add16(gb: *Gb, dst: Dst16, src: Src16) void {
-    const x = readSrc16(gb, src);
-    const y = readDst16(gb, dst);
+    const x = src.read(gb);
+    const y = dst.read(gb);
     const sum = x +% y;
-    writeDst16(gb, dst, sum);
+    dst.write(sum, gb);
 
     gb.negative = false;
     gb.halfCarry = checkHalfCarry16(x, y);
@@ -1154,7 +912,7 @@ fn add16(gb: *Gb, dst: Dst16, src: Src16) void {
 }
 
 fn adc(gb: *Gb, src: Src8) void {
-    const x = readSrc8(gb, src);
+    const x = src.read(gb);
     const y = gb.a;
     const carry: u8 = if (gb.carry) 1 else 0;
     const sum = x +% y +% carry;
@@ -1167,7 +925,7 @@ fn adc(gb: *Gb, src: Src8) void {
 }
 
 fn sub(gb: *Gb, src: Src8) void {
-    const x = readSrc8(gb, src);
+    const x = src.read(gb);
     const diff = gb.a -% x;
     gb.a = diff;
 
@@ -1178,7 +936,7 @@ fn sub(gb: *Gb, src: Src8) void {
 }
 
 fn sbc(gb: *Gb, src: Src8) void {
-    const x = readSrc8(gb, src);
+    const x = src.read(gb);
     const carry: u8 = if (gb.carry) 1 else 0;
     const diff = gb.a -% x -% carry;
     gb.a = diff;
@@ -1190,7 +948,7 @@ fn sbc(gb: *Gb, src: Src8) void {
 }
 
 fn and_(gb: *Gb, src: Src8) void {
-    const x = readSrc8(gb, src);
+    const x = src.read(gb);
     const result = gb.a & x;
     gb.a = result;
 
@@ -1201,7 +959,7 @@ fn and_(gb: *Gb, src: Src8) void {
 }
 
 fn xor(gb: *Gb, src: Src8) void {
-    const x = readSrc8(gb, src);
+    const x = src.read(gb);
     const result = gb.a ^ x;
     gb.a = result;
 
@@ -1212,7 +970,7 @@ fn xor(gb: *Gb, src: Src8) void {
 }
 
 fn or_(gb: *Gb, src: Src8) void {
-    const x = readSrc8(gb, src);
+    const x = src.read(gb);
     const result = gb.a | x;
     gb.a = result;
 
@@ -1223,7 +981,7 @@ fn or_(gb: *Gb, src: Src8) void {
 }
 
 fn cp(gb: *Gb, src: Src8) void {
-    const x = readSrc8(gb, src);
+    const x = src.read(gb);
     const result = gb.a -% x;
 
     gb.zero = result == 0;
@@ -1233,9 +991,9 @@ fn cp(gb: *Gb, src: Src8) void {
 }
 
 fn inc8(gb: *Gb, dst: Dst8) void {
-    const initialValue = readDst8(gb, dst);
+    const initialValue = dst.read(gb);
     const result = initialValue +% 1;
-    writeDst8(gb, dst, result);
+    dst.write(result, gb);
 
     gb.zero = result == 0;
     gb.negative = false;
@@ -1243,9 +1001,9 @@ fn inc8(gb: *Gb, dst: Dst8) void {
 }
 
 fn dec8(gb: *Gb, dst: Dst8) void {
-    const initialValue = readDst8(gb, dst);
+    const initialValue = dst.read(gb);
     const result = initialValue -% 1;
-    writeDst8(gb, dst, result);
+    dst.write(result, gb);
 
     gb.zero = result == 0;
     gb.negative = true;
@@ -1253,15 +1011,15 @@ fn dec8(gb: *Gb, dst: Dst8) void {
 }
 
 fn inc16(gb: *Gb, dst: Dst16) void {
-    const initialValue = readDst16(gb, dst);
+    const initialValue = dst.read(gb);
     const result = initialValue +% 1;
-    writeDst16(gb, dst, result);
+    dst.write(result, gb);
 }
 
 fn dec16(gb: *Gb, dst: Dst16) void {
-    const initialValue = readDst16(gb, dst);
+    const initialValue = dst.read(gb);
     const result = initialValue -% 1;
-    writeDst16(gb, dst, result);
+    dst.write(result, gb);
 }
 
 fn calcJrDestAddr(pc: u16, offset: u8) u16 {
@@ -1308,14 +1066,14 @@ fn jpCond(gb: *Gb, address: u16, cond: bool) void {
 }
 
 fn jpHl(gb: *Gb) void {
-    const destAddr = readSrc16(gb, Src16.HL);
+    const destAddr = Src16.read(.HL, gb);
     gb.pc = calcJpDestAddr(destAddr);
 }
 
 fn pop16(gb: *Gb) u16 {
-    const low = Gb.read(gb, gb.sp);
+    const low = gb.read(gb.sp);
     gb.sp +%= 1;
-    const high = Gb.read(gb, gb.sp);
+    const high = gb.read(gb.sp);
     gb.sp +%= 1;
     return util.as16(low, high);
 }
@@ -1344,8 +1102,10 @@ fn reti(gb: *Gb) void {
 fn push16(gb: *Gb, value: u16) void {
     const high: u8 = @truncate(value >> 8);
     const low: u8 = @truncate(value);
-    Gb.write(gb, gb.sp, high);
-    Gb.write(gb, gb.sp, low);
+    gb.sp -%= 1;
+    gb.write(gb.sp, high);
+    gb.sp -%= 1;
+    gb.write(gb.sp, low);
 }
 
 fn call(gb: *Gb, address: u16) void {
@@ -1369,11 +1129,11 @@ fn rst(gb: *Gb, address: u8) void {
 
 fn pop(gb: *Gb, dst: Dst16) void {
     const value = pop16(gb);
-    writeDst16(gb, dst, value);
+    dst.write(value, gb);
 }
 
 fn push(gb: *Gb, src: Src16) void {
-    const value = readSrc16(gb, src);
+    const value = src.read(gb);
     push16(gb, value);
 }
 
@@ -1393,7 +1153,8 @@ fn halt(gb: *Gb) void {
         if (!interruptPending) {
             gb.execState = ExecState.haltedSkipInterrupt;
         } else {
-            // TODO simulate halting bug
+            gb.execState = ExecState.running;
+            gb.skipPcIncrement = true;
         }
     }
 }
@@ -1426,13 +1187,13 @@ fn rlca(gb: *Gb) void {
 }
 
 fn rlc(gb: *Gb, dst: Dst8) void {
-    const value = readDst8(gb, dst);
+    const value = dst.read(gb);
 
     const bit7 = value & 0b1000_0000;
     const result = (value << 1) | (bit7 >> 7);
-    writeDst8(gb, dst, result);
+    dst.write(result, gb);
 
-    gb.zero = readDst8(gb, dst) == 0;
+    gb.zero = dst.read(gb) == 0;
     gb.negative = false;
     gb.halfCarry = false;
     gb.carry = bit7 > 0;
@@ -1449,11 +1210,11 @@ fn rrca(gb: *Gb) void {
 }
 
 fn rrc(gb: *Gb, dst: Dst8) void {
-    const value = readDst8(gb, dst);
+    const value = dst.read(gb);
 
     const bit0 = value & 0b0000_0001;
     const result = (value >> 1) | (bit0 << 7);
-    writeDst8(gb, dst, result);
+    dst.write(result, gb);
 
     gb.zero = result == 0;
     gb.negative = false;
@@ -1473,12 +1234,12 @@ fn rla(gb: *Gb) void {
 }
 
 fn rl(gb: *Gb, dst: Dst8) void {
-    const value = readDst8(gb, dst);
+    const value = dst.read(gb);
 
     const newBit0: u8 = if (gb.carry) 1 else 0;
     const bit7 = value & 0b1000_0000;
     const result = (gb.a << 1) | newBit0;
-    writeDst8(gb, dst, result);
+    dst.write(result, gb);
 
     gb.zero = result == 0;
     gb.negative = false;
@@ -1498,12 +1259,12 @@ fn rra(gb: *Gb) void {
 }
 
 fn rr(gb: *Gb, dst: Dst8) void {
-    const value = readDst8(gb, dst);
+    const value = dst.read(gb);
 
     const newBit7: u8 = if (gb.carry) 1 else 0;
     const bit0 = value & 0b0000_0001;
     const result = (gb.a >> 1) | (newBit7 << 7);
-    writeDst8(gb, dst, result);
+    dst.write(result, gb);
 
     gb.zero = result == 0;
     gb.negative = false;
@@ -1512,11 +1273,11 @@ fn rr(gb: *Gb, dst: Dst8) void {
 }
 
 fn sla(gb: *Gb, dst: Dst8) void {
-    const value = readDst8(gb, dst);
+    const value = dst.read(gb);
 
     const bit7 = value & 0b1000_0000;
     const result = value << 1;
-    writeDst8(gb, dst, result);
+    dst.write(result, gb);
 
     gb.zero = result == 0;
     gb.negative = false;
@@ -1525,12 +1286,12 @@ fn sla(gb: *Gb, dst: Dst8) void {
 }
 
 fn sra(gb: *Gb, dst: Dst8) void {
-    const value = readDst8(gb, dst);
+    const value = dst.read(gb);
 
     const bit7 = value & 0b1000_0000;
     const bit0 = value & 0b0000_0001;
     const result = bit7 | (value >> 1);
-    writeDst8(gb, dst, result);
+    dst.write(result, gb);
 
     gb.zero = result == 0;
     gb.negative = false;
@@ -1539,12 +1300,12 @@ fn sra(gb: *Gb, dst: Dst8) void {
 }
 
 fn swap(gb: *Gb, dst: Dst8) void {
-    const value = readDst8(gb, dst);
+    const value = dst.read(gb);
 
     const low = value & 0b0000_1111;
     const high = value & 0b1111_0000;
     const result = (low << 4) | (high >> 4);
-    writeDst8(gb, dst, result);
+    dst.write(result, gb);
 
     gb.zero = result == 0;
     gb.negative = false;
@@ -1553,11 +1314,11 @@ fn swap(gb: *Gb, dst: Dst8) void {
 }
 
 fn srl(gb: *Gb, dst: Dst8) void {
-    const value = readDst8(gb, dst);
+    const value = dst.read(gb);
 
     const bit0 = value & 0b0000_0001;
     const result = value >> 1;
-    writeDst8(gb, dst, result);
+    dst.write(result, gb);
 
     gb.zero = result == 0;
     gb.negative = false;
@@ -1566,7 +1327,7 @@ fn srl(gb: *Gb, dst: Dst8) void {
 }
 
 fn bit(gb: *Gb, dst: Dst8, n: u3) void {
-    const value = readDst8(gb, dst);
+    const value = dst.read(gb);
 
     const result = value & (@as(u8, 1) << n);
 
@@ -1576,19 +1337,19 @@ fn bit(gb: *Gb, dst: Dst8, n: u3) void {
 }
 
 fn res(gb: *Gb, dst: Dst8, n: u3) void {
-    const value = readDst8(gb, dst);
+    const value = dst.read(gb);
 
     const mask = ~(@as(u8, 1) << n);
     const result = value & mask;
-    writeDst8(gb, dst, result);
+    dst.write(result, gb);
 }
 
 fn set(gb: *Gb, dst: Dst8, n: u3) void {
-    const value = readDst8(gb, dst);
+    const value = dst.read(gb);
 
     const mask = (@as(u8, 1) << n);
     const result = value | mask;
-    writeDst8(gb, dst, result);
+    dst.write(result, gb);
 }
 
 fn daa(_: *Gb) void {

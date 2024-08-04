@@ -64,11 +64,11 @@ pub const ExecState = enum {
 };
 
 pub const Interrupt = .{
-    .VBLANK = 0b0000_0001,
-    .STAT = 0b0000_0010,
-    .TIMER = 0b0000_0100,
-    .SERIAL = 0b0000_1000,
-    .JOYPAD = 0b0001_0000,
+    .VBLANK = @as(u8, 0b0000_0001),
+    .STAT = @as(u8, 0b0000_0010),
+    .TIMER = @as(u8, 0b0000_0100),
+    .SERIAL = @as(u8, 0b0000_1000),
+    .JOYPAD = @as(u8, 0b0001_0000),
 };
 
 pub const StatFlag = .{
@@ -109,11 +109,14 @@ pub const Gb = struct {
     halfCarry: bool,
     carry: bool,
 
-    // for instructions that evaluate a condition,
-    // this is set to true if the condition evaluated to true
+    // For instructions that evaluate a condition,
+    // this is set to true if the condition evaluated to true.
     branchCond: bool,
     ime: bool,
     execState: ExecState,
+    // Used to simulate the bug that occurs when HALT is called with IME not set
+    // and interrupts pending.
+    skipPcIncrement: bool,
 
     vram: []u8,
     vramMutex: std.Thread.Mutex,
@@ -165,6 +168,7 @@ pub const Gb = struct {
             .branchCond = false,
             .ime = false,
             .execState = ExecState.running,
+            .skipPcIncrement = false,
             .vram = vram,
             .vramMutex = std.Thread.Mutex{},
             .wram = wram,
@@ -200,6 +204,15 @@ pub const Gb = struct {
         gb.negative = flags & 0b0100_0000 > 0;
         gb.halfCarry = flags & 0b0010_0000 > 0;
         gb.carry = flags & 0b0001_0000 > 0;
+    }
+
+    pub fn pushPc(gb: *Gb) void {
+        const high: u8 = @truncate(gb.pc >> 8);
+        const low: u8 = @truncate(gb.pc);
+        gb.sp -%= 1;
+        gb.write(gb.sp, high);
+        gb.sp -%= 1;
+        gb.write(gb.sp, low);
     }
 
     pub fn read(gb: *Gb, addr: u16) u8 {

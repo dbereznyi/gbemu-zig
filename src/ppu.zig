@@ -63,13 +63,13 @@ pub fn runPpu(gb: *Gb, screenRwl: *std.Thread.RwLock, screen: []Pixel, quit: *st
 
         for (0..144) |y| {
             // Mode 2 - OAM scan
+            const oamStart = try std.time.Instant.now();
             gb.oamMutex.lock();
 
             if (gb.ime and statInterruptsEnabled and intOnMode2) {
                 gb.requestInterrupt(Interrupt.STAT);
             }
 
-            const oamStart = try std.time.Instant.now();
             gb.setStatMode(StatFlag.MODE_2);
 
             var objAttrsLineArr: [10]ObjectAttribute = undefined;
@@ -88,13 +88,6 @@ pub fn runPpu(gb: *Gb, screenRwl: *std.Thread.RwLock, screen: []Pixel, quit: *st
             gb.setStatMode(StatFlag.MODE_3);
             gb.vramMutex.lock();
 
-            gb.write(IoReg.LY, @truncate(y));
-            const lycIncident = y == gb.read(IoReg.LYC);
-            gb.setStatLycIncident(lycIncident);
-            if (gb.ime and statInterruptsEnabled and intOnLycIncident and lycIncident) {
-                gb.requestInterrupt(Interrupt.STAT);
-            }
-
             for (0..160) |x| {
                 screenRwl.lock();
                 const colorId = colorIdAt(x, y, gb, objAttrsLine, &windowY, wy);
@@ -107,6 +100,13 @@ pub fn runPpu(gb: *Gb, screenRwl: *std.Thread.RwLock, screen: []Pixel, quit: *st
             std.time.sleep(DRAW_TIME_NS -| actualDrawTime);
 
             // Mode 0 - Horizontal blank
+
+            gb.write(IoReg.LY, @truncate(y));
+            const lycIncident = y == gb.read(IoReg.LYC);
+            gb.setStatLycIncident(lycIncident);
+            if (gb.ime and statInterruptsEnabled and intOnLycIncident and lycIncident) {
+                gb.requestInterrupt(Interrupt.STAT);
+            }
 
             gb.setStatMode(StatFlag.MODE_0);
             if (gb.ime and statInterruptsEnabled and intOnMode0) {
