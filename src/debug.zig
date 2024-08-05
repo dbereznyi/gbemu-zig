@@ -1,19 +1,15 @@
 const std = @import("std");
 
-const DebugCmdTag = enum {
-    quit,
-    step,
-    resume_,
-    breakpointList,
-    breakpointSet,
-};
+const DebugCmdTag = enum { quit, step, continue_, breakpointList, breakpointSet, viewRegisters, viewStack };
 
 pub const DebugCmd = union(DebugCmdTag) {
     quit: void,
     step: void,
-    resume_: void,
+    continue_: void,
     breakpointList: void,
     breakpointSet: u16,
+    viewRegisters: void,
+    viewStack: void,
 };
 
 pub fn parseDebugCmd(buf: []u8) ?DebugCmd {
@@ -25,7 +21,7 @@ pub fn parseDebugCmd(buf: []u8) ?DebugCmd {
     return switch (command) {
         'q' => .quit,
         's' => .step,
-        'r' => .resume_,
+        'c' => .continue_,
         'b' => blk: {
             const modifier = p.pop() orelse break :blk null;
 
@@ -41,6 +37,15 @@ pub fn parseDebugCmd(buf: []u8) ?DebugCmd {
                 'l' => break :blk .breakpointList,
                 else => break :blk null,
             }
+        },
+        'v' => blk: {
+            const modifier = p.pop() orelse break :blk null;
+
+            break :blk switch (modifier) {
+                'r' => .viewRegisters,
+                's' => .viewStack,
+                else => null,
+            };
         },
         else => null,
     };

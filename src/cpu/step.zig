@@ -317,7 +317,7 @@ fn pop16(gb: *Gb) u16 {
     gb.sp +%= 1;
     const high = gb.read(gb.sp);
     gb.sp +%= 1;
-    return util.as16(low, high);
+    return util.as16(high, low);
 }
 
 fn calcRetDestAddr(address: u16) u16 {

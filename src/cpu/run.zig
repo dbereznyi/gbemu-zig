@@ -105,15 +105,7 @@ fn handleInterrupt(gb: *Gb, if_: u8, skipHandler: bool) void {
 fn debugBreak(gb: *Gb, quit: *std.atomic.Value(bool)) !void {
     gb.debugPause();
 
-    std.debug.print("PC: ${X:0>4} SP: ${:0>4}\n", .{ gb.pc, gb.sp });
-    std.debug.print("Z: {} N: {} H: {} C: {}\n", .{ gb.zero, gb.negative, gb.halfCarry, gb.carry });
-    std.debug.print("A: ${X:0>2} B: ${X:0>2} D: ${X:0>2} H: ${X:0>2}\n", .{ gb.a, gb.b, gb.d, gb.h });
-    std.debug.print("F: ${X:0>2} C: ${X:0>2} E: ${X:0>2} L: ${X:0>2}\n", .{ gb.readFlags(), gb.c, gb.e, gb.l });
-    std.debug.print("LY: ${X:0>2} LCDC: %{b:0>8} STAT: %{b:0>8}\n", .{
-        gb.read(IoReg.LY),
-        gb.read(IoReg.LCDC),
-        gb.read(IoReg.STAT),
-    });
+    printRegisters(gb);
 
     var instrStrBuf: [64]u8 = undefined;
     var instrNextStrBuf: [64]u8 = undefined;
@@ -161,7 +153,7 @@ fn debugBreak(gb: *Gb, quit: *std.atomic.Value(bool)) !void {
                 .step => {
                     resumeExecution = true;
                 },
-                .resume_ => {
+                .continue_ => {
                     gb.debug.stepModeEnabled = false;
                     resumeExecution = true;
                 },
@@ -174,12 +166,20 @@ fn debugBreak(gb: *Gb, quit: *std.atomic.Value(bool)) !void {
                     std.debug.print("Active breakpoints:\n", .{});
 
                     for (gb.debug.breakpoints.items) |breakpoint| {
-                        std.debug.print("    ${x:0>4}\n", .{breakpoint});
+                        std.debug.print("  ${x:0>4}\n", .{breakpoint});
                     }
                 },
                 .breakpointSet => |addr| {
                     try gb.debug.breakpoints.append(addr);
                     std.debug.print("Set breakpoint at ${x:0>4}\n", .{addr});
+                },
+                .viewRegisters => printRegisters(gb),
+                .viewStack => {
+                    var addr = gb.sp;
+                    while (addr < gb.debug.stackBase) {
+                        std.debug.print("  ${x:0>4}: ${x:0>2}\n", .{ addr, gb.read(addr) });
+                        addr += 1;
+                    }
                 },
             }
 
@@ -190,4 +190,16 @@ fn debugBreak(gb: *Gb, quit: *std.atomic.Value(bool)) !void {
     }
 
     gb.debugUnpause();
+}
+
+fn printRegisters(gb: *Gb) void {
+    std.debug.print("PC: ${x:0>4} SP: ${x:0>4}\n", .{ gb.pc, gb.sp });
+    std.debug.print("Z: {} N: {} H: {} C: {}\n", .{ gb.zero, gb.negative, gb.halfCarry, gb.carry });
+    std.debug.print("A: ${x:0>2} B: ${x:0>2} D: ${x:0>2} H: ${x:0>2}\n", .{ gb.a, gb.b, gb.d, gb.h });
+    std.debug.print("F: ${x:0>2} C: ${x:0>2} E: ${x:0>2} L: ${x:0>2}\n", .{ gb.readFlags(), gb.c, gb.e, gb.l });
+    std.debug.print("LY: ${x:0>2} LCDC: %{b:0>8} STAT: %{b:0>8}\n", .{
+        gb.read(IoReg.LY),
+        gb.read(IoReg.LCDC),
+        gb.read(IoReg.STAT),
+    });
 }

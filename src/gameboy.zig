@@ -100,6 +100,7 @@ const Debug = struct {
     breakpoints: std.ArrayList(u16),
     paused: std.atomic.Value(bool),
     sem: std.Thread.Semaphore,
+    stackBase: u16,
 };
 
 pub const Gb = struct {
@@ -165,7 +166,7 @@ pub const Gb = struct {
 
         return Gb{
             .pc = 0x0100,
-            .sp = 0,
+            .sp = 0xfffe,
             .a = 0,
             .b = 0,
             .c = 0,
@@ -195,6 +196,7 @@ pub const Gb = struct {
                 .breakpoints = breakpoints,
                 .paused = std.atomic.Value(bool).init(false),
                 .sem = std.Thread.Semaphore{},
+                .stackBase = 0xfffe,
             },
         };
     }
