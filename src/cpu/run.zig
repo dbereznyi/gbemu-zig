@@ -31,7 +31,7 @@ pub fn runCpu(gb: *Gb, quit: *std.atomic.Value(bool)) !void {
                 const start = try std.time.Instant.now();
 
                 if (interruptPending) {
-                    handleInterrupt(gb, if_, false);
+                    handleInterrupt(gb, if_);
                 }
 
                 const cyclesElapsed = stepCpu(gb);
@@ -43,15 +43,15 @@ pub fn runCpu(gb: *Gb, quit: *std.atomic.Value(bool)) !void {
             .halted => {
                 if (interruptPending) {
                     gb.execState = .running;
-                    handleInterrupt(gb, if_, false);
+                    handleInterrupt(gb, if_);
                 } else {
                     try sleepPrecise(1000);
                 }
             },
-            .haltedSkipInterrupt => {
+            .haltedDiscardInterrupt => {
                 if (interruptPending) {
                     gb.execState = .running;
-                    handleInterrupt(gb, if_, true);
+                    discardInterrupt(gb, if_);
                 } else {
                     try sleepPrecise(1000);
                 }
@@ -69,37 +69,41 @@ pub fn runCpu(gb: *Gb, quit: *std.atomic.Value(bool)) !void {
     }
 }
 
-fn handleInterrupt(gb: *Gb, if_: u8, skipHandler: bool) void {
-    gb.pushPc();
+fn handleInterrupt(gb: *Gb, if_: u8) void {
+    gb.push16(gb.pc);
 
     if (if_ & Interrupt.VBLANK > 0) {
-        if (!skipHandler) {
-            gb.pc = 0x0040;
-        }
+        gb.pc = 0x0040;
         gb.write(IoReg.IF, if_ & ~Interrupt.VBLANK);
     } else if (if_ & Interrupt.STAT > 0) {
-        if (!skipHandler) {
-            gb.pc = 0x0048;
-        }
+        gb.pc = 0x0048;
         gb.write(IoReg.IF, if_ & ~Interrupt.STAT);
     } else if (if_ & Interrupt.TIMER > 0) {
-        if (!skipHandler) {
-            gb.pc = 0x0050;
-        }
+        gb.pc = 0x0050;
         gb.write(IoReg.IF, if_ & ~Interrupt.TIMER);
     } else if (if_ & Interrupt.SERIAL > 0) {
-        if (!skipHandler) {
-            gb.pc = 0x0058;
-        }
+        gb.pc = 0x0058;
         gb.write(IoReg.IF, if_ & ~Interrupt.SERIAL);
     } else if (if_ & Interrupt.JOYPAD > 0) {
-        if (!skipHandler) {
-            gb.pc = 0x0060;
-        }
+        gb.pc = 0x0060;
         gb.write(IoReg.IF, if_ & ~Interrupt.JOYPAD);
     }
 
     gb.ime = false;
+}
+
+fn discardInterrupt(gb: *Gb, if_: u8) void {
+    if (if_ & Interrupt.VBLANK > 0) {
+        gb.write(IoReg.IF, if_ & ~Interrupt.VBLANK);
+    } else if (if_ & Interrupt.STAT > 0) {
+        gb.write(IoReg.IF, if_ & ~Interrupt.STAT);
+    } else if (if_ & Interrupt.TIMER > 0) {
+        gb.write(IoReg.IF, if_ & ~Interrupt.TIMER);
+    } else if (if_ & Interrupt.SERIAL > 0) {
+        gb.write(IoReg.IF, if_ & ~Interrupt.SERIAL);
+    } else if (if_ & Interrupt.JOYPAD > 0) {
+        gb.write(IoReg.IF, if_ & ~Interrupt.JOYPAD);
+    }
 }
 
 fn debugBreak(gb: *Gb, quit: *std.atomic.Value(bool)) !void {

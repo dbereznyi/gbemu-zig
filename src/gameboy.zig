@@ -2,6 +2,7 @@ const std = @import("std");
 const Pixel = @import("pixel.zig").Pixel;
 const AtomicOrder = std.builtin.AtomicOrder;
 const Instr = @import("cpu/instruction.zig").Instr;
+const as16 = @import("util.zig").as16;
 
 pub const IoReg = .{
     .JOYP = 0xff00,
@@ -60,7 +61,7 @@ pub const ObjFlag = .{
 pub const ExecState = enum {
     running,
     halted,
-    haltedSkipInterrupt,
+    haltedDiscardInterrupt,
     stopped,
 };
 
@@ -226,13 +227,21 @@ pub const Gb = struct {
         gb.carry = flags & 0b0001_0000 > 0;
     }
 
-    pub fn pushPc(gb: *Gb) void {
-        const high: u8 = @truncate(gb.pc >> 8);
-        const low: u8 = @truncate(gb.pc);
+    pub fn push16(gb: *Gb, value: u16) void {
+        const high: u8 = @truncate(value >> 8);
+        const low: u8 = @truncate(value);
         gb.sp -%= 1;
         gb.write(gb.sp, high);
         gb.sp -%= 1;
         gb.write(gb.sp, low);
+    }
+
+    pub fn pop16(gb: *Gb) u16 {
+        const low = gb.read(gb.sp);
+        gb.sp +%= 1;
+        const high = gb.read(gb.sp);
+        gb.sp +%= 1;
+        return as16(high, low);
     }
 
     pub fn getIoReg(gb: *Gb, ioReg: u16) *std.atomic.Value(u8) {

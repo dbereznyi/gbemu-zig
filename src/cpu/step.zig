@@ -2,7 +2,7 @@ const std = @import("std");
 const Gb = @import("../gameboy.zig").Gb;
 const IoReg = @import("../gameboy.zig").IoReg;
 const ExecState = @import("../gameboy.zig").ExecState;
-const util = @import("../util.zig");
+const as16 = @import("../util.zig").as16;
 const Src8 = @import("operand.zig").Src8;
 const Dst8 = @import("operand.zig").Dst8;
 const Src16 = @import("operand.zig").Src16;
@@ -87,14 +87,14 @@ pub fn stepCpu(gb: *Gb) usize {
 }
 
 fn incHL(gb: *Gb) void {
-    const hl = util.as16(gb.h, gb.l);
+    const hl = as16(gb.h, gb.l);
     const hlInc = hl +% 1;
     gb.h = @truncate(hlInc >> 8);
     gb.l = @truncate(hlInc);
 }
 
 fn decHL(gb: *Gb) void {
-    const hl = util.as16(gb.h, gb.l);
+    const hl = as16(gb.h, gb.l);
     const hlDec = hl -% 1;
     gb.h = @truncate(hlDec >> 8);
     gb.l = @truncate(hlDec);
@@ -312,71 +312,54 @@ fn jpHl(gb: *Gb) void {
     gb.pc = calcJpDestAddr(destAddr);
 }
 
-fn pop16(gb: *Gb) u16 {
-    const low = gb.read(gb.sp);
-    gb.sp +%= 1;
-    const high = gb.read(gb.sp);
-    gb.sp +%= 1;
-    return util.as16(high, low);
-}
-
 fn calcRetDestAddr(address: u16) u16 {
     // subtract 1 byte to account for PC getting incremented by the size of RET (1 byte)
     return address -% 1;
 }
 
 fn ret(gb: *Gb) void {
-    gb.pc = calcRetDestAddr(pop16(gb));
+    gb.pc = calcRetDestAddr(gb.pop16());
 }
 
 fn retCond(gb: *Gb, cond: bool) void {
     if (cond) {
-        gb.pc = calcRetDestAddr(pop16(gb));
+        gb.pc = calcRetDestAddr(gb.pop16());
         gb.branchCond = true;
     }
 }
 
 fn reti(gb: *Gb) void {
-    gb.pc = calcRetDestAddr(pop16(gb));
+    gb.pc = calcRetDestAddr(gb.pop16());
     gb.ime = true;
 }
 
-fn push16(gb: *Gb, value: u16) void {
-    const high: u8 = @truncate(value >> 8);
-    const low: u8 = @truncate(value);
-    gb.sp -%= 1;
-    gb.write(gb.sp, high);
-    gb.sp -%= 1;
-    gb.write(gb.sp, low);
-}
-
 fn call(gb: *Gb, address: u16) void {
-    push16(gb, gb.pc +% 3);
+    gb.push16(gb.pc +% 3);
     gb.pc = address;
 }
 
 fn callCond(gb: *Gb, address: u16, cond: bool) void {
     if (cond) {
-        push16(gb, gb.pc +% 3);
+        gb.push16(gb.pc +% 3);
         gb.pc = address;
         gb.branchCond = true;
     }
 }
 
 fn rst(gb: *Gb, address: u8) void {
-    push16(gb, gb.pc +% 1);
+    gb.push16(gb.pc +% 1);
     // subtract 1 byte to account for PC getting incremented by the size of RST (1 byte)
     gb.pc = address -% 1;
 }
 
 fn pop(gb: *Gb, dst: Dst16) void {
-    const value = pop16(gb);
+    const value = gb.pop16();
     dst.write(value, gb);
 }
 
 fn push(gb: *Gb, src: Src16) void {
     const value = src.read(gb);
-    push16(gb, value);
+    gb.push16(value);
 }
 
 fn di(gb: *Gb) void {
@@ -393,7 +376,7 @@ fn halt(gb: *Gb) void {
     } else {
         const interruptPending = (Gb.read(gb, IoReg.IE) & Gb.read(gb, IoReg.IF)) > 0;
         if (!interruptPending) {
-            gb.execState = ExecState.haltedSkipInterrupt;
+            gb.execState = ExecState.haltedDiscardInterrupt;
         } else {
             gb.execState = ExecState.running;
             gb.skipPcIncrement = true;

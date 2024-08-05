@@ -59,7 +59,7 @@ pub fn main() !void {
         try initVramForTesting(&gb, alloc);
     }
 
-    if (true) {
+    if (false) {
         try gb.debug.breakpoints.append(0x0100);
     }
 
