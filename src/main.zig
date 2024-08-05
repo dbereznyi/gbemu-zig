@@ -9,7 +9,6 @@ const LcdcFlag = @import("gameboy.zig").LcdcFlag;
 const ObjFlag = @import("gameboy.zig").ObjFlag;
 const runCpu = @import("cpu/run.zig").runCpu;
 const runPpu = @import("ppu.zig").runPpu;
-const AtomicOrder = std.builtin.AtomicOrder;
 
 const SCALE = 4;
 
@@ -17,6 +16,16 @@ pub fn main() !void {
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
+
+    const args = try std.process.argsAlloc(alloc);
+    defer std.process.argsFree(alloc, args);
+
+    if (args.len < 2) {
+        try std.io.getStdErr().writer().print("Usage: {s} <path to ROM file>\n", .{args[0]});
+        std.process.exit(1);
+    }
+
+    const romFilepath = args[1];
 
     if (c.SDL_Init(c.SDL_INIT_VIDEO) != 0) {
         c.SDL_Log("Unable to initialize SDL: %s", c.SDL_GetError());
@@ -42,12 +51,16 @@ pub fn main() !void {
     };
     defer c.SDL_DestroyTexture(texture);
 
-    const rom = try std.fs.cwd().readFileAlloc(alloc, "roms/hello-world.gb", 1024 * 1024 * 1024);
+    const rom = try std.fs.cwd().readFileAlloc(alloc, romFilepath, 1024 * 1024 * 1024);
     var gb = try Gb.init(alloc, rom);
     defer gb.deinit(alloc);
 
     if (false) {
         try initVramForTesting(&gb, alloc);
+    }
+
+    if (true) {
+        try gb.debug.breakpoints.append(0x0100);
     }
 
     const screen: []Pixel = try alloc.alloc(Pixel, 160 * 144);
@@ -67,7 +80,7 @@ pub fn main() !void {
     var ppuThread = try std.Thread.spawn(.{}, runPpu, .{ &gb, &screenRwl, screen, &quit });
     defer ppuThread.join();
 
-    while (!quit.load(AtomicOrder.monotonic)) {
+    while (!quit.load(.monotonic)) {
         var event: c.SDL_Event = undefined;
         while (c.SDL_PollEvent(&event) != 0) {
             switch (event.type) {
@@ -117,7 +130,7 @@ pub fn main() !void {
                     gb.oamMutex.unlock();
                 },
                 c.SDL_QUIT => {
-                    quit.store(true, AtomicOrder.monotonic);
+                    quit.store(true, .monotonic);
                 },
                 else => {},
             }

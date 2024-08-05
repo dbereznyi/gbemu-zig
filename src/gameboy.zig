@@ -1,6 +1,7 @@
 const std = @import("std");
 const Pixel = @import("pixel.zig").Pixel;
 const AtomicOrder = std.builtin.AtomicOrder;
+const Instr = @import("cpu/instruction.zig").Instr;
 
 pub const IoReg = .{
     .JOYP = 0xff00,
@@ -96,6 +97,7 @@ pub const StatFlag = .{
 
 const Debug = struct {
     stepModeEnabled: bool,
+    breakpoints: std.ArrayList(u16),
     paused: std.atomic.Value(bool),
     sem: std.Thread.Semaphore,
 };
@@ -159,6 +161,8 @@ pub const Gb = struct {
             hram[i] = 0;
         }
 
+        const breakpoints = try std.ArrayList(u16).initCapacity(alloc, 128);
+
         return Gb{
             .pc = 0x0100,
             .sp = 0,
@@ -188,6 +192,7 @@ pub const Gb = struct {
             .rom = rom,
             .debug = .{
                 .stepModeEnabled = false,
+                .breakpoints = breakpoints,
                 .paused = std.atomic.Value(bool).init(false),
                 .sem = std.Thread.Semaphore{},
             },
@@ -200,6 +205,7 @@ pub const Gb = struct {
         alloc.free(gb.oam);
         alloc.free(gb.ioRegs);
         alloc.free(gb.hram);
+        gb.debug.breakpoints.deinit();
     }
 
     pub fn readFlags(gb: *const Gb) u8 {
