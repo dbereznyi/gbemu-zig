@@ -8,7 +8,11 @@ const IoReg = @import("gameboy.zig").IoReg;
 const LcdcFlag = @import("gameboy.zig").LcdcFlag;
 const ObjFlag = @import("gameboy.zig").ObjFlag;
 const runCpu = @import("cpu/run.zig").runCpu;
+const stepCpu = @import("cpu/run.zig").stepCpu;
 const runPpu = @import("ppu.zig").runPpu;
+const stepPpu = @import("ppu.zig").stepPpu;
+const Ppu = @import("ppu.zig").Ppu;
+const decodeInstrAt = @import("cpu/decode.zig").decodeInstrAt;
 
 const SCALE = 4;
 
@@ -74,12 +78,21 @@ pub fn main() !void {
 
     var quit = std.atomic.Value(bool).init(false);
 
-    var cpuThread = try std.Thread.spawn(.{}, runCpu, .{ &gb, &quit });
-    defer cpuThread.join();
+    if (false) {
+        var cpuThread = try std.Thread.spawn(.{}, runCpu, .{ &gb, &quit });
+        defer cpuThread.join();
+        var ppuThread = try std.Thread.spawn(.{}, runPpu, .{ &gb, &screenRwl, screen, &quit });
+        defer ppuThread.join();
+    }
 
-    var ppuThread = try std.Thread.spawn(.{}, runPpu, .{ &gb, &screenRwl, screen, &quit });
-    defer ppuThread.join();
+    var gameboyThread = try std.Thread.spawn(.{}, runGameboy, .{
+        &gb,
+        &quit,
+        screen,
+    });
+    defer gameboyThread.join();
 
+    var frames: usize = 0;
     while (!quit.load(.monotonic)) {
         var event: c.SDL_Event = undefined;
         while (c.SDL_PollEvent(&event) != 0) {
@@ -90,7 +103,6 @@ pub fn main() !void {
                     }
                 },
                 c.SDL_KEYDOWN => {
-                    gb.oamMutex.lock();
                     switch (event.key.keysym.sym) {
                         c.SDLK_RIGHT => {
                             gb.write(IoReg.SCX, gb.read(IoReg.SCX) +% 1);
@@ -104,30 +116,8 @@ pub fn main() !void {
                         c.SDLK_DOWN => {
                             gb.write(IoReg.SCY, gb.read(IoReg.SCY) -% 1);
                         },
-                        c.SDLK_d => {
-                            gb.oam[1] +%= 1;
-                        },
-                        c.SDLK_a => {
-                            gb.oam[1] -%= 1;
-                        },
-                        c.SDLK_w => {
-                            gb.oam[0] -%= 1;
-                        },
-                        c.SDLK_s => {
-                            gb.oam[0] +%= 1;
-                        },
-                        c.SDLK_x => {
-                            gb.oam[3] ^= ObjFlag.X_FLIP_ON;
-                        },
-                        c.SDLK_y => {
-                            gb.oam[3] ^= ObjFlag.Y_FLIP_ON;
-                        },
-                        c.SDLK_p => {
-                            gb.oam[3] ^= ObjFlag.PALETTE_1;
-                        },
                         else => {},
                     }
-                    gb.oamMutex.unlock();
                 },
                 c.SDL_QUIT => {
                     quit.store(true, .monotonic);
@@ -136,9 +126,8 @@ pub fn main() !void {
             }
         }
 
-        if (screenRwl.tryLockShared()) {
+        if (gb.isInVBlank.load(.monotonic)) {
             _ = c.SDL_UpdateTexture(texture, null, @ptrCast(screen), 160 * 3);
-            screenRwl.unlockShared();
         }
 
         _ = c.SDL_RenderClear(renderer);
@@ -146,6 +135,72 @@ pub fn main() !void {
         c.SDL_RenderPresent(renderer);
 
         c.SDL_Delay(17);
+        frames += 1;
+    }
+}
+
+fn runGameboy(gb: *Gb, quit: *std.atomic.Value(bool), screen: []Pixel) !void {
+    var ppu = Ppu.init();
+
+    while (!quit.load(.monotonic)) {
+        const CYCLES_UNTIL_VBLANK: usize = 16416;
+        var currentCycles: usize = 0;
+        while (currentCycles < CYCLES_UNTIL_VBLANK) {
+            if (false) {
+                try printDebugState(gb, &ppu);
+            }
+
+            const cpuCycles = stepCpu(gb);
+            for (0..cpuCycles) |_| {
+                ppu.step(gb, screen);
+            }
+
+            currentCycles += cpuCycles;
+        }
+
+        //std.debug.print("took {} cycles to enter vblank\n", .{currentCycles});
+
+        std.debug.assert(ppu.mode == .vBlank);
+        std.debug.assert(gb.isInVBlank.load(.monotonic));
+
+        const FRAME_CYCLES: usize = CYCLES_UNTIL_VBLANK + 1140;
+        std.time.sleep(FRAME_CYCLES * 1000);
+
+        while (ppu.mode != .oam) {
+            if (false) {
+                try printDebugState(gb, &ppu);
+            }
+
+            const cpuCycles = stepCpu(gb);
+            for (0..cpuCycles) |_| {
+                ppu.step(gb, screen);
+            }
+
+            currentCycles += cpuCycles;
+        }
+    }
+}
+
+fn printDebugState(gb: *Gb, ppu: *const Ppu) !void {
+    if (true) {
+        const modeStr = switch (ppu.mode) {
+            .oam => "oam",
+            .drawing => "drawing",
+            .hBlank => "hblank",
+            .vBlank => "vblank",
+        };
+        std.debug.print("dots={d:>6} y={d:0>3} LY=${x:0>2} wy={d:0>3} windowY={d:0>3} mode={s}\n", .{ ppu.dots, ppu.y, gb.read(IoReg.LY), ppu.wy, ppu.windowY, modeStr });
+    }
+    if (true) {
+        var instrStrBuf: [64]u8 = undefined;
+
+        const instr = decodeInstrAt(gb.pc, gb);
+        const instrStr = try instr.toStr(&instrStrBuf);
+
+        std.debug.print("${x:0>4}: {s}\n", .{
+            gb.pc,
+            instrStr,
+        });
     }
 }
 

@@ -5,9 +5,43 @@ const IoReg = @import("../gameboy.zig").IoReg;
 const LcdcFlag = @import("../gameboy.zig").LcdcFlag;
 const ObjFlag = @import("../gameboy.zig").ObjFlag;
 const sleepPrecise = @import("../util.zig").sleepPrecise;
-const stepCpu = @import("step.zig").stepCpu;
+const stepInstr = @import("step.zig").stepInstr;
 const decodeInstrAt = @import("decode.zig").decodeInstrAt;
 const parseDebugCmd = @import("../debug.zig").parseDebugCmd;
+
+pub fn stepCpu(gb: *Gb) u64 {
+    const if_ = gb.read(IoReg.IF);
+    const interruptPending = gb.ime and if_ > 0;
+
+    switch (gb.execState) {
+        .running => {
+            if (interruptPending) {
+                handleInterrupt(gb, if_);
+            }
+            const cyclesElapsed = stepInstr(gb);
+            return cyclesElapsed;
+        },
+        .halted => {
+            if (interruptPending) {
+                handleInterrupt(gb, if_);
+                gb.execState = .running;
+            }
+            return 1;
+        },
+        .haltedDiscardInterrupt => {
+            if (interruptPending) {
+                discardInterrupt(gb, if_);
+                gb.execState = .running;
+            }
+            return 1;
+        },
+        .stopped => {
+            // TODO handle properly
+            std.log.info("STOP was executed\n", .{});
+            return 1;
+        },
+    }
+}
 
 pub fn runCpu(gb: *Gb, quit: *std.atomic.Value(bool)) !void {
     while (true) {
@@ -34,9 +68,11 @@ pub fn runCpu(gb: *Gb, quit: *std.atomic.Value(bool)) !void {
                     handleInterrupt(gb, if_);
                 }
 
-                const cyclesElapsed = stepCpu(gb);
+                const cyclesElapsed = stepInstr(gb);
 
                 const actualElapsed = (try std.time.Instant.now()).since(start);
+                gb.debug.expectedCpuTimeNs = cyclesElapsed * 1000;
+                gb.debug.actualCpuTimeNs = actualElapsed;
 
                 try sleepPrecise(cyclesElapsed * 1000 -| actualElapsed);
             },
@@ -46,6 +82,7 @@ pub fn runCpu(gb: *Gb, quit: *std.atomic.Value(bool)) !void {
                     handleInterrupt(gb, if_);
                 } else {
                     try sleepPrecise(1000);
+                    //gb.waitForInterrupt();
                 }
             },
             .haltedDiscardInterrupt => {
@@ -53,7 +90,7 @@ pub fn runCpu(gb: *Gb, quit: *std.atomic.Value(bool)) !void {
                     gb.execState = .running;
                     discardInterrupt(gb, if_);
                 } else {
-                    try sleepPrecise(1000);
+                    gb.waitForInterrupt();
                 }
             },
             .stopped => {
@@ -70,21 +107,24 @@ pub fn runCpu(gb: *Gb, quit: *std.atomic.Value(bool)) !void {
 }
 
 fn handleInterrupt(gb: *Gb, if_: u8) void {
-    gb.push16(gb.pc);
-
     if (if_ & Interrupt.VBLANK > 0) {
+        gb.push16(gb.pc);
         gb.pc = 0x0040;
         gb.write(IoReg.IF, if_ & ~Interrupt.VBLANK);
     } else if (if_ & Interrupt.STAT > 0) {
+        gb.push16(gb.pc);
         gb.pc = 0x0048;
         gb.write(IoReg.IF, if_ & ~Interrupt.STAT);
     } else if (if_ & Interrupt.TIMER > 0) {
+        gb.push16(gb.pc);
         gb.pc = 0x0050;
         gb.write(IoReg.IF, if_ & ~Interrupt.TIMER);
     } else if (if_ & Interrupt.SERIAL > 0) {
+        gb.push16(gb.pc);
         gb.pc = 0x0058;
         gb.write(IoReg.IF, if_ & ~Interrupt.SERIAL);
     } else if (if_ & Interrupt.JOYPAD > 0) {
+        gb.push16(gb.pc);
         gb.pc = 0x0060;
         gb.write(IoReg.IF, if_ & ~Interrupt.JOYPAD);
     }

@@ -8,7 +8,7 @@ const Src16 = @import("operand.zig").Src16;
 const Dst16 = @import("operand.zig").Dst16;
 const util = @import("../util.zig");
 
-pub fn decodeInstrAt(pc: u16, gb: *Gb) Instr {
+pub fn decodeInstrAt(pc: u16, gb: *const Gb) Instr {
     const opcode = gb.rom[pc];
 
     const n8 = gb.rom[pc + 1];

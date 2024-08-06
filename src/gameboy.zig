@@ -100,8 +100,11 @@ const Debug = struct {
     stepModeEnabled: bool,
     breakpoints: std.ArrayList(u16),
     paused: std.atomic.Value(bool),
-    sem: std.Thread.Semaphore,
+    pausedSem: std.Thread.Semaphore,
     stackBase: u16,
+
+    expectedCpuTimeNs: u64,
+    actualCpuTimeNs: u64,
 };
 
 pub const Gb = struct {
@@ -114,7 +117,6 @@ pub const Gb = struct {
     e: u8,
     h: u8,
     l: u8,
-    // flags (F register)
     zero: bool,
     negative: bool,
     halfCarry: bool,
@@ -129,15 +131,20 @@ pub const Gb = struct {
     // and interrupts pending.
     skipPcIncrement: bool,
 
+    waitingForInterrupt: std.atomic.Value(bool),
+    interruptSem: std.Thread.Semaphore,
+
     vram: []u8,
-    vramMutex: std.Thread.Mutex,
     wram: []u8,
     oam: []u8,
-    oamMutex: std.Thread.Mutex,
     ioRegs: []std.atomic.Value(u8),
     hram: []u8,
     ie: u8,
     rom: []const u8,
+
+    isScanningOam: bool,
+    isDrawing: bool,
+    isInVBlank: std.atomic.Value(bool),
 
     debug: Debug,
 
@@ -183,21 +190,27 @@ pub const Gb = struct {
             .ime = false,
             .execState = ExecState.running,
             .skipPcIncrement = false,
+            .waitingForInterrupt = std.atomic.Value(bool).init(false),
+            .interruptSem = std.Thread.Semaphore{},
             .vram = vram,
-            .vramMutex = std.Thread.Mutex{},
             .wram = wram,
             .oam = oam,
-            .oamMutex = std.Thread.Mutex{},
             .ioRegs = ioRegs,
             .hram = hram,
             .ie = 0,
             .rom = rom,
+            .isScanningOam = false,
+            .isDrawing = false,
+            .isInVBlank = std.atomic.Value(bool).init(false),
             .debug = .{
                 .stepModeEnabled = false,
                 .breakpoints = breakpoints,
                 .paused = std.atomic.Value(bool).init(false),
-                .sem = std.Thread.Semaphore{},
+                .pausedSem = std.Thread.Semaphore{},
                 .stackBase = 0xfffe,
+
+                .expectedCpuTimeNs = 0,
+                .actualCpuTimeNs = 0,
             },
         };
     }
@@ -244,8 +257,9 @@ pub const Gb = struct {
         return as16(high, low);
     }
 
-    pub fn getIoReg(gb: *Gb, ioReg: u16) *std.atomic.Value(u8) {
-        return &gb.ioRegs[0xff00 - ioReg];
+    pub fn isVramInUse(gb: *Gb) bool {
+        const lcdOn = gb.ioRegs[IoReg.LCDC - 0xff00].load(.monotonic) & LcdcFlag.ON > 0;
+        return lcdOn and gb.isDrawing;
     }
 
     pub fn read(gb: *Gb, addr: u16) u8 {
@@ -256,13 +270,12 @@ pub const Gb = struct {
             0x4000...0x7fff => gb.rom[addr], // TODO handle bank switching
             // VRAM
             0x8000...0x9fff => blk: {
-                if (gb.vramMutex.tryLock()) {
+                if (!gb.isVramInUse()) {
                     const val = gb.vram[addr - 0x8000];
-                    gb.vramMutex.unlock();
                     break :blk val;
                 } else {
                     // garbage data is returned when VRAM is in use by the PPU
-                    std.log.warn("Attempted to read from VRAM outside of HBLANK/VBLANK (${x})\n", .{addr});
+                    std.log.warn("Attempted to read from VRAM while in use (${x})\n", .{addr});
                     break :blk 0xff;
                 }
             },
@@ -274,13 +287,12 @@ pub const Gb = struct {
             0xe000...0xfdff => gb.wram[addr - 0xc000],
             // OAM
             0xfe00...0xfe9f => blk: {
-                if (gb.oamMutex.tryLock()) {
+                if (!gb.isScanningOam) {
                     const val = gb.oam[addr - 0xfe00];
-                    gb.oamMutex.unlock();
                     break :blk val;
                 } else {
                     // garbage data is returned when ORAM is in use by the PPU
-                    std.log.warn("Attempted to read from VRAM outside of HBLANK/VBLANK (${x})\n", .{addr});
+                    std.log.warn("Attempted to read from OAM while in use (${x})\n", .{addr});
                     break :blk 0xff;
                 }
             },
@@ -303,11 +315,11 @@ pub const Gb = struct {
             0x4000...0x7fff => std.debug.panic("Cartridge operations are not yet implemented (${x} -> ${x})\n", .{ val, addr }), // TODO handle bank switching
             // VRAM
             0x8000...0x9fff => {
-                if (gb.vramMutex.tryLock()) {
+                if (!gb.isVramInUse()) {
                     gb.vram[addr - 0x8000] = val;
-                    gb.vramMutex.unlock();
                 } else {
-                    std.log.warn("Attempted to write to VRAM outside of HBLANK/VBLANK (${x} -> {x})\n", .{ val, addr });
+                    //std.log.warn("Attempted to write to VRAM outside of HBLANK/VBLANK (${x} -> {x})\n", .{ val, addr });
+                    std.debug.panic("Attempted to write to VRAM while in use (${x} -> {x})\n", .{ val, addr });
                 }
             },
             // External RAM
@@ -323,7 +335,11 @@ pub const Gb = struct {
             },
             // OAM
             0xfe00...0xfe9f => {
-                gb.oam[addr - 0xfe00] = val;
+                if (!gb.isScanningOam) {
+                    gb.oam[addr - 0xfe00] = val;
+                } else {
+                    std.log.warn("Attempted to write to OAM while in use (${x} -> {x})\n", .{ val, addr });
+                }
             },
             // Not useable
             0xfea0...0xfeff => std.debug.panic("Attempted to write to prohibited memory (${x} -> ${x})\n", .{ val, addr }),
@@ -356,8 +372,16 @@ pub const Gb = struct {
     }
 
     pub fn requestInterrupt(gb: *Gb, interrupt: u8) void {
-        // TODO handle "STAT blocking" behavior
         _ = gb.ioRegs[IoReg.IF - 0xff00].fetchOr(interrupt, .monotonic);
+        if (gb.waitingForInterrupt.load(.monotonic)) {
+            gb.interruptSem.post();
+            gb.waitingForInterrupt.store(false, .monotonic);
+        }
+    }
+
+    pub fn waitForInterrupt(gb: *Gb) void {
+        gb.waitingForInterrupt.store(true, .monotonic);
+        gb.interruptSem.wait();
     }
 
     pub fn debugPause(gb: *Gb) void {
@@ -366,12 +390,12 @@ pub const Gb = struct {
 
     pub fn debugUnpause(gb: *Gb) void {
         gb.debug.paused.store(false, .monotonic);
-        gb.debug.sem.post();
+        gb.debug.pausedSem.post();
     }
 
     pub fn waitForDebugUnpause(gb: *Gb) void {
         if (gb.debug.paused.load(.monotonic)) {
-            gb.debug.sem.wait();
+            gb.debug.pausedSem.wait();
         }
     }
 };

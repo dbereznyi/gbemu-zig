@@ -9,7 +9,7 @@ const Src16 = @import("operand.zig").Src16;
 const Dst16 = @import("operand.zig").Dst16;
 const decodeInstrAt = @import("decode.zig").decodeInstrAt;
 
-pub fn stepCpu(gb: *Gb) usize {
+pub fn stepInstr(gb: *Gb) usize {
     gb.branchCond = false;
 
     const instr = decodeInstrAt(gb.pc, gb);
