@@ -43,69 +43,6 @@ pub fn stepCpu(gb: *Gb) u64 {
     }
 }
 
-pub fn runCpu(gb: *Gb, quit: *std.atomic.Value(bool)) !void {
-    while (true) {
-        const if_ = gb.read(IoReg.IF);
-        const interruptPending = gb.ime and if_ > 0;
-
-        switch (gb.execState) {
-            .running => {
-                var breakpointHit = false;
-                for (gb.debug.breakpoints.items) |breakpoint| {
-                    if (gb.pc == breakpoint) {
-                        breakpointHit = true;
-                        break;
-                    }
-                }
-                if (gb.debug.stepModeEnabled or breakpointHit) {
-                    gb.debug.stepModeEnabled = true;
-                    try debugBreak(gb, quit);
-                }
-
-                const start = try std.time.Instant.now();
-
-                if (interruptPending) {
-                    handleInterrupt(gb, if_);
-                }
-
-                const cyclesElapsed = stepInstr(gb);
-
-                const actualElapsed = (try std.time.Instant.now()).since(start);
-                gb.debug.expectedCpuTimeNs = cyclesElapsed * 1000;
-                gb.debug.actualCpuTimeNs = actualElapsed;
-
-                try sleepPrecise(cyclesElapsed * 1000 -| actualElapsed);
-            },
-            .halted => {
-                if (interruptPending) {
-                    gb.execState = .running;
-                    handleInterrupt(gb, if_);
-                } else {
-                    try sleepPrecise(1000);
-                    //gb.waitForInterrupt();
-                }
-            },
-            .haltedDiscardInterrupt => {
-                if (interruptPending) {
-                    gb.execState = .running;
-                    discardInterrupt(gb, if_);
-                } else {
-                    gb.waitForInterrupt();
-                }
-            },
-            .stopped => {
-                // TODO handle properly
-                std.log.info("STOP was executed\n", .{});
-                return;
-            },
-        }
-
-        if (quit.load(.monotonic)) {
-            return;
-        }
-    }
-}
-
 fn handleInterrupt(gb: *Gb, if_: u8) void {
     if (if_ & Interrupt.VBLANK > 0) {
         gb.push16(gb.pc);

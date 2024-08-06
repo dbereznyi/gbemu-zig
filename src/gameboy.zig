@@ -99,8 +99,6 @@ pub const StatFlag = .{
 const Debug = struct {
     stepModeEnabled: bool,
     breakpoints: std.ArrayList(u16),
-    paused: std.atomic.Value(bool),
-    pausedSem: std.Thread.Semaphore,
     stackBase: u16,
 
     expectedCpuTimeNs: u64,
@@ -131,9 +129,6 @@ pub const Gb = struct {
     // and interrupts pending.
     skipPcIncrement: bool,
 
-    waitingForInterrupt: std.atomic.Value(bool),
-    interruptSem: std.Thread.Semaphore,
-
     vram: []u8,
     wram: []u8,
     oam: []u8,
@@ -141,6 +136,8 @@ pub const Gb = struct {
     hram: []u8,
     ie: u8,
     rom: []const u8,
+
+    screen: []Pixel,
 
     isScanningOam: bool,
     isDrawing: bool,
@@ -172,6 +169,14 @@ pub const Gb = struct {
 
         const breakpoints = try std.ArrayList(u16).initCapacity(alloc, 128);
 
+        const screen: []Pixel = try alloc.alloc(Pixel, 160 * 144);
+        defer alloc.free(screen);
+        for (screen) |*pixel| {
+            pixel.*.r = 0;
+            pixel.*.g = 0;
+            pixel.*.b = 0;
+        }
+
         return Gb{
             .pc = 0x0100,
             .sp = 0xfffe,
@@ -190,8 +195,6 @@ pub const Gb = struct {
             .ime = false,
             .execState = ExecState.running,
             .skipPcIncrement = false,
-            .waitingForInterrupt = std.atomic.Value(bool).init(false),
-            .interruptSem = std.Thread.Semaphore{},
             .vram = vram,
             .wram = wram,
             .oam = oam,
@@ -199,14 +202,13 @@ pub const Gb = struct {
             .hram = hram,
             .ie = 0,
             .rom = rom,
+            .screen = screen,
             .isScanningOam = false,
             .isDrawing = false,
             .isInVBlank = std.atomic.Value(bool).init(false),
             .debug = .{
                 .stepModeEnabled = false,
                 .breakpoints = breakpoints,
-                .paused = std.atomic.Value(bool).init(false),
-                .pausedSem = std.Thread.Semaphore{},
                 .stackBase = 0xfffe,
 
                 .expectedCpuTimeNs = 0,
@@ -221,6 +223,7 @@ pub const Gb = struct {
         alloc.free(gb.oam);
         alloc.free(gb.ioRegs);
         alloc.free(gb.hram);
+        alloc.free(gb.screen);
         gb.debug.breakpoints.deinit();
     }
 
@@ -260,6 +263,11 @@ pub const Gb = struct {
     pub fn isVramInUse(gb: *Gb) bool {
         const lcdOn = gb.ioRegs[IoReg.LCDC - 0xff00].load(.monotonic) & LcdcFlag.ON > 0;
         return lcdOn and gb.isDrawing;
+    }
+
+    pub fn isOnAndInVBlank(gb: *Gb) bool {
+        const lcdOn = gb.ioRegs[IoReg.LCDC - 0xff00].load(.monotonic) & LcdcFlag.ON > 0;
+        return lcdOn and gb.isInVBlank.load(.monotonic);
     }
 
     pub fn read(gb: *Gb, addr: u16) u8 {
@@ -373,29 +381,5 @@ pub const Gb = struct {
 
     pub fn requestInterrupt(gb: *Gb, interrupt: u8) void {
         _ = gb.ioRegs[IoReg.IF - 0xff00].fetchOr(interrupt, .monotonic);
-        if (gb.waitingForInterrupt.load(.monotonic)) {
-            gb.interruptSem.post();
-            gb.waitingForInterrupt.store(false, .monotonic);
-        }
-    }
-
-    pub fn waitForInterrupt(gb: *Gb) void {
-        gb.waitingForInterrupt.store(true, .monotonic);
-        gb.interruptSem.wait();
-    }
-
-    pub fn debugPause(gb: *Gb) void {
-        gb.debug.paused.store(true, .monotonic);
-    }
-
-    pub fn debugUnpause(gb: *Gb) void {
-        gb.debug.paused.store(false, .monotonic);
-        gb.debug.pausedSem.post();
-    }
-
-    pub fn waitForDebugUnpause(gb: *Gb) void {
-        if (gb.debug.paused.load(.monotonic)) {
-            gb.debug.pausedSem.wait();
-        }
     }
 };

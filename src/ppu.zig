@@ -78,10 +78,22 @@ pub const Ppu = struct {
         };
     }
 
+    pub fn printState(ppu: *Ppu, gb: *Gb) void {
+        const modeStr = switch (ppu.mode) {
+            .oam => "oam",
+            .drawing => "draw",
+            .hBlank => "hblank",
+            .vBlank => "vblank",
+        };
+        std.debug.print("dots={d:>6} y={d:0>3} x={d:0>3} LY=${x:0>2} wy={d:0>3} windowY={d:0>3} mode={s} LCDC={b:0>8}\n", .{ ppu.dots, ppu.y, ppu.x, gb.read(IoReg.LY), ppu.wy, ppu.windowY, modeStr, gb.read(IoReg.LCDC) });
+    }
+
     // Advance the state of the PPU by 1 M-cycle (= 4 dots).
-    pub fn step(ppu: *Ppu, gb: *Gb, screen: []Pixel) void {
+    pub fn step(ppu: *Ppu, gb: *Gb) void {
         std.debug.assert(ppu.dots % 4 == 0);
         std.debug.assert(ppu.dots < VBLANK_END);
+
+        //ppu.printState(gb);
 
         if (false) {
             switch (ppu.dots) {
@@ -123,8 +135,10 @@ pub const Ppu = struct {
         switch (ppu.mode) {
             .oam => {
                 std.debug.assert(ppu.dots % LINE_DOTS < DRAWING_START);
+                std.debug.assert(ppu.x == 0);
                 std.debug.assert(ppu.y < 144);
                 std.debug.assert(gb.read(IoReg.LY) < 144);
+                std.debug.assert(!gb.isDrawing);
 
                 if (ppu.dots % LINE_DOTS == 0) {
                     gb.isScanningOam = true;
@@ -153,29 +167,38 @@ pub const Ppu = struct {
                 std.debug.assert(ppu.dots % LINE_DOTS < HBLANK_START);
                 std.debug.assert(ppu.y < 144);
                 std.debug.assert(gb.read(IoReg.LY) < 144);
+                std.debug.assert(!gb.isScanningOam);
+
+                if (ppu.dots == DRAWING_START) {
+                    ppu.*.windowY = 0;
+                    ppu.*.wy = gb.read(IoReg.WY);
+                }
 
                 if (ppu.dots % LINE_DOTS == DRAWING_START) {
                     gb.isDrawing = true;
                     gb.setStatMode(StatFlag.MODE_3);
-
-                    ppu.*.windowY = 0;
-                    ppu.*.wy = gb.read(IoReg.WY);
-                } else if (ppu.dots % LINE_DOTS == HBLANK_START - 4) {
-                    gb.isDrawing = false;
-                    ppu.*.mode = .hBlank;
                 } else if (ppu.dots % LINE_DOTS >= DRAWING_START + 12) {
                     for (ppu.x..ppu.x + 4) |x| {
                         const colorId = colorIdAt(x, ppu.y, gb, ppu.objAttrsLine, &ppu.windowY, ppu.wy);
-                        screen[ppu.y * 160 + x] = ppu.palette[colorId];
+                        gb.screen[ppu.y * 160 + x] = ppu.palette[colorId];
                     }
                     ppu.*.x = (ppu.x + 4) % 160;
+
+                    if (ppu.dots % LINE_DOTS == HBLANK_START - 4) {
+                        ppu.*.x = 0;
+                        gb.isDrawing = false;
+                        ppu.*.mode = .hBlank;
+                    }
                 }
             },
             .hBlank => {
                 std.debug.assert(ppu.dots % LINE_DOTS >= HBLANK_START);
                 std.debug.assert(ppu.dots < VBLANK_START);
+                std.debug.assert(ppu.x == 0);
                 std.debug.assert(ppu.y < 144);
                 std.debug.assert(gb.read(IoReg.LY) < 144);
+                std.debug.assert(!gb.isScanningOam);
+                std.debug.assert(!gb.isDrawing);
 
                 if (ppu.dots % LINE_DOTS == HBLANK_START) {
                     const ie = gb.read(IoReg.IE);
@@ -219,6 +242,8 @@ pub const Ppu = struct {
                 std.debug.assert(ppu.y < 154);
                 std.debug.assert(gb.read(IoReg.LY) >= 144);
                 std.debug.assert(gb.read(IoReg.LY) < 154);
+                std.debug.assert(!gb.isScanningOam);
+                std.debug.assert(!gb.isDrawing);
 
                 if (ppu.dots == VBLANK_START) {
                     const ie = gb.read(IoReg.IE);
