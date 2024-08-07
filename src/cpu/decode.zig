@@ -8,12 +8,12 @@ const Src16 = @import("operand.zig").Src16;
 const Dst16 = @import("operand.zig").Dst16;
 const util = @import("../util.zig");
 
-pub fn decodeInstrAt(pc: u16, gb: *const Gb) Instr {
-    const opcode = gb.rom[pc];
+pub fn decodeInstrAt(pc: u16, gb: *Gb) Instr {
+    const opcode = gb.read(pc);
 
-    const n8 = gb.rom[pc + 1];
+    const n8 = gb.read(pc + 1);
     const x: u16 = n8;
-    const y: u16 = gb.rom[pc + 2];
+    const y: u16 = gb.read(pc + 2);
     const n16 = (y << 8) | x;
 
     const opcodeReg: Src8 = switch (@as(u3, @truncate(opcode & 0b0000_0111))) {

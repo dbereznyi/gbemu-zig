@@ -71,14 +71,15 @@ pub fn main() !void {
         try initVramForTesting(&gb, alloc);
     }
 
-    if (true) {
+    if (false) {
         try gb.debug.breakpoints.append(0x0100);
     }
 
-    _ = try std.Thread.spawn(.{}, runGameboy, .{
+    var gameboyThread = try std.Thread.spawn(.{}, runGameboy, .{
         &gb,
         pixels,
     });
+    gameboyThread.detach();
 
     while (gb.isRunning()) {
         var event: c.SDL_Event = undefined;
