@@ -6,14 +6,20 @@ const Interrupt = @import("gameboy.zig").Interrupt;
 const LcdcFlag = @import("gameboy.zig").LcdcFlag;
 const ObjFlag = @import("gameboy.zig").ObjFlag;
 const StatFlag = @import("gameboy.zig").StatFlag;
-const AtomicOrder = std.builtin.AtomicOrder;
-const sleepPrecise = @import("util.zig").sleepPrecise;
 
+// A black-and-white palette. Seems to be used often by emulators/later consoles.
 const PALETTE_GREY = [_]Pixel{
     .{ .r = 255, .g = 255, .b = 255 },
     .{ .r = 127, .g = 127, .b = 127 },
     .{ .r = 63, .g = 63, .b = 63 },
     .{ .r = 0, .g = 0, .b = 0 },
+};
+// A green-ish palette. Closer in feel to original DMG graphics.
+const PALETTE_GREEN = [_]Pixel{
+    .{ .r = 239, .g = 255, .b = 222 },
+    .{ .r = 173, .g = 215, .b = 148 },
+    .{ .r = 82, .g = 146, .b = 115 },
+    .{ .r = 24, .g = 52, .b = 66 },
 };
 
 const LINE_DOTS: usize = 456;
@@ -68,7 +74,7 @@ pub const Ppu = struct {
     pub fn init() Ppu {
         return Ppu{
             .dots = 0,
-            .palette = PALETTE_GREY,
+            .palette = PALETTE_GREEN,
             .y = 0,
             .x = 0,
             .wy = 0,

@@ -17,6 +17,8 @@ const debugBreak = @import("debug.zig").debugBreak;
 
 const SCALE = 4;
 
+var forceQuit = false;
+
 pub fn main() !void {
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena.deinit();
@@ -79,9 +81,24 @@ pub fn main() !void {
         &gb,
         pixels,
     });
-    gameboyThread.detach();
+    defer gameboyThread.join();
+
+    // In order to gracefully handle CTRL+C.
+    try std.posix.sigaction(std.c.SIG.INT, &std.posix.Sigaction{
+        .handler = .{ .handler = struct {
+            pub fn handler(_: c_int) callconv(.C) void {
+                forceQuit = true;
+            }
+        }.handler },
+        .mask = std.posix.empty_sigset,
+        .flags = 0,
+    }, null);
 
     while (gb.isRunning()) {
+        if (forceQuit) {
+            gb.quit();
+        }
+
         var event: c.SDL_Event = undefined;
         while (c.SDL_PollEvent(&event) != 0) {
             switch (event.type) {
