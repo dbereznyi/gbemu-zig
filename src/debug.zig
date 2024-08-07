@@ -1,54 +1,181 @@
 const std = @import("std");
+const Gb = @import("gameboy.zig").Gb;
+const Ppu = @import("ppu.zig").Ppu;
+const IoReg = @import("gameboy.zig").IoReg;
+const decodeInstrAt = @import("cpu/decode.zig").decodeInstrAt;
 
-const DebugCmdTag = enum { quit, step, continue_, breakpointList, breakpointSet, viewRegisters, viewStack };
+const DEBUGGING_ENABLED = true;
 
-pub const DebugCmd = union(DebugCmdTag) {
+const HELP_MESSAGE =
+    "available commands:\n" ++
+    "  general\n" ++
+    "    (q)uit\n" ++
+    "    (c)ontinue execution\n" ++
+    "    (h)elp\n" ++
+    "  breakpoints\n" ++
+    "    (b)reakpoint (l)ist\n" ++
+    "    (b)reakpoint (s)et <value of PC to break on (hex)>\n" ++
+    "  viewing internal state/regions of memory\n" ++
+    "    (v)iew (r)registers\n" ++
+    "    (v)iew (s)tack\n" ++
+    "    (v)iew (p)pu\n" ++
+    "\nexample: setting a breakpoint at $1234:" ++
+    "  bs 1234";
+
+const DebugCmdTag = enum { quit, step, continue_, help, breakpointList, breakpointSet, viewRegisters, viewStack, viewPpu };
+
+const DebugCmd = union(DebugCmdTag) {
     quit: void,
     step: void,
     continue_: void,
+    help: void,
     breakpointList: void,
     breakpointSet: u16,
     viewRegisters: void,
     viewStack: void,
+    viewPpu: void,
+
+    pub fn parse(buf: []u8) ?DebugCmd {
+        const bufTrimmed = std.mem.trim(u8, buf, " \t\r\n");
+        var p = Parser.init(bufTrimmed);
+
+        const command = p.pop() orelse return .step;
+        return switch (command) {
+            'q' => .quit,
+            'c' => .continue_,
+            'h' => .help,
+            'b' => blk: {
+                const modifier = p.pop() orelse break :blk null;
+
+                switch (modifier) {
+                    's' => {
+                        _ = p.until(Parser.isHexNumeral);
+                        const addrStr = p.toEnd() orelse break :blk null;
+                        const addr = std.fmt.parseInt(u16, addrStr, 16) catch break :blk null;
+                        break :blk DebugCmd{ .breakpointSet = addr };
+                    },
+                    'l' => break :blk .breakpointList,
+                    else => break :blk null,
+                }
+            },
+            'v' => blk: {
+                const modifier = p.pop() orelse break :blk null;
+
+                break :blk switch (modifier) {
+                    'r' => .viewRegisters,
+                    's' => .viewStack,
+                    'p' => .viewPpu,
+                    else => null,
+                };
+            },
+            else => null,
+        };
+    }
+
+    pub fn execute(cmd: DebugCmd, gb: *Gb, ppu: *const Ppu) !bool {
+        switch (cmd) {
+            .quit => {
+                gb.quit();
+                return true;
+            },
+            .step => {
+                return true;
+            },
+            .continue_ => {
+                gb.debug.stepModeEnabled = false;
+                return true;
+            },
+            .help => {
+                std.debug.print("{s}", .{HELP_MESSAGE});
+            },
+            .breakpointList => blk: {
+                if (gb.debug.breakpoints.items.len == 0) {
+                    std.debug.print("No active breakpoints set.\n", .{});
+                    break :blk;
+                }
+
+                std.debug.print("Active breakpoints:\n", .{});
+
+                for (gb.debug.breakpoints.items) |breakpoint| {
+                    std.debug.print("  ${x:0>4}\n", .{breakpoint});
+                }
+            },
+            .breakpointSet => |addr| {
+                try gb.debug.breakpoints.append(addr);
+                std.debug.print("Set breakpoint at ${x:0>4}\n", .{addr});
+            },
+            .viewRegisters => gb.printDebugState(),
+            .viewStack => {
+                var addr = gb.sp;
+                while (addr < gb.debug.stackBase) {
+                    std.debug.print("  ${x:0>4}: ${x:0>2}\n", .{ addr, gb.read(addr) });
+                    addr += 1;
+                }
+            },
+            .viewPpu => {
+                ppu.printState();
+                return false;
+            },
+        }
+
+        return false;
+    }
 };
 
-pub fn parseDebugCmd(buf: []u8) ?DebugCmd {
-    const bufTrimmed = std.mem.trim(u8, buf, " \t\r\n");
+pub fn debugBreak(gb: *Gb, ppu: *const Ppu) !void {
+    var breakpointHit = false;
+    for (gb.debug.breakpoints.items) |addr| {
+        if (gb.pc == addr) {
+            breakpointHit = true;
+            break;
+        }
+    }
+    if (!DEBUGGING_ENABLED or !(gb.debug.stepModeEnabled or breakpointHit)) {
+        return;
+    }
 
-    var p = Parser.init(bufTrimmed);
+    gb.debug.stepModeEnabled = true;
 
-    const command = p.pop() orelse return null;
-    return switch (command) {
-        'q' => .quit,
-        's' => .step,
-        'c' => .continue_,
-        'b' => blk: {
-            const modifier = p.pop() orelse break :blk null;
+    gb.printDebugState();
 
-            switch (modifier) {
-                's' => {
-                    _ = p.until(Parser.isHexNumeral);
+    var instrStrBuf: [64]u8 = undefined;
 
-                    const addrStr = p.toEnd() orelse break :blk null;
+    const instr = decodeInstrAt(gb.pc, gb);
+    const instrStr = try instr.toStr(&instrStrBuf);
+    std.debug.print("\n", .{});
+    std.debug.print("==> ${x:0>4}: {s} (${x:0>2} ${x:0>2} ${x:0>2}) \n", .{
+        gb.pc,
+        instrStr,
+        gb.read(gb.pc),
+        gb.read(gb.pc + 1),
+        gb.read(gb.pc + 2),
+    });
 
-                    const addr = std.fmt.parseInt(u16, addrStr, 16) catch break :blk null;
-                    break :blk DebugCmd{ .breakpointSet = addr };
-                },
-                'l' => break :blk .breakpointList,
-                else => break :blk null,
-            }
-        },
-        'v' => blk: {
-            const modifier = p.pop() orelse break :blk null;
+    const instrNext = decodeInstrAt(gb.pc + instr.size(), gb);
+    const instrNextStr = try instrNext.toStr(&instrStrBuf);
+    std.debug.print("    ${x:0>4}: {s} (${x:0>2} ${x:0>2} ${x:0>2}) \n", .{
+        gb.pc + instr.size(),
+        instrNextStr,
+        gb.read(gb.pc + instr.size()),
+        gb.read(gb.pc + instr.size() + 1),
+        gb.read(gb.pc + instr.size() + 2),
+    });
 
-            break :blk switch (modifier) {
-                'r' => .viewRegisters,
-                's' => .viewStack,
-                else => null,
+    var resumeExecution = false;
+    while (!resumeExecution) {
+        std.debug.print("> ", .{});
+        var inputBuf: [128]u8 = undefined;
+        const inputLen = try std.io.getStdIn().read(&inputBuf);
+
+        if (inputLen > 0) {
+            const cmd = DebugCmd.parse(inputBuf[0..inputLen]) orelse {
+                std.debug.print("Invalid command\n", .{});
+                continue;
             };
-        },
-        else => null,
-    };
+            resumeExecution = try cmd.execute(gb, ppu);
+            std.debug.print("\n", .{});
+        }
+    }
 }
 
 const Parser = struct {

@@ -2,12 +2,7 @@ const std = @import("std");
 const Gb = @import("../gameboy.zig").Gb;
 const Interrupt = @import("../gameboy.zig").Interrupt;
 const IoReg = @import("../gameboy.zig").IoReg;
-const LcdcFlag = @import("../gameboy.zig").LcdcFlag;
-const ObjFlag = @import("../gameboy.zig").ObjFlag;
-const sleepPrecise = @import("../util.zig").sleepPrecise;
 const stepInstr = @import("step.zig").stepInstr;
-const decodeInstrAt = @import("decode.zig").decodeInstrAt;
-const parseDebugCmd = @import("../debug.zig").parseDebugCmd;
 
 pub fn stepCpu(gb: *Gb) u64 {
     const if_ = gb.read(IoReg.IF);
@@ -81,106 +76,4 @@ fn discardInterrupt(gb: *Gb, if_: u8) void {
     } else if (if_ & Interrupt.JOYPAD > 0) {
         gb.write(IoReg.IF, if_ & ~Interrupt.JOYPAD);
     }
-}
-
-fn debugBreak(gb: *Gb, quit: *std.atomic.Value(bool)) !void {
-    gb.debugPause();
-
-    printRegisters(gb);
-
-    var instrStrBuf: [64]u8 = undefined;
-    var instrNextStrBuf: [64]u8 = undefined;
-
-    const instr = decodeInstrAt(gb.pc, gb);
-    const instrStr = try instr.toStr(&instrStrBuf);
-
-    const instrNext = decodeInstrAt(gb.pc + instr.size(), gb);
-    const instrNextStr = try instrNext.toStr(&instrNextStrBuf);
-
-    std.debug.print("\n", .{});
-    std.debug.print("==> ${x:0>4}: {s} (${x:0>2} ${x:0>2} ${x:0>2}) \n", .{
-        gb.pc,
-        instrStr,
-        gb.read(gb.pc),
-        gb.read(gb.pc + 1),
-        gb.read(gb.pc + 2),
-    });
-    std.debug.print("    ${x:0>4}: {s} (${x:0>2} ${x:0>2} ${x:0>2}) \n", .{
-        gb.pc + instr.size(),
-        instrNextStr,
-        gb.read(gb.pc + instr.size()),
-        gb.read(gb.pc + instr.size() + 1),
-        gb.read(gb.pc + instr.size() + 2),
-    });
-
-    var resumeExecution = false;
-    while (!resumeExecution) {
-        std.debug.print("> ", .{});
-
-        var inputBuf: [64]u8 = undefined;
-        const inputLen = try std.io.getStdIn().read(&inputBuf);
-
-        if (inputLen > 1) {
-            const cmd = parseDebugCmd(inputBuf[0..inputLen]) orelse {
-                std.debug.print("Invalid command\n", .{});
-                continue;
-            };
-
-            switch (cmd) {
-                .quit => {
-                    quit.store(true, .monotonic);
-                    resumeExecution = true;
-                },
-                .step => {
-                    resumeExecution = true;
-                },
-                .continue_ => {
-                    gb.debug.stepModeEnabled = false;
-                    resumeExecution = true;
-                },
-                .breakpointList => blk: {
-                    if (gb.debug.breakpoints.items.len == 0) {
-                        std.debug.print("No active breakpoints set.\n", .{});
-                        break :blk;
-                    }
-
-                    std.debug.print("Active breakpoints:\n", .{});
-
-                    for (gb.debug.breakpoints.items) |breakpoint| {
-                        std.debug.print("  ${x:0>4}\n", .{breakpoint});
-                    }
-                },
-                .breakpointSet => |addr| {
-                    try gb.debug.breakpoints.append(addr);
-                    std.debug.print("Set breakpoint at ${x:0>4}\n", .{addr});
-                },
-                .viewRegisters => printRegisters(gb),
-                .viewStack => {
-                    var addr = gb.sp;
-                    while (addr < gb.debug.stackBase) {
-                        std.debug.print("  ${x:0>4}: ${x:0>2}\n", .{ addr, gb.read(addr) });
-                        addr += 1;
-                    }
-                },
-            }
-
-            std.debug.print("\n", .{});
-        } else {
-            resumeExecution = true;
-        }
-    }
-
-    gb.debugUnpause();
-}
-
-fn printRegisters(gb: *Gb) void {
-    std.debug.print("PC: ${x:0>4} SP: ${x:0>4}\n", .{ gb.pc, gb.sp });
-    std.debug.print("Z: {} N: {} H: {} C: {}\n", .{ gb.zero, gb.negative, gb.halfCarry, gb.carry });
-    std.debug.print("A: ${x:0>2} B: ${x:0>2} D: ${x:0>2} H: ${x:0>2}\n", .{ gb.a, gb.b, gb.d, gb.h });
-    std.debug.print("F: ${x:0>2} C: ${x:0>2} E: ${x:0>2} L: ${x:0>2}\n", .{ gb.readFlags(), gb.c, gb.e, gb.l });
-    std.debug.print("LY: ${x:0>2} LCDC: %{b:0>8} STAT: %{b:0>8}\n", .{
-        gb.read(IoReg.LY),
-        gb.read(IoReg.LCDC),
-        gb.read(IoReg.STAT),
-    });
 }

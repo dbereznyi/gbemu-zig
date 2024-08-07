@@ -13,6 +13,7 @@ const runPpu = @import("ppu.zig").runPpu;
 const stepPpu = @import("ppu.zig").stepPpu;
 const Ppu = @import("ppu.zig").Ppu;
 const decodeInstrAt = @import("cpu/decode.zig").decodeInstrAt;
+const debugBreak = @import("debug.zig").debugBreak;
 
 const SCALE = 4;
 
@@ -70,20 +71,17 @@ pub fn main() !void {
         try initVramForTesting(&gb, alloc);
     }
 
-    if (false) {
+    if (true) {
         try gb.debug.breakpoints.append(0x0100);
     }
 
-    var quit = std.atomic.Value(bool).init(false);
-
     var gameboyThread = try std.Thread.spawn(.{}, runGameboy, .{
         &gb,
-        &quit,
         pixels,
     });
     defer gameboyThread.join();
 
-    while (!quit.load(.monotonic)) {
+    while (gb.isRunning()) {
         var event: c.SDL_Event = undefined;
         while (c.SDL_PollEvent(&event) != 0) {
             switch (event.type) {
@@ -110,14 +108,13 @@ pub fn main() !void {
                     }
                 },
                 c.SDL_QUIT => {
-                    quit.store(true, .monotonic);
+                    gb.quit();
                 },
                 else => {},
             }
         }
 
         if (gb.isOnAndInVBlank()) {
-            //std.debug.print("updating texture\n", .{});
             _ = c.SDL_UpdateTexture(texture, null, @ptrCast(pixels), 160 * 3);
         }
 
@@ -129,17 +126,18 @@ pub fn main() !void {
     }
 }
 
-fn runGameboy(gb: *Gb, quit: *std.atomic.Value(bool), pixels: []Pixel) !void {
+fn runGameboy(gb: *Gb, pixels: []Pixel) !void {
     var ppu = Ppu.init();
 
-    while (!quit.load(.monotonic)) {
+    while (gb.isRunning()) {
         const lcdOnAtStartOfFrame = gb.read(IoReg.LCDC) & LcdcFlag.ON > 0;
 
         const CYCLES_UNTIL_VBLANK: usize = 16416;
         var currentCycles: usize = 0;
         while (currentCycles < CYCLES_UNTIL_VBLANK) {
-            if (false) {
-                try printDebugState(gb, &ppu);
+            try debugBreak(gb, &ppu);
+            if (!gb.isRunning()) {
+                return;
             }
 
             const cpuCycles = stepCpu(gb);
@@ -153,18 +151,6 @@ fn runGameboy(gb: *Gb, quit: *std.atomic.Value(bool), pixels: []Pixel) !void {
         std.debug.assert(ppu.mode == .vBlank);
         std.debug.assert(gb.isInVBlank.load(.monotonic));
 
-        if (true) {
-            try printDebugState(gb, &ppu);
-
-            std.debug.print("> ", .{});
-
-            var inputBuf: [64]u8 = undefined;
-            const len = try std.io.getStdIn().read(&inputBuf);
-            if (len > 0 and inputBuf[0] == 'q') {
-                quit.store(true, .monotonic);
-            }
-        }
-
         if (lcdOnAtStartOfFrame) {
             std.mem.copyForwards(Pixel, pixels, gb.screen);
         }
@@ -173,8 +159,9 @@ fn runGameboy(gb: *Gb, quit: *std.atomic.Value(bool), pixels: []Pixel) !void {
         std.time.sleep(FRAME_CYCLES * 1000);
 
         while (ppu.mode != .oam) {
-            if (false) {
-                try printDebugState(gb, &ppu);
+            try debugBreak(gb, &ppu);
+            if (!gb.isRunning()) {
+                return;
             }
 
             const cpuCycles = stepCpu(gb);
@@ -184,26 +171,6 @@ fn runGameboy(gb: *Gb, quit: *std.atomic.Value(bool), pixels: []Pixel) !void {
 
             currentCycles += cpuCycles;
         }
-    }
-}
-
-fn printDebugState(gb: *Gb, ppu: *Ppu) !void {
-    if (ppu.mode != .drawing) {
-        return;
-    }
-    if (true) {
-        ppu.printState(gb);
-    }
-    if (false) {
-        var instrStrBuf: [64]u8 = undefined;
-
-        const instr = decodeInstrAt(gb.pc, gb);
-        const instrStr = try instr.toStr(&instrStrBuf);
-
-        std.debug.print("${x:0>4}: {s}\n", .{
-            gb.pc,
-            instrStr,
-        });
     }
 }
 

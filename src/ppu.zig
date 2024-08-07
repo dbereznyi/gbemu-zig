@@ -78,14 +78,21 @@ pub const Ppu = struct {
         };
     }
 
-    pub fn printState(ppu: *Ppu, gb: *Gb) void {
+    pub fn printState(ppu: *const Ppu) void {
         const modeStr = switch (ppu.mode) {
             .oam => "oam",
             .drawing => "draw",
             .hBlank => "hblank",
             .vBlank => "vblank",
         };
-        std.debug.print("dots={d:>6} y={d:0>3} x={d:0>3} LY=${x:0>2} wy={d:0>3} windowY={d:0>3} mode={s} LCDC={b:0>8}\n", .{ ppu.dots, ppu.y, ppu.x, gb.read(IoReg.LY), ppu.wy, ppu.windowY, modeStr, gb.read(IoReg.LCDC) });
+        std.debug.print("dots={d:>6} y={d:0>3} x={d:0>3} wy={d:0>3} windowY={d:0>3} mode={s}\n", .{
+            ppu.dots,
+            ppu.y,
+            ppu.x,
+            ppu.wy,
+            ppu.windowY,
+            modeStr,
+        });
     }
 
     // Advance the state of the PPU by 1 M-cycle (= 4 dots).

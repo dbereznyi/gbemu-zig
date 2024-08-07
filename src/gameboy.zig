@@ -143,6 +143,8 @@ pub const Gb = struct {
     isDrawing: bool,
     isInVBlank: std.atomic.Value(bool),
 
+    running: std.atomic.Value(bool),
+
     debug: Debug,
 
     pub fn init(alloc: std.mem.Allocator, rom: []const u8) !Gb {
@@ -205,6 +207,7 @@ pub const Gb = struct {
             .isScanningOam = false,
             .isDrawing = false,
             .isInVBlank = std.atomic.Value(bool).init(false),
+            .running = std.atomic.Value(bool).init(true),
             .debug = .{
                 .stepModeEnabled = false,
                 .breakpoints = breakpoints,
@@ -224,6 +227,14 @@ pub const Gb = struct {
         alloc.free(gb.hram);
         alloc.free(gb.screen);
         gb.debug.breakpoints.deinit();
+    }
+
+    pub fn isRunning(gb: *Gb) bool {
+        return gb.running.load(.monotonic);
+    }
+
+    pub fn quit(gb: *Gb) void {
+        gb.running.store(false, .monotonic);
     }
 
     pub fn readFlags(gb: *const Gb) u8 {
@@ -380,5 +391,17 @@ pub const Gb = struct {
 
     pub fn requestInterrupt(gb: *Gb, interrupt: u8) void {
         _ = gb.ioRegs[IoReg.IF - 0xff00].fetchOr(interrupt, .monotonic);
+    }
+
+    pub fn printDebugState(gb: *Gb) void {
+        std.debug.print("PC: ${x:0>4} SP: ${x:0>4}\n", .{ gb.pc, gb.sp });
+        std.debug.print("Z: {} N: {} H: {} C: {}\n", .{ gb.zero, gb.negative, gb.halfCarry, gb.carry });
+        std.debug.print("A: ${x:0>2} B: ${x:0>2} D: ${x:0>2} H: ${x:0>2}\n", .{ gb.a, gb.b, gb.d, gb.h });
+        std.debug.print("F: ${x:0>2} C: ${x:0>2} E: ${x:0>2} L: ${x:0>2}\n", .{ gb.readFlags(), gb.c, gb.e, gb.l });
+        std.debug.print("LY: ${x:0>2} LCDC: %{b:0>8} STAT: %{b:0>8}\n", .{
+            gb.read(IoReg.LY),
+            gb.read(IoReg.LCDC),
+            gb.read(IoReg.STAT),
+        });
     }
 };
