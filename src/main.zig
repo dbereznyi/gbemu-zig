@@ -84,7 +84,7 @@ pub fn main() !void {
     defer gameboyThread.join();
 
     // In order to gracefully handle CTRL+C.
-    try std.posix.sigaction(std.c.SIG.INT, &std.posix.Sigaction{
+    std.posix.sigaction(std.c.SIG.INT, &std.posix.Sigaction{
         .handler = .{ .handler = struct {
             pub fn handler(_: c_int) callconv(.C) void {
                 forceQuit = true;
@@ -92,7 +92,9 @@ pub fn main() !void {
         }.handler },
         .mask = std.posix.empty_sigset,
         .flags = 0,
-    }, null);
+    }, null) catch {
+        std.log.warn("could not register signal handler for SIG_INT\n", .{});
+    };
 
     while (gb.isRunning()) {
         if (forceQuit) {
