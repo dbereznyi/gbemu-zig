@@ -39,24 +39,21 @@ pub fn stepCpu(gb: *Gb) u64 {
 }
 
 fn handleInterrupt(gb: *Gb, if_: u8) void {
+    gb.push16(gb.pc);
+
     if (if_ & Interrupt.VBLANK > 0) {
-        gb.push16(gb.pc);
         gb.pc = 0x0040;
         gb.write(IoReg.IF, if_ & ~Interrupt.VBLANK);
     } else if (if_ & Interrupt.STAT > 0) {
-        gb.push16(gb.pc);
         gb.pc = 0x0048;
         gb.write(IoReg.IF, if_ & ~Interrupt.STAT);
     } else if (if_ & Interrupt.TIMER > 0) {
-        gb.push16(gb.pc);
         gb.pc = 0x0050;
         gb.write(IoReg.IF, if_ & ~Interrupt.TIMER);
     } else if (if_ & Interrupt.SERIAL > 0) {
-        gb.push16(gb.pc);
         gb.pc = 0x0058;
         gb.write(IoReg.IF, if_ & ~Interrupt.SERIAL);
     } else if (if_ & Interrupt.JOYPAD > 0) {
-        gb.push16(gb.pc);
         gb.pc = 0x0060;
         gb.write(IoReg.IF, if_ & ~Interrupt.JOYPAD);
     }

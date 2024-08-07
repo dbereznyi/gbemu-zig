@@ -75,11 +75,10 @@ pub fn main() !void {
         try gb.debug.breakpoints.append(0x0100);
     }
 
-    var gameboyThread = try std.Thread.spawn(.{}, runGameboy, .{
+    _ = try std.Thread.spawn(.{}, runGameboy, .{
         &gb,
         pixels,
     });
-    defer gameboyThread.join();
 
     while (gb.isRunning()) {
         var event: c.SDL_Event = undefined;
@@ -136,9 +135,6 @@ fn runGameboy(gb: *Gb, pixels: []Pixel) !void {
         var currentCycles: usize = 0;
         while (currentCycles < CYCLES_UNTIL_VBLANK) {
             try debugBreak(gb, &ppu);
-            if (!gb.isRunning()) {
-                return;
-            }
 
             const cpuCycles = stepCpu(gb);
             for (0..cpuCycles) |_| {
@@ -160,9 +156,6 @@ fn runGameboy(gb: *Gb, pixels: []Pixel) !void {
 
         while (ppu.mode != .oam) {
             try debugBreak(gb, &ppu);
-            if (!gb.isRunning()) {
-                return;
-            }
 
             const cpuCycles = stepCpu(gb);
             for (0..cpuCycles) |_| {
