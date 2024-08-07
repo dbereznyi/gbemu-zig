@@ -170,11 +170,10 @@ pub const Gb = struct {
         const breakpoints = try std.ArrayList(u16).initCapacity(alloc, 128);
 
         const screen: []Pixel = try alloc.alloc(Pixel, 160 * 144);
-        defer alloc.free(screen);
         for (screen) |*pixel| {
-            pixel.*.r = 0;
-            pixel.*.g = 0;
-            pixel.*.b = 0;
+            pixel.*.r = 255;
+            pixel.*.g = 255;
+            pixel.*.b = 255;
         }
 
         return Gb{

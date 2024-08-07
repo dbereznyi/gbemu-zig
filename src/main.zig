@@ -59,14 +59,10 @@ pub fn main() !void {
     var gb = try Gb.init(alloc, rom);
     defer gb.deinit(alloc);
 
-    var pixels: []Pixel = try alloc.alloc(Pixel, 160 * 144);
-    for (pixels, 0..) |_, i| {
-        pixels[i] = .{ .r = 0, .g = 0, .b = 0 };
-    }
-    //const pixels1: []u8 = try alloc.alloc(u8, 160*144*3);
-    //const pixels2: []u8 = try alloc.alloc(u8, 160*144*3);
-    //var currentPixels: *[]u8 = pixels1;
-    //var previousPixels: *[]u8 = pixels2;
+    const pixels: []Pixel = try alloc.alloc(Pixel, 160 * 144);
+    defer alloc.free(pixels);
+
+    std.mem.copyForwards(Pixel, pixels, gb.screen);
 
     _ = c.SDL_UpdateTexture(texture, null, @ptrCast(pixels), 160 * 3);
 
@@ -122,8 +118,7 @@ pub fn main() !void {
 
         if (gb.isOnAndInVBlank()) {
             //std.debug.print("updating texture\n", .{});
-            // try updateScreen(texture, gb.screen, texturePixels, &texturePitch);
-            _ = c.SDL_UpdateTexture(texture, null, @ptrCast(gb.screen), 160 * 3);
+            _ = c.SDL_UpdateTexture(texture, null, @ptrCast(pixels), 160 * 3);
         }
 
         _ = c.SDL_RenderClear(renderer);
@@ -134,38 +129,16 @@ pub fn main() !void {
     }
 }
 
-fn updateScreen(texture: *c.SDL_Texture, screen: []Pixel, pixels: []u8, pitch: *c_int) !void {
-    var rawPixels: *anyopaque = pixels.ptr;
-    if (c.SDL_LockTexture(texture, null, @ptrCast(&rawPixels), @ptrCast(pitch)) != 0) {
-        c.SDL_Log("Failed to lock texture: %s", c.SDL_GetError());
-        return error.SDLRuntimeError;
-    }
-    defer c.SDL_UnlockTexture(texture);
-
-    for (0..144) |y| {
-        for (0..160) |x| {
-            const pitchUsize = @as(usize, @intCast(pitch.*));
-            const pixelsOffset = y * pitchUsize + 3 * x;
-            const screenOffset = 160 * y + x;
-            const pixel = screen[screenOffset];
-
-            //std.debug.print("screenOffset={} (r={d:0>3} g={d:0>3} b={d:0>3})\n", .{ screenOffset, pixel.r, pixel.g, pixel.b });
-
-            pixels[pixelsOffset] = pixel.r;
-            pixels[pixelsOffset + 1] = pixel.g;
-            pixels[pixelsOffset + 2] = pixel.b;
-        }
-    }
-}
-
 fn runGameboy(gb: *Gb, quit: *std.atomic.Value(bool), pixels: []Pixel) !void {
     var ppu = Ppu.init();
 
     while (!quit.load(.monotonic)) {
+        const lcdOnAtStartOfFrame = gb.read(IoReg.LCDC) & LcdcFlag.ON > 0;
+
         const CYCLES_UNTIL_VBLANK: usize = 16416;
         var currentCycles: usize = 0;
         while (currentCycles < CYCLES_UNTIL_VBLANK) {
-            if (true) {
+            if (false) {
                 try printDebugState(gb, &ppu);
             }
 
@@ -177,16 +150,10 @@ fn runGameboy(gb: *Gb, quit: *std.atomic.Value(bool), pixels: []Pixel) !void {
             currentCycles += cpuCycles;
         }
 
-        for (gb.screen, 0..) |_, i| {
-            pixels[i].r = gb.screen[i].r;
-            pixels[i].g = gb.screen[i].g;
-            pixels[i].b = gb.screen[i].b;
-        }
-
         std.debug.assert(ppu.mode == .vBlank);
         std.debug.assert(gb.isInVBlank.load(.monotonic));
 
-        if (false) {
+        if (true) {
             try printDebugState(gb, &ppu);
 
             std.debug.print("> ", .{});
@@ -196,6 +163,10 @@ fn runGameboy(gb: *Gb, quit: *std.atomic.Value(bool), pixels: []Pixel) !void {
             if (len > 0 and inputBuf[0] == 'q') {
                 quit.store(true, .monotonic);
             }
+        }
+
+        if (lcdOnAtStartOfFrame) {
+            std.mem.copyForwards(Pixel, pixels, gb.screen);
         }
 
         const FRAME_CYCLES: usize = CYCLES_UNTIL_VBLANK + 1140;
@@ -220,7 +191,7 @@ fn printDebugState(gb: *Gb, ppu: *Ppu) !void {
     if (ppu.mode != .drawing) {
         return;
     }
-    if (false) {
+    if (true) {
         ppu.printState(gb);
     }
     if (false) {
