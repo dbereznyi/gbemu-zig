@@ -7,6 +7,7 @@ const Gb = @import("gameboy.zig").Gb;
 const IoReg = @import("gameboy.zig").IoReg;
 const LcdcFlag = @import("gameboy.zig").LcdcFlag;
 const ObjFlag = @import("gameboy.zig").ObjFlag;
+const Button = @import("gameboy.zig").Button;
 const runCpu = @import("cpu/run.zig").runCpu;
 const stepCpu = @import("cpu/run.zig").stepCpu;
 const runPpu = @import("ppu.zig").runPpu;
@@ -14,6 +15,7 @@ const stepPpu = @import("ppu.zig").stepPpu;
 const Ppu = @import("ppu.zig").Ppu;
 const decodeInstrAt = @import("cpu/decode.zig").decodeInstrAt;
 const debugBreak = @import("debug.zig").debugBreak;
+const stepJoypad = @import("joypad.zig").stepJoypad;
 
 const SCALE = 4;
 
@@ -107,6 +109,7 @@ pub fn main() !void {
         std.log.warn("could not register signal handler for SIG_INT\n", .{});
     };
 
+    var frames: usize = 0;
     while (gb.isRunning()) {
         if (forceQuit) {
             gb.setIsRunning(false);
@@ -116,31 +119,29 @@ pub fn main() !void {
         var event: c.SDL_Event = undefined;
         while (c.SDL_PollEvent(&event) != 0) {
             switch (event.type) {
-                c.SDL_KEYUP => {
-                    if (event.key.keysym.sym == c.SDLK_l) {
-                        gb.write(IoReg.LCDC, gb.read(IoReg.LCDC) ^ LcdcFlag.ON);
-                    }
+                c.SDL_KEYUP => switch (event.key.keysym.sym) {
+                    c.SDLK_a => gb.joypad.releaseButton(Button.START),
+                    c.SDLK_s => gb.joypad.releaseButton(Button.SELECT),
+                    c.SDLK_z => gb.joypad.releaseButton(Button.A),
+                    c.SDLK_x => gb.joypad.releaseButton(Button.B),
+                    c.SDLK_RIGHT => gb.joypad.releaseButton(Button.RIGHT),
+                    c.SDLK_LEFT => gb.joypad.releaseButton(Button.LEFT),
+                    c.SDLK_UP => gb.joypad.releaseButton(Button.UP),
+                    c.SDLK_DOWN => gb.joypad.releaseButton(Button.DOWN),
+                    else => {},
                 },
-                c.SDL_KEYDOWN => {
-                    switch (event.key.keysym.sym) {
-                        c.SDLK_RIGHT => {
-                            gb.write(IoReg.SCX, gb.read(IoReg.SCX) +% 1);
-                        },
-                        c.SDLK_LEFT => {
-                            gb.write(IoReg.SCX, gb.read(IoReg.SCX) -% 1);
-                        },
-                        c.SDLK_UP => {
-                            gb.write(IoReg.SCY, gb.read(IoReg.SCY) +% 1);
-                        },
-                        c.SDLK_DOWN => {
-                            gb.write(IoReg.SCY, gb.read(IoReg.SCY) -% 1);
-                        },
-                        else => {},
-                    }
+                c.SDL_KEYDOWN => switch (event.key.keysym.sym) {
+                    c.SDLK_a => gb.joypad.pressButton(Button.START),
+                    c.SDLK_s => gb.joypad.pressButton(Button.SELECT),
+                    c.SDLK_z => gb.joypad.pressButton(Button.A),
+                    c.SDLK_x => gb.joypad.pressButton(Button.B),
+                    c.SDLK_RIGHT => gb.joypad.pressButton(Button.RIGHT),
+                    c.SDLK_LEFT => gb.joypad.pressButton(Button.LEFT),
+                    c.SDLK_UP => gb.joypad.pressButton(Button.UP),
+                    c.SDLK_DOWN => gb.joypad.pressButton(Button.DOWN),
+                    else => {},
                 },
-                c.SDL_QUIT => {
-                    gb.setIsRunning(false);
-                },
+                c.SDL_QUIT => gb.setIsRunning(false),
                 else => {},
             }
         }
@@ -149,11 +150,17 @@ pub fn main() !void {
             _ = c.SDL_UpdateTexture(texture, null, @ptrCast(pixels), 160 * 3);
         }
 
+        if (false and frames % 30 == 0) {
+            std.debug.print("buttons: {b:0>4} dpad: {b:0>4}\n", .{ gb.joypad.readButtons(), gb.joypad.readDpad() });
+            std.debug.print("JOYP: {b:0>8}\n", .{gb.read(IoReg.JOYP)});
+        }
+
         _ = c.SDL_RenderClear(renderer);
         _ = c.SDL_RenderCopy(renderer, texture, null, null);
         c.SDL_RenderPresent(renderer);
 
         c.SDL_Delay(17);
+        frames +%= 1;
     }
 }
 
@@ -164,17 +171,7 @@ fn runGameboy(gb: *Gb, pixels: []Pixel) !void {
         const lcdOnAtStartOfFrame = gb.read(IoReg.LCDC) & LcdcFlag.ON > 0;
 
         const CYCLES_UNTIL_VBLANK: usize = 16416;
-        var currentCycles: usize = 0;
-        while (currentCycles < CYCLES_UNTIL_VBLANK) {
-            try debugBreak(gb, &ppu);
-
-            const cpuCycles = stepCpu(gb);
-            for (0..cpuCycles) |_| {
-                ppu.step(gb);
-            }
-
-            currentCycles += cpuCycles;
-        }
+        _ = try simulate(CYCLES_UNTIL_VBLANK, gb, &ppu);
 
         std.debug.assert(ppu.mode == .vBlank);
         std.debug.assert(gb.isInVBlank.load(.monotonic));
@@ -186,17 +183,31 @@ fn runGameboy(gb: *Gb, pixels: []Pixel) !void {
         const FRAME_CYCLES: usize = CYCLES_UNTIL_VBLANK + 1140;
         std.time.sleep(FRAME_CYCLES * 1000);
 
-        while (ppu.mode != .oam) {
-            try debugBreak(gb, &ppu);
-
-            const cpuCycles = stepCpu(gb);
-            for (0..cpuCycles) |_| {
-                ppu.step(gb);
-            }
-
-            currentCycles += cpuCycles;
+        const VBLANK_CYCLES: usize = 1140;
+        _ = try simulate(VBLANK_CYCLES, gb, &ppu);
+        if (ppu.mode != .oam) {
+            std.debug.print("ppu mode is {}\n", .{ppu.mode});
         }
+
+        std.debug.assert(ppu.mode == .oam);
+        std.debug.assert(!gb.isInVBlank.load(.monotonic));
     }
+}
+
+fn simulate(minCycles: usize, gb: *Gb, ppu: *Ppu) !usize {
+    var cycles: usize = 0;
+    while (cycles < minCycles) {
+        try debugBreak(gb, ppu);
+
+        const cpuCycles = stepCpu(gb);
+        for (0..cpuCycles) |_| {
+            stepJoypad(gb);
+            ppu.step(gb);
+        }
+
+        cycles += cpuCycles;
+    }
+    return cycles;
 }
 
 fn initVramForTesting(gb: *Gb, alloc: std.mem.Allocator) !void {

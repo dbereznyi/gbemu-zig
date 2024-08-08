@@ -3,6 +3,7 @@ const Gb = @import("gameboy.zig").Gb;
 const Ppu = @import("ppu.zig").Ppu;
 const IoReg = @import("gameboy.zig").IoReg;
 const decodeInstrAt = @import("cpu/decode.zig").decodeInstrAt;
+const Interrupt = @import("gameboy.zig").Interrupt;
 
 const DEBUGGING_ENABLED = true;
 

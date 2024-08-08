@@ -22,6 +22,11 @@ pub const IoReg = .{
     .IE = 0xffff,
 };
 
+pub const JoypFlag = .{
+    .SELECT_BUTTONS = 0b0010_0000,
+    .SELECT_DPAD = 0b0001_0000,
+};
+
 pub const LcdcFlag = .{
     .ON = 0b1000_0000,
     .OFF = 0b0000_0000,
@@ -58,13 +63,6 @@ pub const ObjFlag = .{
     .PALETTE_0 = 0b0000_0000,
 };
 
-pub const ExecState = enum {
-    running,
-    halted,
-    haltedDiscardInterrupt,
-    stopped,
-};
-
 pub const Interrupt = .{
     .VBLANK = @as(u8, 0b0000_0001),
     .STAT = @as(u8, 0b0000_0010),
@@ -96,6 +94,24 @@ pub const StatFlag = .{
     .INT_LYC_INCIDENT_DISABLE = 0b1011_1111,
 };
 
+pub const ExecState = enum {
+    running,
+    halted,
+    haltedDiscardInterrupt,
+    stopped,
+};
+
+pub const Button = .{
+    .A = 0b0000_0001,
+    .B = 0b0000_0010,
+    .SELECT = 0b0000_0100,
+    .START = 0b0000_1000,
+    .RIGHT = 0b0001_0000,
+    .LEFT = 0b0010_0000,
+    .UP = 0b0100_0000,
+    .DOWN = 0b1000_0000,
+};
+
 const Debug = struct {
     paused: std.atomic.Value(bool),
     stepModeEnabled: bool,
@@ -104,6 +120,31 @@ const Debug = struct {
 
     expectedCpuTimeNs: u64,
     actualCpuTimeNs: u64,
+};
+
+const Joypad = struct {
+    data: std.atomic.Value(u8),
+    cyclesSinceLastButtonPress: u8,
+
+    pub fn readButtons(joypad: *Joypad) u4 {
+        return @truncate(joypad.data.load(.monotonic));
+    }
+
+    pub fn readDpad(joypad: *Joypad) u4 {
+        return @truncate((joypad.data.load(.monotonic) & 0b1111_0000) >> 4);
+    }
+
+    pub fn pressButton(joypad: *Joypad, button: u8) void {
+        _ = joypad.data.fetchOr(button, .monotonic);
+    }
+
+    pub fn releaseButton(joypad: *Joypad, button: u8) void {
+        _ = joypad.data.fetchAnd(~button, .monotonic);
+    }
+
+    pub fn printState(joypad: *Joypad) void {
+        std.debug.print("data={b:0>8} cyclesSinceLastButtonPress={}\n", .{ joypad.data.load(.monotonic), joypad.cyclesSinceLastButtonPress });
+    }
 };
 
 pub const Gb = struct {
@@ -138,6 +179,8 @@ pub const Gb = struct {
     ie: u8,
     rom: []const u8,
 
+    joypad: Joypad,
+
     screen: []Pixel,
 
     isScanningOam: bool,
@@ -165,6 +208,7 @@ pub const Gb = struct {
         for (ioRegs, 0..) |_, i| {
             ioRegs[i] = std.atomic.Value(u8).init(0);
         }
+        ioRegs[IoReg.JOYP - 0xff00].store(0b0011_1111, .monotonic);
         const hram = try alloc.alloc(u8, 128);
         for (hram, 0..) |_, i| {
             hram[i] = 0;
@@ -205,6 +249,10 @@ pub const Gb = struct {
             .ie = 0,
             .rom = rom,
             .screen = screen,
+            .joypad = .{
+                .data = std.atomic.Value(u8).init(0),
+                .cyclesSinceLastButtonPress = 0,
+            },
             .isScanningOam = false,
             .isDrawing = false,
             .isInVBlank = std.atomic.Value(bool).init(false),
@@ -401,6 +449,22 @@ pub const Gb = struct {
 
     pub fn requestInterrupt(gb: *Gb, interrupt: u8) void {
         _ = gb.ioRegs[IoReg.IF - 0xff00].fetchOr(interrupt, .monotonic);
+    }
+
+    pub fn clearInterrupt(gb: *Gb, interrupt: u8) void {
+        _ = gb.ioRegs[IoReg.IF - 0xff00].fetchAnd(~interrupt, .monotonic);
+    }
+
+    pub fn isInterruptEnabled(gb: *Gb, interrupt: u8) bool {
+        return gb.ie & interrupt > 0;
+    }
+
+    pub fn isInterruptPending(gb: *Gb, interrupt: u8) bool {
+        return gb.ioRegs[IoReg.IF - 0xff00].load(.monotonic) & interrupt > 0;
+    }
+
+    pub fn anyInterruptsPending(gb: *Gb) bool {
+        return gb.ioRegs[IoReg.IF - 0xff00].load(.monotonic) > 0;
     }
 
     pub fn printDebugState(gb: *Gb) void {

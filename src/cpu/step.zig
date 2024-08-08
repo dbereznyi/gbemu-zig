@@ -333,15 +333,20 @@ fn reti(gb: *Gb) void {
     gb.ime = true;
 }
 
+fn calcCallDestAddr(address: u16) u16 {
+    // subtract 3 bytes to account for PC getting incremented by the size of CALL (3 bytes)
+    return address -% 3;
+}
+
 fn call(gb: *Gb, address: u16) void {
     gb.push16(gb.pc +% 3);
-    gb.pc = address;
+    gb.pc = calcCallDestAddr(address);
 }
 
 fn callCond(gb: *Gb, address: u16, cond: bool) void {
     if (cond) {
         gb.push16(gb.pc +% 3);
-        gb.pc = address;
+        gb.pc = calcCallDestAddr(address);
         gb.branchCond = true;
     }
 }
