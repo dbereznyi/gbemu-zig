@@ -97,6 +97,7 @@ pub const StatFlag = .{
 };
 
 const Debug = struct {
+    paused: std.atomic.Value(bool),
     stepModeEnabled: bool,
     breakpoints: std.ArrayList(u16),
     stackBase: u16,
@@ -209,6 +210,7 @@ pub const Gb = struct {
             .isInVBlank = std.atomic.Value(bool).init(false),
             .running = std.atomic.Value(bool).init(true),
             .debug = .{
+                .paused = std.atomic.Value(bool).init(false),
                 .stepModeEnabled = false,
                 .breakpoints = breakpoints,
                 .stackBase = 0xfffe,
@@ -233,8 +235,16 @@ pub const Gb = struct {
         return gb.running.load(.monotonic);
     }
 
-    pub fn quit(gb: *Gb) void {
-        gb.running.store(false, .monotonic);
+    pub fn setIsRunning(gb: *Gb, val: bool) void {
+        gb.running.store(val, .monotonic);
+    }
+
+    pub fn isDebugPaused(gb: *Gb) bool {
+        return gb.debug.paused.load(.monotonic);
+    }
+
+    pub fn setDebugPaused(gb: *Gb, val: bool) void {
+        gb.debug.paused.store(val, .monotonic);
     }
 
     pub fn readFlags(gb: *const Gb) u8 {

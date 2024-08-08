@@ -81,7 +81,18 @@ pub fn main() !void {
         &gb,
         pixels,
     });
-    defer gameboyThread.join();
+    defer {
+        if (gb.isDebugPaused()) {
+            // If the debugger is blocking gameboyThread, it's safe to detach
+            // and let the main thread exit.
+            gameboyThread.detach();
+        } else {
+            // If gameboyThread is still running normally, we want to wait for
+            // it's current loop iteration to finish and exit on its own.
+            // (This avoids some SEGFAULT errors occurring when CTRL+C quitting.)
+            gameboyThread.join();
+        }
+    }
 
     // In order to gracefully handle CTRL+C.
     std.posix.sigaction(std.c.SIG.INT, &std.posix.Sigaction{
@@ -98,7 +109,8 @@ pub fn main() !void {
 
     while (gb.isRunning()) {
         if (forceQuit) {
-            gb.quit();
+            gb.setIsRunning(false);
+            return;
         }
 
         var event: c.SDL_Event = undefined;
@@ -127,7 +139,7 @@ pub fn main() !void {
                     }
                 },
                 c.SDL_QUIT => {
-                    gb.quit();
+                    gb.setIsRunning(false);
                 },
                 else => {},
             }

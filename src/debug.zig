@@ -75,7 +75,7 @@ const DebugCmd = union(DebugCmdTag) {
     pub fn execute(cmd: DebugCmd, gb: *Gb, ppu: *const Ppu) !bool {
         switch (cmd) {
             .quit => {
-                gb.quit();
+                gb.setIsRunning(false);
                 return true;
             },
             .step => {
@@ -130,10 +130,11 @@ pub fn debugBreak(gb: *Gb, ppu: *const Ppu) !void {
             break;
         }
     }
-    if (!DEBUGGING_ENABLED or !(gb.debug.stepModeEnabled or breakpointHit)) {
+    if (!gb.isRunning() or !DEBUGGING_ENABLED or !(gb.debug.stepModeEnabled or breakpointHit)) {
         return;
     }
 
+    gb.setDebugPaused(true);
     gb.debug.stepModeEnabled = true;
 
     gb.printDebugState();
@@ -176,6 +177,8 @@ pub fn debugBreak(gb: *Gb, ppu: *const Ppu) !void {
             std.debug.print("\n", .{});
         }
     }
+
+    gb.setDebugPaused(false);
 }
 
 const Parser = struct {
