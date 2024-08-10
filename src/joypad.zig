@@ -20,10 +20,13 @@ pub fn stepJoypad(gb: *Gb) void {
     }
     gb.write(IoReg.JOYP, (joyp & 0b1111_0000) | result);
 
+    // Technically, the interrupt should only be triggered when a low edge transition occurs in JOYP.
+    // But practically speaking, this is pretty much the same thing.
+    // (Not sure if the select bits going low is also supposed to trigger the interrupt, though.)
     if (buttons > 0 or dpad > 0) {
         if (gb.joypad.cyclesSinceLastButtonPress > 16) {
             gb.joypad.cyclesSinceLastButtonPress = 0;
-            if (gb.isInterruptEnabled(Interrupt.JOYPAD)) {
+            if (gb.ime and gb.isInterruptEnabled(Interrupt.JOYPAD)) {
                 gb.requestInterrupt(Interrupt.JOYPAD);
             }
         } else {

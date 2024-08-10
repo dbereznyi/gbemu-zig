@@ -150,11 +150,6 @@ pub fn main() !void {
             _ = c.SDL_UpdateTexture(texture, null, @ptrCast(pixels), 160 * 3);
         }
 
-        if (false and frames % 30 == 0) {
-            std.debug.print("buttons: {b:0>4} dpad: {b:0>4}\n", .{ gb.joypad.readButtons(), gb.joypad.readDpad() });
-            std.debug.print("JOYP: {b:0>8}\n", .{gb.read(IoReg.JOYP)});
-        }
-
         _ = c.SDL_RenderClear(renderer);
         _ = c.SDL_RenderCopy(renderer, texture, null, null);
         c.SDL_RenderPresent(renderer);
@@ -185,9 +180,6 @@ fn runGameboy(gb: *Gb, pixels: []Pixel) !void {
 
         const VBLANK_CYCLES: usize = 1140;
         _ = try simulate(VBLANK_CYCLES, gb, &ppu);
-        if (ppu.mode != .oam) {
-            std.debug.print("ppu mode is {}\n", .{ppu.mode});
-        }
 
         std.debug.assert(ppu.mode == .oam);
         std.debug.assert(!gb.isInVBlank.load(.monotonic));
