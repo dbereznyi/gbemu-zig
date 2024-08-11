@@ -123,8 +123,14 @@ const Debug = struct {
 };
 
 const Joypad = struct {
+    const Mode = enum {
+        waitingForLowEdge,
+        lowEdge,
+    };
+
+    mode: Joypad.Mode,
     data: std.atomic.Value(u8),
-    cyclesSinceLastButtonPress: u8,
+    cyclesSinceLowEdgeTransition: u8,
 
     pub fn readButtons(joypad: *Joypad) u4 {
         return @truncate(joypad.data.load(.monotonic));
@@ -143,7 +149,7 @@ const Joypad = struct {
     }
 
     pub fn printState(joypad: *Joypad) void {
-        std.debug.print("data={b:0>8} cyclesSinceLastButtonPress={}\n", .{ joypad.data.load(.monotonic), joypad.cyclesSinceLastButtonPress });
+        std.debug.print("data={b:0>8} cyclesSinceLowEdgeTransition={}\n", .{ joypad.data.load(.monotonic), joypad.cyclesSinceLowEdgeTransition });
     }
 };
 
@@ -250,8 +256,9 @@ pub const Gb = struct {
             .rom = rom,
             .screen = screen,
             .joypad = .{
+                .mode = .waitingForLowEdge,
                 .data = std.atomic.Value(u8).init(0),
-                .cyclesSinceLastButtonPress = 0,
+                .cyclesSinceLowEdgeTransition = 0,
             },
             .isScanningOam = false,
             .isDrawing = false,
@@ -394,7 +401,6 @@ pub const Gb = struct {
                 if (!gb.isVramInUse()) {
                     gb.vram[addr - 0x8000] = val;
                 } else {
-                    //std.log.warn("Attempted to write to VRAM outside of HBLANK/VBLANK (${x} -> {x})\n", .{ val, addr });
                     std.debug.panic("Attempted to write to VRAM while in use (${x} -> {x})\n", .{ val, addr });
                 }
             },
@@ -476,6 +482,10 @@ pub const Gb = struct {
             gb.read(IoReg.LY),
             gb.read(IoReg.LCDC),
             gb.read(IoReg.STAT),
+        });
+        std.debug.print("IE: %{b:0>8} IF: %{b:0>8}\n", .{
+            gb.read(IoReg.IE),
+            gb.read(IoReg.IF),
         });
     }
 };

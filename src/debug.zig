@@ -20,10 +20,11 @@ const HELP_MESSAGE =
     "    (v)iew (r)registers\n" ++
     "    (v)iew (s)tack\n" ++
     "    (v)iew (p)pu\n" ++
+    "    (v)iew (j)oypad info\n" ++
     "\nexample: setting a breakpoint at $1234:" ++
     "  bs 1234";
 
-const DebugCmdTag = enum { quit, step, continue_, help, breakpointList, breakpointSet, viewRegisters, viewStack, viewPpu };
+const DebugCmdTag = enum { quit, step, continue_, help, breakpointList, breakpointSet, viewRegisters, viewStack, viewPpu, viewJoypad };
 
 const DebugCmd = union(DebugCmdTag) {
     quit: void,
@@ -35,6 +36,7 @@ const DebugCmd = union(DebugCmdTag) {
     viewRegisters: void,
     viewStack: void,
     viewPpu: void,
+    viewJoypad: void,
 
     pub fn parse(buf: []u8) ?DebugCmd {
         const bufTrimmed = std.mem.trim(u8, buf, " \t\r\n");
@@ -66,6 +68,7 @@ const DebugCmd = union(DebugCmdTag) {
                     'r' => .viewRegisters,
                     's' => .viewStack,
                     'p' => .viewPpu,
+                    'j' => .viewJoypad,
                     else => null,
                 };
             },
@@ -115,7 +118,9 @@ const DebugCmd = union(DebugCmdTag) {
             },
             .viewPpu => {
                 ppu.printState();
-                return false;
+            },
+            .viewJoypad => {
+                gb.joypad.printState();
             },
         }
 

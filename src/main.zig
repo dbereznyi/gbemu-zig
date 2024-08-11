@@ -8,8 +8,7 @@ const IoReg = @import("gameboy.zig").IoReg;
 const LcdcFlag = @import("gameboy.zig").LcdcFlag;
 const ObjFlag = @import("gameboy.zig").ObjFlag;
 const Button = @import("gameboy.zig").Button;
-const runCpu = @import("cpu/run.zig").runCpu;
-const stepCpu = @import("cpu/run.zig").stepCpu;
+const stepCpu = @import("cpu/step.zig").stepCpu;
 const runPpu = @import("ppu.zig").runPpu;
 const stepPpu = @import("ppu.zig").stepPpu;
 const Ppu = @import("ppu.zig").Ppu;
@@ -76,7 +75,7 @@ pub fn main() !void {
     }
 
     if (false) {
-        try gb.debug.breakpoints.append(0x0100);
+        try gb.debug.breakpoints.append(0x0060);
     }
 
     var gameboyThread = try std.Thread.spawn(.{}, runGameboy, .{
@@ -181,7 +180,7 @@ fn runGameboy(gb: *Gb, pixels: []Pixel) !void {
         const VBLANK_CYCLES: usize = 1140;
         _ = try simulate(VBLANK_CYCLES, gb, &ppu);
 
-        std.debug.assert(ppu.mode == .oam);
+        std.debug.assert(ppu.mode != .vblank);
         std.debug.assert(!gb.isInVBlank.load(.monotonic));
     }
 }

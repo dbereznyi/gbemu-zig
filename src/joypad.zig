@@ -20,19 +20,46 @@ pub fn stepJoypad(gb: *Gb) void {
     }
     gb.write(IoReg.JOYP, (joyp & 0b1111_0000) | result);
 
-    // Technically, the interrupt should only be triggered when a low edge transition occurs in JOYP.
-    // But practically speaking, this is pretty much the same thing.
-    // (Not sure if the select bits going low is also supposed to trigger the interrupt, though.)
-    if (buttons > 0 or dpad > 0) {
-        if (gb.joypad.cyclesSinceLastButtonPress > 16) {
-            gb.joypad.cyclesSinceLastButtonPress = 0;
-            if (gb.ime and gb.isInterruptEnabled(Interrupt.JOYPAD)) {
-                gb.requestInterrupt(Interrupt.JOYPAD);
+    switch (gb.joypad.mode) {
+        .waitingForLowEdge => {
+            std.debug.assert(gb.joypad.cyclesSinceLowEdgeTransition == 0);
+
+            const joypAfter = gb.read(IoReg.JOYP);
+            const bit0 = joyp & 0b0000_0001 > 0 and joypAfter & 0b0000_0001 == 0;
+            const bit1 = joyp & 0b0000_0010 > 0 and joypAfter & 0b0000_0010 == 0;
+            const bit2 = joyp & 0b0000_0100 > 0 and joypAfter & 0b0000_0100 == 0;
+            const bit3 = joyp & 0b0000_1000 > 0 and joypAfter & 0b0000_1000 == 0;
+
+            const lowEdgeTransitionOccurred = bit0 or bit1 or bit2 or bit3;
+
+            if (lowEdgeTransitionOccurred) {
+                gb.joypad.cyclesSinceLowEdgeTransition += 1;
+                gb.joypad.mode = .lowEdge;
             }
-        } else {
-            gb.joypad.cyclesSinceLastButtonPress += 1;
-        }
-    } else {
-        gb.joypad.cyclesSinceLastButtonPress = 0;
+        },
+        .lowEdge => {
+            std.debug.assert(gb.joypad.cyclesSinceLowEdgeTransition > 0);
+            std.debug.assert(gb.joypad.cyclesSinceLowEdgeTransition <= 16);
+
+            const bit0 = joyp & 0b0000_0001 == 0;
+            const bit1 = joyp & 0b0000_0010 == 0;
+            const bit2 = joyp & 0b0000_0100 == 0;
+            const bit3 = joyp & 0b0000_1000 == 0;
+            const lowEdge = bit0 or bit1 or bit2 or bit3;
+            if (lowEdge) {
+                if (gb.joypad.cyclesSinceLowEdgeTransition < 16) {
+                    gb.joypad.cyclesSinceLowEdgeTransition += 1;
+                } else {
+                    gb.joypad.cyclesSinceLowEdgeTransition = 0;
+                    if (gb.ime and gb.isInterruptEnabled(Interrupt.JOYPAD)) {
+                        gb.requestInterrupt(Interrupt.JOYPAD);
+                    }
+                    gb.joypad.mode = .waitingForLowEdge;
+                }
+            } else {
+                gb.joypad.cyclesSinceLowEdgeTransition = 0;
+                gb.joypad.mode = .waitingForLowEdge;
+            }
+        },
     }
 }
