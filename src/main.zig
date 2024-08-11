@@ -180,7 +180,7 @@ fn runGameboy(gb: *Gb, pixels: []Pixel) !void {
         const VBLANK_CYCLES: usize = 1140;
         _ = try simulate(VBLANK_CYCLES, gb, &ppu);
 
-        std.debug.assert(ppu.mode != .vblank);
+        std.debug.assert(ppu.mode != .vBlank);
         std.debug.assert(!gb.isInVBlank.load(.monotonic));
     }
 }

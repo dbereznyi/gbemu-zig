@@ -37,26 +37,32 @@ pub fn stepCpu(gb: *Gb) u64 {
 }
 
 fn handleInterrupt(gb: *Gb) void {
-    gb.push16(gb.pc);
-
     if (gb.isInterruptPending(Interrupt.VBLANK)) {
+        gb.push16(gb.pc);
         gb.pc = 0x0040;
         gb.clearInterrupt(Interrupt.VBLANK);
+        gb.ime = false;
     } else if (gb.isInterruptPending(Interrupt.STAT)) {
+        gb.push16(gb.pc);
         gb.pc = 0x0048;
         gb.clearInterrupt(Interrupt.STAT);
+        gb.ime = false;
     } else if (gb.isInterruptPending(Interrupt.TIMER)) {
+        gb.push16(gb.pc);
         gb.pc = 0x0050;
         gb.clearInterrupt(Interrupt.TIMER);
+        gb.ime = false;
     } else if (gb.isInterruptPending(Interrupt.SERIAL)) {
+        gb.push16(gb.pc);
         gb.pc = 0x0058;
         gb.clearInterrupt(Interrupt.SERIAL);
+        gb.ime = false;
     } else if (gb.isInterruptPending(Interrupt.JOYPAD)) {
+        gb.push16(gb.pc);
         gb.pc = 0x0060;
         gb.clearInterrupt(Interrupt.JOYPAD);
+        gb.ime = false;
     }
-
-    gb.ime = false;
 }
 
 fn discardInterrupt(gb: *Gb) void {
