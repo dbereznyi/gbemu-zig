@@ -243,12 +243,13 @@ pub const Instr = union(InstrTag) {
             .ADD_16 => |args| try args.dst.toStr(&dstBuf),
             .ADD_SP => |n8| try std.fmt.bufPrint(&dstBuf, "${x:0>2}", .{n8}),
 
-            .JP => |n16| try std.fmt.bufPrint(&dstBuf, "${x:0>4}", .{n16}),
+            .JP => |addr| try std.fmt.bufPrint(&dstBuf, "${x:0>4}", .{addr}),
             .JP_COND => |args| try std.fmt.bufPrint(&dstBuf, "${x:0>4}", .{args.addr}),
-            .JR => |n8| try std.fmt.bufPrint(&dstBuf, "${x:0>2}", .{n8}),
-            .CALL => |n16| try std.fmt.bufPrint(&dstBuf, "${x:0>4}", .{n16}),
+            .JR => |offset| try std.fmt.bufPrint(&dstBuf, "{s}{}", .{ if (offset & 0b1000_0000 == 0) "+" else "", @as(i8, @bitCast(offset)) }),
+            .JR_COND => |args| try std.fmt.bufPrint(&dstBuf, "{s}{}", .{ if (args.offset & 0b1000_0000 == 0) "+" else "", @as(i8, @bitCast(args.offset)) }),
+            .CALL => |addr| try std.fmt.bufPrint(&dstBuf, "${x:0>4}", .{addr}),
             .CALL_COND => |args| try std.fmt.bufPrint(&dstBuf, "${x:0>4}", .{args.addr}),
-            .RST => |n8| try std.fmt.bufPrint(&dstBuf, "${x:0>2}", .{n8}),
+            .RST => |vec| try std.fmt.bufPrint(&dstBuf, "${x:0>2}", .{vec}),
 
             .POP => |dst| try dst.toStr(&dstBuf),
 

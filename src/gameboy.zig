@@ -189,9 +189,9 @@ pub const Gb = struct {
 
     screen: []Pixel,
 
-    isScanningOam: bool,
+    scanningOam: bool,
     isDrawing: bool,
-    isInVBlank: std.atomic.Value(bool),
+    inVBlank: std.atomic.Value(bool),
 
     running: std.atomic.Value(bool),
 
@@ -260,9 +260,9 @@ pub const Gb = struct {
                 .data = std.atomic.Value(u8).init(0),
                 .cyclesSinceLowEdgeTransition = 0,
             },
-            .isScanningOam = false,
+            .scanningOam = false,
             .isDrawing = false,
-            .isInVBlank = std.atomic.Value(bool).init(false),
+            .inVBlank = std.atomic.Value(bool).init(false),
             .running = std.atomic.Value(bool).init(true),
             .debug = .{
                 .paused = std.atomic.Value(bool).init(false),
@@ -340,9 +340,12 @@ pub const Gb = struct {
         return lcdOn and gb.isDrawing;
     }
 
-    pub fn isOnAndInVBlank(gb: *Gb) bool {
-        const lcdOn = gb.ioRegs[IoReg.LCDC - 0xff00].load(.monotonic) & LcdcFlag.ON > 0;
-        return lcdOn and gb.isInVBlank.load(.monotonic);
+    pub fn isLcdOn(gb: *Gb) bool {
+        return gb.ioRegs[IoReg.LCDC - 0xff00].load(.monotonic) & LcdcFlag.ON > 0;
+    }
+
+    pub fn isInVBlank(gb: *Gb) bool {
+        return gb.inVBlank.load(.monotonic);
     }
 
     pub fn read(gb: *Gb, addr: u16) u8 {
@@ -370,7 +373,7 @@ pub const Gb = struct {
             0xe000...0xfdff => gb.wram[addr - 0xc000],
             // OAM
             0xfe00...0xfe9f => blk: {
-                if (!gb.isScanningOam) {
+                if (!gb.isLcdOn() or !gb.scanningOam) {
                     const val = gb.oam[addr - 0xfe00];
                     break :blk val;
                 } else {
@@ -417,7 +420,7 @@ pub const Gb = struct {
             },
             // OAM
             0xfe00...0xfe9f => {
-                if (!gb.isScanningOam) {
+                if (!gb.isLcdOn() or !gb.scanningOam) {
                     gb.oam[addr - 0xfe00] = val;
                 } else {
                     std.log.warn("Attempted to write to OAM while in use (${x} -> {x})\n", .{ val, addr });

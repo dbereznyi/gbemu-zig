@@ -16,15 +16,18 @@ const HELP_MESSAGE =
     "  breakpoints\n" ++
     "    (b)reakpoint (l)ist\n" ++
     "    (b)reakpoint (s)et <value of PC to break on (hex)>\n" ++
+    "    (b)reakpoint (u)nset <breakpoint address to unset (hex)>\n" ++
+    "    (b)reakpoint (c)lear all\n" ++
     "  viewing internal state/regions of memory\n" ++
     "    (v)iew (r)registers\n" ++
     "    (v)iew (s)tack\n" ++
     "    (v)iew (p)pu\n" ++
-    "    (v)iew (j)oypad info\n" ++
+    "    (v)iew (o)am\n" ++
+    "    (v)iew (j)oypad\n" ++
     "\nexample: setting a breakpoint at $1234:" ++
     "  bs 1234";
 
-const DebugCmdTag = enum { quit, step, continue_, help, breakpointList, breakpointSet, viewRegisters, viewStack, viewPpu, viewJoypad };
+const DebugCmdTag = enum { quit, step, continue_, help, breakpointList, breakpointSet, breakpointUnset, breakpointClearAll, viewRegisters, viewStack, viewPpu, viewOam, viewJoypad };
 
 const DebugCmd = union(DebugCmdTag) {
     quit: void,
@@ -33,9 +36,12 @@ const DebugCmd = union(DebugCmdTag) {
     help: void,
     breakpointList: void,
     breakpointSet: u16,
+    breakpointUnset: u16,
+    breakpointClearAll: void,
     viewRegisters: void,
     viewStack: void,
     viewPpu: void,
+    viewOam: void,
     viewJoypad: void,
 
     pub fn parse(buf: []u8) ?DebugCmd {
@@ -57,7 +63,14 @@ const DebugCmd = union(DebugCmdTag) {
                         const addr = std.fmt.parseInt(u16, addrStr, 16) catch break :blk null;
                         break :blk DebugCmd{ .breakpointSet = addr };
                     },
+                    'u' => {
+                        _ = p.until(Parser.isHexNumeral);
+                        const addrStr = p.toEnd() orelse break :blk null;
+                        const addr = std.fmt.parseInt(u16, addrStr, 16) catch break :blk null;
+                        break :blk DebugCmd{ .breakpointUnset = addr };
+                    },
                     'l' => break :blk .breakpointList,
+                    'c' => break :blk .breakpointClearAll,
                     else => break :blk null,
                 }
             },
@@ -68,6 +81,7 @@ const DebugCmd = union(DebugCmdTag) {
                     'r' => .viewRegisters,
                     's' => .viewStack,
                     'p' => .viewPpu,
+                    'o' => .viewOam,
                     'j' => .viewJoypad,
                     else => null,
                 };
@@ -99,7 +113,6 @@ const DebugCmd = union(DebugCmdTag) {
                 }
 
                 std.debug.print("Active breakpoints:\n", .{});
-
                 for (gb.debug.breakpoints.items) |breakpoint| {
                     std.debug.print("  ${x:0>4}\n", .{breakpoint});
                 }
@@ -107,6 +120,25 @@ const DebugCmd = union(DebugCmdTag) {
             .breakpointSet => |addr| {
                 try gb.debug.breakpoints.append(addr);
                 std.debug.print("Set breakpoint at ${x:0>4}\n", .{addr});
+            },
+            .breakpointUnset => |addr| blk: {
+                var indexToRemoveMaybe: ?usize = null;
+                for (gb.debug.breakpoints.items, 0..) |breakpoint, i| {
+                    if (breakpoint == addr) {
+                        indexToRemoveMaybe = i;
+                        break;
+                    }
+                }
+                const indexToRemove = indexToRemoveMaybe orelse {
+                    std.debug.print("No breakpoint set at ${x:0>4}\n", .{addr});
+                    break :blk;
+                };
+                _ = gb.debug.breakpoints.orderedRemove(indexToRemove);
+                std.debug.print("Unset breakpoint at ${x:0>4}\n", .{addr});
+            },
+            .breakpointClearAll => {
+                gb.debug.breakpoints.clearRetainingCapacity();
+                std.debug.print("All breakpoints cleared.\n", .{});
             },
             .viewRegisters => gb.printDebugState(),
             .viewStack => {
@@ -118,6 +150,16 @@ const DebugCmd = union(DebugCmdTag) {
             },
             .viewPpu => {
                 ppu.printState();
+            },
+            .viewOam => {
+                var i: u16 = 0;
+                while (i < gb.oam.len) : (i += 4) {
+                    std.debug.print("#{d:0>2}\n", .{i / 4});
+                    std.debug.print("${x:0>4}: ${x:0>2} (y = {d:0>3})\n", .{ 0xfe00 + i + 0, gb.read(0xfe00 + i + 0), gb.read(0xfe00 + i + 0) });
+                    std.debug.print("${x:0>4}: ${x:0>2} (x = {d:0>3})\n", .{ 0xfe00 + i + 1, gb.read(0xfe00 + i + 1), gb.read(0xfe00 + i + 1) });
+                    std.debug.print("${x:0>4}: ${x:0>2} (tileNumber = {d:0>3})\n", .{ 0xfe00 + i + 2, gb.read(0xfe00 + i + 2), gb.read(0xfe00 + i + 2) });
+                    std.debug.print("${x:0>4}: ${x:0>2} (flags = {b:0>8})\n", .{ 0xfe00 + i + 3, gb.read(0xfe00 + i + 3), gb.read(0xfe00 + i + 3) });
+                }
             },
             .viewJoypad => {
                 gb.joypad.printState();

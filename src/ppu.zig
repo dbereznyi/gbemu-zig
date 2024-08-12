@@ -44,31 +44,32 @@ const ObjectAttribute = struct {
     tileNumber: u8,
     flags: u8,
     oamIndex: usize, // used for sorting
-};
 
-fn objectAttributeIsLessThan(_: void, lhs: ObjectAttribute, rhs: ObjectAttribute) bool {
-    if (lhs.x != rhs.x) {
-        return lhs.x < rhs.x;
+    fn isLessThan(_: void, lhs: ObjectAttribute, rhs: ObjectAttribute) bool {
+        if (lhs.x != rhs.x) {
+            return lhs.x < rhs.x;
+        }
+
+        return lhs.oamIndex < rhs.oamIndex;
     }
-
-    return lhs.oamIndex < rhs.oamIndex;
-}
-
-const PpuMode = enum {
-    oam,
-    drawing,
-    hBlank,
-    vBlank,
 };
 
 pub const Ppu = struct {
+    const Mode = enum {
+        oam,
+        drawing,
+        hBlank,
+        vBlank,
+    };
+
     dots: usize,
     palette: [4]Pixel,
     y: usize,
     x: usize,
     wy: u8,
     windowY: usize,
-    mode: PpuMode,
+    mode: Ppu.Mode,
+    objAttrsLineBuf: [10]ObjectAttribute,
     objAttrsLine: []ObjectAttribute,
 
     pub fn init() Ppu {
@@ -80,6 +81,7 @@ pub const Ppu = struct {
             .wy = 0,
             .windowY = 0,
             .mode = .oam,
+            .objAttrsLineBuf = undefined,
             .objAttrsLine = undefined,
         };
     }
@@ -106,44 +108,7 @@ pub const Ppu = struct {
         std.debug.assert(ppu.dots % 4 == 0);
         std.debug.assert(ppu.dots < VBLANK_END);
 
-        //ppu.printState(gb);
-
-        if (false) {
-            switch (ppu.dots) {
-                //0 => std.debug.print("OAM\n", .{}),
-                //DRAWING_START => std.debug.print("DRAWING\n", .{}),
-                HBLANK_START => {
-                    //std.debug.print("HBLANK\n", .{});
-                    const modeStr = switch (ppu.mode) {
-                        .oam => "oam",
-                        .drawing => "drawing",
-                        .hBlank => "hblank",
-                        .vBlank => "vblank",
-                    };
-                    std.debug.print("mode={s} dots={} y={}\n", .{ modeStr, ppu.dots, ppu.y });
-                },
-                VBLANK_START => {
-                    const modeStr = switch (ppu.mode) {
-                        .oam => "oam",
-                        .drawing => "drawing",
-                        .hBlank => "hblank",
-                        .vBlank => "vblank",
-                    };
-                    std.debug.print("mode={s} dots={} y={}\n", .{ modeStr, ppu.dots, ppu.y });
-                },
-                else => {},
-            }
-        }
-
-        if (false) {
-            const modeStr = switch (ppu.mode) {
-                .oam => "oam",
-                .drawing => "drawing",
-                .hBlank => "hblank",
-                .vBlank => "vblank",
-            };
-            std.debug.print("mode={s} dots={} y={}\n", .{ modeStr, ppu.dots, ppu.y });
-        }
+        //ppu.printState();
 
         switch (ppu.mode) {
             .oam => {
@@ -154,7 +119,7 @@ pub const Ppu = struct {
                 std.debug.assert(!gb.isDrawing);
 
                 if (ppu.dots % LINE_DOTS == 0) {
-                    gb.isScanningOam = true;
+                    gb.scanningOam = true;
 
                     const ie = gb.read(IoReg.IE);
                     const stat = gb.read(IoReg.STAT);
@@ -166,13 +131,12 @@ pub const Ppu = struct {
 
                     gb.setStatMode(StatFlag.MODE_2);
 
-                    var objAttrsLineArr: [10]ObjectAttribute = undefined;
-                    var objAttrsLineLen: usize = 0;
-                    readObjectAttributesForLine(ppu.y, &objAttrsLineArr, &objAttrsLineLen, gb);
-                    ppu.*.objAttrsLine = objAttrsLineArr[0..objAttrsLineLen];
+                    if (gb.isLcdOn()) {
+                        ppu.objAttrsLine = readObjectAttributesForLine(ppu.y, &ppu.objAttrsLineBuf, gb);
+                    }
                 } else if (ppu.dots % LINE_DOTS == DRAWING_START - 4) {
-                    gb.isScanningOam = false;
-                    ppu.*.mode = .drawing;
+                    gb.scanningOam = false;
+                    ppu.mode = .drawing;
                 }
             },
             .drawing => {
@@ -180,11 +144,11 @@ pub const Ppu = struct {
                 std.debug.assert(ppu.dots % LINE_DOTS < HBLANK_START);
                 std.debug.assert(ppu.y < 144);
                 std.debug.assert(gb.read(IoReg.LY) < 144);
-                std.debug.assert(!gb.isScanningOam);
+                std.debug.assert(!gb.scanningOam);
 
                 if (ppu.dots == DRAWING_START) {
-                    ppu.*.windowY = 0;
-                    ppu.*.wy = gb.read(IoReg.WY);
+                    ppu.windowY = 0;
+                    ppu.wy = gb.read(IoReg.WY);
                 }
 
                 if (ppu.dots % LINE_DOTS == DRAWING_START) {
@@ -195,12 +159,13 @@ pub const Ppu = struct {
                         const colorId = colorIdAt(x, ppu.y, gb, ppu.objAttrsLine, &ppu.windowY, ppu.wy);
                         gb.screen[ppu.y * 160 + x] = ppu.palette[colorId];
                     }
-                    ppu.*.x = (ppu.x + 4) % 160;
+                    ppu.x = (ppu.x + 4) % 160;
 
                     if (ppu.dots % LINE_DOTS == HBLANK_START - 4) {
-                        ppu.*.x = 0;
+                        // TODO need to account for mode 3 varying in length
+                        ppu.x = 0;
                         gb.isDrawing = false;
-                        ppu.*.mode = .hBlank;
+                        ppu.mode = .hBlank;
                     }
                 }
             },
@@ -210,7 +175,7 @@ pub const Ppu = struct {
                 std.debug.assert(ppu.x == 0);
                 std.debug.assert(ppu.y < 144);
                 std.debug.assert(gb.read(IoReg.LY) < 144);
-                std.debug.assert(!gb.isScanningOam);
+                std.debug.assert(!gb.scanningOam);
                 std.debug.assert(!gb.isDrawing);
 
                 if (ppu.dots % LINE_DOTS == HBLANK_START) {
@@ -224,7 +189,7 @@ pub const Ppu = struct {
                         gb.requestInterrupt(Interrupt.STAT);
                     }
                 } else if (ppu.dots % LINE_DOTS == LINE_DOTS - 4) {
-                    ppu.*.y += 1;
+                    ppu.y += 1;
 
                     const ie = gb.read(IoReg.IE);
                     const stat = gb.read(IoReg.STAT);
@@ -240,11 +205,11 @@ pub const Ppu = struct {
                     }
 
                     if (ppu.y < 144) {
-                        gb.isScanningOam = true;
-                        ppu.*.mode = .oam;
+                        gb.scanningOam = true;
+                        ppu.mode = .oam;
                     } else {
-                        gb.isInVBlank.store(true, .monotonic);
-                        ppu.*.mode = .vBlank;
+                        gb.inVBlank.store(true, .monotonic);
+                        ppu.mode = .vBlank;
                     }
                 }
             },
@@ -255,7 +220,7 @@ pub const Ppu = struct {
                 std.debug.assert(ppu.y < 154);
                 std.debug.assert(gb.read(IoReg.LY) >= 144);
                 std.debug.assert(gb.read(IoReg.LY) < 154);
-                std.debug.assert(!gb.isScanningOam);
+                std.debug.assert(!gb.scanningOam);
                 std.debug.assert(!gb.isDrawing);
 
                 if (ppu.dots == VBLANK_START) {
@@ -276,23 +241,23 @@ pub const Ppu = struct {
 
                 if (ppu.dots % LINE_DOTS == LINE_DOTS - 4) {
                     // TODO do LYC incident interrupts occur in VBLANK?
-                    ppu.*.y = (ppu.y + 1) % 154;
+                    ppu.y = (ppu.y + 1) % 154;
                     gb.write(IoReg.LY, @truncate(ppu.y));
                 }
 
                 if (ppu.dots == VBLANK_END - 4) {
-                    gb.isInVBlank.store(false, .monotonic);
-                    gb.isScanningOam = true;
-                    ppu.*.mode = .oam;
+                    gb.inVBlank.store(false, .monotonic);
+                    gb.scanningOam = true;
+                    ppu.mode = .oam;
                 }
             },
         }
 
-        ppu.*.dots = (ppu.dots + 4) % VBLANK_END;
+        ppu.dots = (ppu.dots + 4) % VBLANK_END;
     }
 };
 
-fn readObjectAttributesForLine(y: usize, objAttrsLine: *[10]ObjectAttribute, objAttrsLineLen: *usize, gb: *Gb) void {
+fn readObjectAttributesForLine(y: usize, objAttrsLineBuf: *[10]ObjectAttribute, gb: *Gb) []ObjectAttribute {
     var objAttrs: [40]ObjectAttribute = undefined;
     var objAttrsIndex: usize = 0;
     var oamIndex: usize = 0;
@@ -306,35 +271,38 @@ fn readObjectAttributesForLine(y: usize, objAttrsLine: *[10]ObjectAttribute, obj
         objAttrsIndex += 1;
         oamIndex += 4;
     }
-    std.sort.block(ObjectAttribute, &objAttrs, {}, objectAttributeIsLessThan);
+    std.debug.assert(gb.oam.len <= 160);
+
+    std.sort.block(ObjectAttribute, &objAttrs, {}, ObjectAttribute.isLessThan);
 
     const lcdc = gb.read(IoReg.LCDC);
 
-    objAttrsLineLen.* = 0;
+    var objAttrsLineLen: usize = 0;
     for (objAttrs) |obj| {
         const yLowerBound = obj.y -% 16;
         const yUpperBound = if (lcdc & LcdcFlag.OBJ_SIZE_LARGE > 0) obj.y else obj.y -% 8;
 
         if (y >= yLowerBound and y < yUpperBound) {
-            const i = objAttrsLineLen.*;
-            objAttrsLine[i].y = obj.y;
-            objAttrsLine[i].x = obj.x;
-            objAttrsLine[i].tileNumber = obj.tileNumber;
-            objAttrsLine[i].flags = obj.flags;
-            objAttrsLine[i].oamIndex = obj.oamIndex;
-            objAttrsLineLen.* += 1;
-            if (objAttrsLineLen.* == 10) {
+            const i = objAttrsLineLen;
+            objAttrsLineBuf[i].y = obj.y;
+            objAttrsLineBuf[i].x = obj.x;
+            objAttrsLineBuf[i].tileNumber = obj.tileNumber;
+            objAttrsLineBuf[i].flags = obj.flags;
+            objAttrsLineBuf[i].oamIndex = obj.oamIndex;
+            objAttrsLineLen += 1;
+            if (objAttrsLineLen == 10) {
                 break;
             }
         }
     }
 
-    std.mem.reverse(ObjectAttribute, objAttrsLine[0..objAttrsLineLen.*]);
+    std.mem.reverse(ObjectAttribute, objAttrsLineBuf[0..objAttrsLineLen]);
+
+    return objAttrsLineBuf[0..objAttrsLineLen];
 }
 
 fn colorIdAt(x: usize, y: usize, gb: *Gb, objAttrs: []const ObjectAttribute, windowY: *usize, wy: u8) usize {
     const lcdc = gb.read(IoReg.LCDC);
-
     if (lcdc & LcdcFlag.ON == 0) {
         return 0;
     }
@@ -382,13 +350,21 @@ fn colorIdAt(x: usize, y: usize, gb: *Gb, objAttrs: []const ObjectAttribute, win
             if (!objXInRange) {
                 continue;
             }
+            const objYInRange = y + 16 >= obj.y and y < obj.y;
+            if (!objYInRange) {
+                if (true) {
+                    std.debug.print("skipping obj {}\n", .{obj});
+                }
+                continue;
+            }
 
             const tileYBase = y + 16 - @as(usize, @intCast(obj.y));
             const tileXBase = x + 8 - @as(usize, @intCast(obj.x));
             const tileY = if (obj.flags & ObjFlag.Y_FLIP_ON > 0) (if (lcdc & LcdcFlag.OBJ_SIZE_LARGE > 0) 15 - tileYBase else 7 - tileYBase) else tileYBase;
             const tileX = if (obj.flags & ObjFlag.X_FLIP_ON > 0) 7 - tileXBase else tileXBase;
             const tileNumber = if (lcdc & LcdcFlag.OBJ_SIZE_LARGE > 0) obj.tileNumber & 0b1111_1110 else obj.tileNumber;
-            const tileDataIndex = (tileNumber * 16) + (tileY * 2);
+            //std.debug.print("tileNumber={}\n", .{tileNumber});
+            const tileDataIndex = (@as(usize, tileNumber) * 16) + (tileY * 2);
             const tile = bgTileData[tileDataIndex .. tileDataIndex + 2];
             const pixelMask = @as(u8, 1) << @as(u3, @truncate(7 - tileX));
             const highBit = (tile[1] & pixelMask) >> @as(u3, @truncate(7 - tileX));

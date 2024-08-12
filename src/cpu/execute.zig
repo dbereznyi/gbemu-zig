@@ -267,8 +267,7 @@ fn dec16(gb: *Gb, dst: Dst16) void {
 fn calcJrDestAddr(pc: u16, offset: u8) u16 {
     const offsetI8: i8 = @bitCast(offset);
     const pcI16: i16 = @intCast(pc);
-    // subtract 2 bytes to account for PC getting incremented by the size of JR (2 bytes)
-    return @intCast(pcI16 +% offsetI8 -% 2);
+    return @intCast(pcI16 +% offsetI8);
 }
 
 test "calcJrDestAddr" {
@@ -276,7 +275,7 @@ test "calcJrDestAddr" {
     const pc: u16 = 1500;
     const expected: u16 = 1400; // 1500 - 100 = 1400
 
-    const result = calcJrDestAddr(pc, offset) + 2; // inc by 2 to simulate PC increment
+    const result = calcJrDestAddr(pc, offset);
     try std.testing.expect(result == expected);
 }
 

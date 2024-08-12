@@ -74,8 +74,8 @@ pub fn main() !void {
         try initVramForTesting(&gb, alloc);
     }
 
-    if (false) {
-        try gb.debug.breakpoints.append(0x0060);
+    if (true) {
+        try gb.debug.breakpoints.append(0x0040);
     }
 
     var gameboyThread = try std.Thread.spawn(.{}, runGameboy, .{
@@ -145,7 +145,7 @@ pub fn main() !void {
             }
         }
 
-        if (gb.isOnAndInVBlank()) {
+        if (gb.isLcdOn() and gb.isInVBlank()) {
             _ = c.SDL_UpdateTexture(texture, null, @ptrCast(pixels), 160 * 3);
         }
 
@@ -168,7 +168,7 @@ fn runGameboy(gb: *Gb, pixels: []Pixel) !void {
         _ = try simulate(CYCLES_UNTIL_VBLANK, gb, &ppu);
 
         std.debug.assert(ppu.mode == .vBlank);
-        std.debug.assert(gb.isInVBlank.load(.monotonic));
+        std.debug.assert(gb.isInVBlank());
 
         if (lcdOnAtStartOfFrame) {
             std.mem.copyForwards(Pixel, pixels, gb.screen);
@@ -181,7 +181,7 @@ fn runGameboy(gb: *Gb, pixels: []Pixel) !void {
         _ = try simulate(VBLANK_CYCLES, gb, &ppu);
 
         std.debug.assert(ppu.mode != .vBlank);
-        std.debug.assert(!gb.isInVBlank.load(.monotonic));
+        std.debug.assert(!gb.isInVBlank());
     }
 }
 

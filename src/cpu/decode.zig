@@ -63,7 +63,7 @@ pub fn decodeInstrAt(pc: u16, gb: *Gb) Instr {
         0x23 => Instr{ .INC_16 = .HL },
         0x24 => Instr{ .INC_8 = .H },
         0x25 => Instr{ .DEC_8 = .H },
-        0x26 => Instr{ .LD_8 = .{ .dst = .D, .src = Src8{ .Imm = gb.read(pc + 1) } } },
+        0x26 => Instr{ .LD_8 = .{ .dst = .H, .src = Src8{ .Imm = gb.read(pc + 1) } } },
         0x27 => .DAA,
         0x28 => Instr{ .JR_COND = .{ .offset = gb.read(pc + 1), .cond = .Z } },
         0x29 => Instr{ .ADD_16 = .{ .dst = .HL, .src = .HL } },
