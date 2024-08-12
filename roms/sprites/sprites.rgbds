@@ -40,7 +40,7 @@ ClearVRAM:
     jp nz, ClearVRAM
 
     ld hl, OAMBuffer
-    ld bc, OAMBufferEnd - OAMBuffer
+    ld bc, OAMBuffer.End - OAMBuffer
 ClearOAMBuffer:
     ld a, 0
     ld [hli], a
@@ -63,7 +63,7 @@ CopyTilesToVRAM:
 
     ld de, SpriteAttrs
     ld hl, OAMBuffer
-    ld bc, SpriteAttrsEnd - SpriteAttrs
+    ld bc, SpriteAttrs.End - SpriteAttrs
 CopySpriteAttrsToOAMBuffer:
     ld a, [de]
     ld [hli], a
@@ -84,6 +84,18 @@ CopyOAMBufferToOAM:
     ld a, b
     or a, c
     jp nz, CopyOAMBufferToOAM
+
+    ld de, DMARoutine
+    ld hl, _HRAM
+    ld bc, DMARoutine.End - DMARoutine
+CopyDMARoutineToHRAM:
+    ld a, [de]
+    ld [hli], a
+    inc de
+    dec bc
+    ld a, b
+    or a, c
+    jp nz, CopyDMARoutineToHRAM
 
     ld a, 5
     ld [FallingSpriteOffset], a
@@ -235,6 +247,8 @@ VBlank:
     ld a, 16
 .noWrap
     ld [hl], a
+
+    call DMARoutineHRAM
 
     ld de, OAMBuffer
     ld hl, OAM_START
@@ -418,13 +432,28 @@ SpriteAttrs:
     db SPRITE_START + SPRITE_WIDTH*10,  ; x
     db 11,  ; tile number
     db 0,  ; flags
-SpriteAttrsEnd:
+.End:
+
+DMARoutine:
+    LOAD "HRAM routine", HRAM
+DMARoutineHRAM:
+    ld a, HIGH(OAMBuffer)
+    ldh [rDMA], a
+    ; wait for DMA transfer to finish (160 cycles)
+    ld a, 40
+.wait
+    dec a         ; 1 cycle
+    jr nz, .wait  ; 3 cycles
+    ret
+ENDL
+.End:
 
 SECTION "WRAM", WRAM0
 
 OAMBuffer:
     ds OAM_SIZE
-OAMBufferEnd:
+.End:
 
 FallingSpriteOffset: db
 LastControllerInput: db
+

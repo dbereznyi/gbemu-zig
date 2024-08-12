@@ -352,9 +352,6 @@ fn colorIdAt(x: usize, y: usize, gb: *Gb, objAttrs: []const ObjectAttribute, win
             }
             const objYInRange = y + 16 >= obj.y and y < obj.y;
             if (!objYInRange) {
-                if (true) {
-                    std.debug.print("skipping obj {}\n", .{obj});
-                }
                 continue;
             }
 
@@ -363,7 +360,6 @@ fn colorIdAt(x: usize, y: usize, gb: *Gb, objAttrs: []const ObjectAttribute, win
             const tileY = if (obj.flags & ObjFlag.Y_FLIP_ON > 0) (if (lcdc & LcdcFlag.OBJ_SIZE_LARGE > 0) 15 - tileYBase else 7 - tileYBase) else tileYBase;
             const tileX = if (obj.flags & ObjFlag.X_FLIP_ON > 0) 7 - tileXBase else tileXBase;
             const tileNumber = if (lcdc & LcdcFlag.OBJ_SIZE_LARGE > 0) obj.tileNumber & 0b1111_1110 else obj.tileNumber;
-            //std.debug.print("tileNumber={}\n", .{tileNumber});
             const tileDataIndex = (@as(usize, tileNumber) * 16) + (tileY * 2);
             const tile = bgTileData[tileDataIndex .. tileDataIndex + 2];
             const pixelMask = @as(u8, 1) << @as(u3, @truncate(7 - tileX));
