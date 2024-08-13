@@ -82,7 +82,7 @@ pub fn main() !void {
         pixels,
     });
     defer {
-        if (gb.isDebugPaused()) {
+        if (gb.debug.isPaused()) {
             // If the debugger is blocking gameboyThread, it's safe to detach
             // and let the main thread exit.
             gameboyThread.detach();

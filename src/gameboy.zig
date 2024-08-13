@@ -118,8 +118,22 @@ const Debug = struct {
     breakpoints: std.ArrayList(u16),
     stackBase: u16,
 
-    expectedCpuTimeNs: u64,
-    actualCpuTimeNs: u64,
+    pub fn init(breakpoints: std.ArrayList(u16)) Debug {
+        return Debug{
+            .paused = std.atomic.Value(bool).init(false),
+            .stepModeEnabled = false,
+            .breakpoints = breakpoints,
+            .stackBase = 0xfffe,
+        };
+    }
+
+    pub fn isPaused(debug: *Debug) bool {
+        return debug.paused.load(.monotonic);
+    }
+
+    pub fn setPaused(debug: *Debug, val: bool) void {
+        debug.paused.store(val, .monotonic);
+    }
 };
 
 const Joypad = struct {
@@ -131,6 +145,14 @@ const Joypad = struct {
     mode: Joypad.Mode,
     data: std.atomic.Value(u8),
     cyclesSinceLowEdgeTransition: u8,
+
+    pub fn init() Joypad {
+        return Joypad{
+            .mode = .waitingForLowEdge,
+            .data = std.atomic.Value(u8).init(0),
+            .cyclesSinceLowEdgeTransition = 0,
+        };
+    }
 
     pub fn readButtons(joypad: *Joypad) u4 {
         return @truncate(joypad.data.load(.monotonic));
@@ -280,30 +302,34 @@ pub const Gb = struct {
         for (vram, 0..) |_, i| {
             vram[i] = 0;
         }
+
         const wram = try alloc.alloc(u8, 8 * 1024);
         for (wram, 0..) |_, i| {
             wram[i] = 0;
         }
+
         const oam = try alloc.alloc(u8, 160);
         for (oam, 0..) |_, i| {
             oam[i] = 0;
         }
+
         var ioRegs = try alloc.alloc(std.atomic.Value(u8), 128);
         for (ioRegs, 0..) |_, i| {
             ioRegs[i] = std.atomic.Value(u8).init(0);
         }
         ioRegs[IoReg.JOYP - 0xff00].store(0b0011_1111, .monotonic);
+
         const hram = try alloc.alloc(u8, 128);
         for (hram, 0..) |_, i| {
             hram[i] = 0;
         }
 
-        const breakpoints = try std.ArrayList(u16).initCapacity(alloc, 128);
-
         const screen: []Pixel = try alloc.alloc(Pixel, 160 * 144);
         for (screen) |*pixel| {
             pixel.* = palette[0];
         }
+
+        const breakpoints = try std.ArrayList(u16).initCapacity(alloc, 128);
 
         return Gb{
             .pc = 0x0100,
@@ -332,24 +358,12 @@ pub const Gb = struct {
             .rom = rom,
             .screen = screen,
             .ppu = Ppu.init(palette),
-            .joypad = .{
-                .mode = .waitingForLowEdge,
-                .data = std.atomic.Value(u8).init(0),
-                .cyclesSinceLowEdgeTransition = 0,
-            },
+            .joypad = Joypad.init(),
             .scanningOam = false,
             .isDrawing = false,
             .inVBlank = std.atomic.Value(bool).init(false),
             .running = std.atomic.Value(bool).init(true),
-            .debug = .{
-                .paused = std.atomic.Value(bool).init(false),
-                .stepModeEnabled = false,
-                .breakpoints = breakpoints,
-                .stackBase = 0xfffe,
-
-                .expectedCpuTimeNs = 0,
-                .actualCpuTimeNs = 0,
-            },
+            .debug = Debug.init(breakpoints),
         };
     }
 
@@ -369,14 +383,6 @@ pub const Gb = struct {
 
     pub fn setIsRunning(gb: *Gb, val: bool) void {
         gb.running.store(val, .monotonic);
-    }
-
-    pub fn isDebugPaused(gb: *Gb) bool {
-        return gb.debug.paused.load(.monotonic);
-    }
-
-    pub fn setDebugPaused(gb: *Gb, val: bool) void {
-        gb.debug.paused.store(val, .monotonic);
     }
 
     pub fn readFlags(gb: *const Gb) u8 {

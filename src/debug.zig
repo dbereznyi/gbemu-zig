@@ -182,7 +182,7 @@ pub fn debugBreak(gb: *Gb) !void {
         return;
     }
 
-    gb.setDebugPaused(true);
+    gb.debug.setPaused(true);
     gb.debug.stepModeEnabled = true;
 
     gb.printDebugState();
@@ -226,7 +226,7 @@ pub fn debugBreak(gb: *Gb) !void {
         }
     }
 
-    gb.setDebugPaused(false);
+    gb.debug.setPaused(false);
 }
 
 const Parser = struct {
