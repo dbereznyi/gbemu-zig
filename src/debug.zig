@@ -1,6 +1,6 @@
 const std = @import("std");
 const Gb = @import("gameboy.zig").Gb;
-const Ppu = @import("ppu.zig").Ppu;
+const Ppu = @import("gameboy.zig").Ppu;
 const IoReg = @import("gameboy.zig").IoReg;
 const decodeInstrAt = @import("cpu/decode.zig").decodeInstrAt;
 const Interrupt = @import("gameboy.zig").Interrupt;
@@ -90,7 +90,7 @@ const DebugCmd = union(DebugCmdTag) {
         };
     }
 
-    pub fn execute(cmd: DebugCmd, gb: *Gb, ppu: *const Ppu) !bool {
+    pub fn execute(cmd: DebugCmd, gb: *Gb) !bool {
         switch (cmd) {
             .quit => {
                 gb.setIsRunning(false);
@@ -149,7 +149,7 @@ const DebugCmd = union(DebugCmdTag) {
                 }
             },
             .viewPpu => {
-                ppu.printState();
+                gb.ppu.printState();
             },
             .viewOam => {
                 var i: u16 = 0;
@@ -170,7 +170,7 @@ const DebugCmd = union(DebugCmdTag) {
     }
 };
 
-pub fn debugBreak(gb: *Gb, ppu: *const Ppu) !void {
+pub fn debugBreak(gb: *Gb) !void {
     var breakpointHit = false;
     for (gb.debug.breakpoints.items) |addr| {
         if (gb.pc == addr) {
@@ -221,7 +221,7 @@ pub fn debugBreak(gb: *Gb, ppu: *const Ppu) !void {
                 std.debug.print("Invalid command\n", .{});
                 continue;
             };
-            resumeExecution = try cmd.execute(gb, ppu);
+            resumeExecution = try cmd.execute(gb);
             std.debug.print("\n", .{});
         }
     }

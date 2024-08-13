@@ -8,10 +8,9 @@ const IoReg = @import("gameboy.zig").IoReg;
 const LcdcFlag = @import("gameboy.zig").LcdcFlag;
 const ObjFlag = @import("gameboy.zig").ObjFlag;
 const Button = @import("gameboy.zig").Button;
+const Palette = @import("gameboy.zig").Ppu.Palette;
 const stepCpu = @import("cpu/step.zig").stepCpu;
-const runPpu = @import("ppu.zig").runPpu;
 const stepPpu = @import("ppu.zig").stepPpu;
-const Ppu = @import("ppu.zig").Ppu;
 const decodeInstrAt = @import("cpu/decode.zig").decodeInstrAt;
 const debugBreak = @import("debug.zig").debugBreak;
 const stepJoypad = @import("joypad.zig").stepJoypad;
@@ -60,7 +59,7 @@ pub fn main() !void {
     defer c.SDL_DestroyTexture(texture);
 
     const rom = try std.fs.cwd().readFileAlloc(alloc, romFilepath, 1024 * 1024 * 1024);
-    var gb = try Gb.init(alloc, rom);
+    var gb = try Gb.init(alloc, rom, Palette.GREEN);
     defer gb.deinit(alloc);
 
     const pixels: []Pixel = try alloc.alloc(Pixel, 160 * 144);
@@ -74,7 +73,7 @@ pub fn main() !void {
         try initVramForTesting(&gb, alloc);
     }
 
-    if (true) {
+    if (false) {
         try gb.debug.breakpoints.append(0x0040);
     }
 
@@ -89,7 +88,7 @@ pub fn main() !void {
             gameboyThread.detach();
         } else {
             // If gameboyThread is still running normally, we want to wait for
-            // it's current loop iteration to finish and exit on its own.
+            // its current loop iteration to finish and exit on its own.
             // (This avoids some SEGFAULT errors occurring when CTRL+C quitting.)
             gameboyThread.join();
         }
@@ -159,15 +158,13 @@ pub fn main() !void {
 }
 
 fn runGameboy(gb: *Gb, pixels: []Pixel) !void {
-    var ppu = Ppu.init();
-
     while (gb.isRunning()) {
         const lcdOnAtStartOfFrame = gb.read(IoReg.LCDC) & LcdcFlag.ON > 0;
 
         const CYCLES_UNTIL_VBLANK: usize = 16416;
-        _ = try simulate(CYCLES_UNTIL_VBLANK, gb, &ppu);
+        _ = try simulate(CYCLES_UNTIL_VBLANK, gb);
 
-        std.debug.assert(ppu.mode == .vBlank);
+        std.debug.assert(gb.ppu.mode == .vBlank);
         std.debug.assert(gb.isInVBlank());
 
         if (lcdOnAtStartOfFrame) {
@@ -178,22 +175,22 @@ fn runGameboy(gb: *Gb, pixels: []Pixel) !void {
         std.time.sleep(FRAME_CYCLES * 1000);
 
         const VBLANK_CYCLES: usize = 1140;
-        _ = try simulate(VBLANK_CYCLES, gb, &ppu);
+        _ = try simulate(VBLANK_CYCLES, gb);
 
-        std.debug.assert(ppu.mode != .vBlank);
+        std.debug.assert(gb.ppu.mode != .vBlank);
         std.debug.assert(!gb.isInVBlank());
     }
 }
 
-fn simulate(minCycles: usize, gb: *Gb, ppu: *Ppu) !usize {
+fn simulate(minCycles: usize, gb: *Gb) !usize {
     var cycles: usize = 0;
     while (cycles < minCycles) {
-        try debugBreak(gb, ppu);
+        try debugBreak(gb);
 
         const cpuCycles = stepCpu(gb);
         for (0..cpuCycles) |_| {
             stepJoypad(gb);
-            ppu.step(gb);
+            stepPpu(gb);
         }
 
         cycles += cpuCycles;
