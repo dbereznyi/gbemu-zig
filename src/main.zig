@@ -4,16 +4,12 @@ const c = @cImport({
 const std = @import("std");
 const Pixel = @import("pixel.zig").Pixel;
 const Gb = @import("gameboy.zig").Gb;
-const IoReg = @import("gameboy.zig").IoReg;
-const LcdcFlag = @import("gameboy.zig").LcdcFlag;
-const ObjFlag = @import("gameboy.zig").ObjFlag;
 const Button = @import("gameboy.zig").Button;
 const Palette = @import("gameboy.zig").Ppu.Palette;
 const stepCpu = @import("cpu/step.zig").stepCpu;
 const stepPpu = @import("ppu.zig").stepPpu;
-const decodeInstrAt = @import("cpu/decode.zig").decodeInstrAt;
-const debugBreak = @import("debug.zig").debugBreak;
 const stepJoypad = @import("joypad.zig").stepJoypad;
+const debugBreak = @import("debug.zig").debugBreak;
 
 const SCALE = 4;
 
@@ -68,10 +64,6 @@ pub fn main() !void {
     std.mem.copyForwards(Pixel, pixels, gb.screen);
 
     _ = c.SDL_UpdateTexture(texture, null, @ptrCast(pixels), 160 * 3);
-
-    if (false) {
-        try initVramForTesting(&gb, alloc);
-    }
 
     if (false) {
         try gb.debug.breakpoints.append(0x0040);
@@ -159,7 +151,7 @@ pub fn main() !void {
 
 fn runGameboy(gb: *Gb, pixels: []Pixel) !void {
     while (gb.isRunning()) {
-        const lcdOnAtStartOfFrame = gb.read(IoReg.LCDC) & LcdcFlag.ON > 0;
+        const lcdOnAtStartOfFrame = gb.isLcdOn();
 
         const CYCLES_UNTIL_VBLANK: usize = 16416;
         _ = try simulate(CYCLES_UNTIL_VBLANK, gb);
@@ -196,89 +188,4 @@ fn simulate(minCycles: usize, gb: *Gb) !usize {
         cycles += cpuCycles;
     }
     return cycles;
-}
-
-fn initVramForTesting(gb: *Gb, alloc: std.mem.Allocator) !void {
-    const bgTileData = try alloc.alloc(u8, 16 * 128);
-    defer alloc.free(bgTileData);
-    for (bgTileData, 0..) |_, i| {
-        bgTileData[i] = 0;
-    }
-
-    const tileData = [_]u8{ 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x3c, 0x7e, 0x42, 0x42, 0x42, 0x42, 0x42, 0x42, 0x7e, 0x5e, 0x7e, 0x0a, 0x7c, 0x56, 0x38, 0x7c, 0xff, 0x0, 0x7e, 0xff, 0x85, 0x81, 0x89, 0x83, 0x93, 0x85, 0xa5, 0x8b, 0xc9, 0x97, 0x7e, 0xff, 0x7c, 0x7c, 0x00, 0xc6, 0xc6, 0x00, 0x00, 0xfe, 0xc6, 0xc6, 0x00, 0xc6, 0xc6, 0x00, 0x00, 0x00 };
-    for (tileData, 0..) |_, i| {
-        bgTileData[i] = tileData[i];
-    }
-
-    const lcdc = LcdcFlag.ON | LcdcFlag.WIN_TILE_MAP | LcdcFlag.WIN_ENABLE | LcdcFlag.OBJ_SIZE_LARGE | LcdcFlag.OBJ_ENABLE | LcdcFlag.BG_WIN_ENABLE;
-
-    const tileIndexStart = if (lcdc & LcdcFlag.TILE_DATA > 0) 0 else 128;
-
-    const bgTileMap = try alloc.alloc(u8, 32 * 32);
-    defer alloc.free(bgTileMap);
-    for (bgTileMap, 0..) |_, i| {
-        bgTileMap[i] = tileIndexStart;
-    }
-
-    bgTileMap[1] = tileIndexStart + 1;
-
-    const winTileMap = try alloc.alloc(u8, 32 * 32);
-    defer alloc.free(winTileMap);
-    for (winTileMap, 0..) |_, i| {
-        winTileMap[i] = tileIndexStart + 1;
-    }
-
-    const objAttrData = [_]u8{ 16, 37, 2, ObjFlag.PRIORITY_NORMAL | ObjFlag.Y_FLIP_OFF | ObjFlag.X_FLIP_OFF | ObjFlag.PALETTE_0 };
-    for (objAttrData, 0..) |_, i| {
-        gb.write(0xfe00 + @as(u16, @truncate(i)), objAttrData[i]);
-    }
-
-    const bgTileDataStartAddr = if (lcdc & LcdcFlag.TILE_DATA > 0) 0x8000 else 0x8800;
-    for (bgTileData, 0..) |_, i| {
-        gb.write(@truncate(bgTileDataStartAddr + i), bgTileData[i]);
-    }
-
-    const bgTileMapStartAddr = if (lcdc & LcdcFlag.BG_TILE_MAP > 0) 0x9c00 else 0x9800;
-    for (bgTileMap, 0..) |_, i| {
-        gb.write(@truncate(bgTileMapStartAddr + i), bgTileMap[i]);
-    }
-
-    const winTileMapStartAddr = if (lcdc & LcdcFlag.WIN_TILE_MAP > 0) 0x9c00 else 0x9800;
-    for (winTileMap, 0..) |_, i| {
-        gb.write(@truncate(winTileMapStartAddr + i), winTileMap[i]);
-    }
-
-    for (bgTileDataStartAddr..bgTileDataStartAddr + 16 * 128) |i| {
-        const val = gb.read(@truncate(i));
-        std.debug.print("{x:0>2} ", .{val});
-        if ((i + 1) % 16 == 0) {
-            std.debug.print("\n", .{});
-        }
-    }
-    std.debug.print("\nbgTileMap:\n", .{});
-
-    for (bgTileMapStartAddr..bgTileMapStartAddr + 32 * 32) |i| {
-        const val = gb.read(@truncate(i));
-        std.debug.print("{d:1} ", .{val - tileIndexStart});
-        if ((i + 1) % 32 == 0) {
-            std.debug.print("\n", .{});
-        }
-    }
-    std.debug.print("\n\nwinTileMap:\n", .{});
-
-    for (winTileMapStartAddr..winTileMapStartAddr + 32 * 32) |i| {
-        const val = gb.read(@truncate(i));
-        std.debug.print("{d:1} ", .{val - tileIndexStart});
-        if ((i + 1) % 32 == 0) {
-            std.debug.print("\n", .{});
-        }
-    }
-    std.debug.print("\n", .{});
-
-    gb.write(IoReg.LCDC, lcdc);
-    gb.write(IoReg.BGP, 0b11_10_01_00);
-    gb.write(IoReg.OBP0, 0b11_10_01_00);
-    gb.write(IoReg.OBP1, 0b00_01_10_11);
-    gb.write(IoReg.WX, 7);
-    gb.write(IoReg.WY, 8);
 }
