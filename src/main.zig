@@ -59,33 +59,28 @@ pub fn main() !void {
     var gb = try Gb.init(alloc, rom, Palette.GREEN);
     defer gb.deinit(alloc);
 
-    const pixels: []Pixel = try alloc.alloc(Pixel, 160 * 144);
-    defer alloc.free(pixels);
-
-    std.mem.copyForwards(Pixel, pixels, gb.screen);
-
-    _ = c.SDL_UpdateTexture(texture, null, @ptrCast(pixels), 160 * 3);
+    _ = c.SDL_UpdateTexture(texture, null, @ptrCast(gb.screen), 160 * 3);
 
     if (false) {
         try gb.debug.breakpoints.append(0x0295);
     }
 
-    var gameboyThread = try std.Thread.spawn(.{}, runGameboy, .{
-        &gb,
-        pixels,
-    });
-    defer {
-        if (gb.debug.isPaused()) {
-            // If the debugger is blocking gameboyThread, it's safe to detach
-            // and let the main thread exit.
-            gameboyThread.detach();
-        } else {
-            // If gameboyThread is still running normally, we want to wait for
-            // its current loop iteration to finish and exit on its own.
-            // (This avoids some SEGFAULT errors occurring when CTRL+C quitting.)
-            gameboyThread.join();
-        }
-    }
+    //var gameboyThread = try std.Thread.spawn(.{}, runGameboy, .{
+    //    &gb,
+    //    pixels,
+    //});
+    //defer {
+    //    if (gb.debug.isPaused()) {
+    //        // If the debugger is blocking gameboyThread, it's safe to detach
+    //        // and let the main thread exit.
+    //        gameboyThread.detach();
+    //    } else {
+    //        // If gameboyThread is still running normally, we want to wait for
+    //        // its current loop iteration to finish and exit on its own.
+    //        // (This avoids some SEGFAULT errors occurring when CTRL+C quitting.)
+    //        gameboyThread.join();
+    //    }
+    //}
 
     // In order to gracefully handle CTRL+C.
     std.posix.sigaction(std.c.SIG.INT, &std.posix.Sigaction{
@@ -137,13 +132,25 @@ pub fn main() !void {
             }
         }
 
-        if (gb.isLcdOn() and gb.isInVBlank()) {
-            _ = c.SDL_UpdateTexture(texture, null, @ptrCast(pixels), 160 * 3);
-        }
+        const start = try std.time.Instant.now();
+        const lcdOnAtStartOfFrame = gb.isLcdOn();
 
+        const CYCLES_UNTIL_VBLANK: usize = 16416;
+        _ = try simulate(CYCLES_UNTIL_VBLANK, &gb);
+        std.debug.assert(gb.ppu.mode == .vBlank);
+        std.debug.assert(gb.isInVBlank());
+
+        if (lcdOnAtStartOfFrame) {
+            _ = c.SDL_UpdateTexture(texture, null, @ptrCast(gb.screen), 160 * 3);
+        }
         _ = c.SDL_RenderClear(renderer);
         _ = c.SDL_RenderCopy(renderer, texture, null, null);
         c.SDL_RenderPresent(renderer);
+
+        const VBLANK_CYCLES: usize = 1140;
+        _ = try simulate(VBLANK_CYCLES, &gb);
+        std.debug.assert(gb.ppu.mode != .vBlank);
+        std.debug.assert(!gb.isInVBlank());
 
         if (false and frames % 15 == 0) {
             std.debug.print("actual **** frameTime: {} ns = {} micros = {} ms\n", .{ gb.debug.frameTimeNs, gb.debug.frameTimeNs / 1000, gb.debug.frameTimeNs / 1000 / 1000 });
@@ -151,38 +158,11 @@ pub fn main() !void {
             std.debug.print("expected ** frameTime: {} ns = {} micros = {} ms\n", .{ expected, expected / 1000, expected / 1000 / 1000 });
         }
 
-        c.SDL_Delay(17);
-        frames +%= 1;
-    }
-}
-
-fn runGameboy(gb: *Gb, pixels: []Pixel) !void {
-    var err: u64 = 0;
-    while (gb.isRunning()) {
-        const start = try std.time.Instant.now();
-
-        const lcdOnAtStartOfFrame = gb.isLcdOn();
-
-        const CYCLES_UNTIL_VBLANK: usize = 16416;
-        err +%= try simulate(CYCLES_UNTIL_VBLANK, gb);
-
-        std.debug.assert(gb.ppu.mode == .vBlank);
-        std.debug.assert(gb.isInVBlank());
-
-        gb.debug.frameTimeNs = (try std.time.Instant.now()).since(start);
-
-        if (lcdOnAtStartOfFrame) {
-            std.mem.copyForwards(Pixel, pixels, gb.screen);
-        }
-
+        const actualFrameTimeNs = (try std.time.Instant.now()).since(start);
+        gb.debug.frameTimeNs = actualFrameTimeNs;
         const FRAME_CYCLES: usize = CYCLES_UNTIL_VBLANK + 1140;
-        std.time.sleep(FRAME_CYCLES * 1000);
-
-        const VBLANK_CYCLES: usize = 1140;
-        err +%= try simulate(VBLANK_CYCLES, gb);
-
-        std.debug.assert(gb.ppu.mode != .vBlank);
-        std.debug.assert(!gb.isInVBlank());
+        std.time.sleep(FRAME_CYCLES * 1000 -| actualFrameTimeNs);
+        frames +%= 1;
     }
 }
 
