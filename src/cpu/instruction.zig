@@ -295,8 +295,9 @@ pub const Instr = union(InstrTag) {
         const param1: ?[]u8 = condStr orelse (dstStr orelse null);
         const param2: ?[]u8 = srcStr orelse (if (condStr != null) dstStr else null);
 
-        return try std.fmt.bufPrint(buf, "{s} {s}{s}{s}", .{
+        return try std.fmt.bufPrint(buf, "{s}{s}{s}{s}{s}", .{
             mnemonic,
+            if (param1 == null and param2 == null) "" else " ",
             param1 orelse "",
             if (param1 != null and param2 != null) ", " else "",
             param2 orelse "",

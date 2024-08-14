@@ -266,8 +266,8 @@ fn dec16(gb: *Gb, dst: Dst16) void {
 
 fn calcJrDestAddr(pc: u16, offset: u8) u16 {
     const offsetI8: i8 = @bitCast(offset);
-    const pcI16: i16 = @intCast(pc);
-    return @intCast(pcI16 +% offsetI8);
+    const pcI16: i16 = @bitCast(pc);
+    return @bitCast(pcI16 +% offsetI8);
 }
 
 test "calcJrDestAddr" {

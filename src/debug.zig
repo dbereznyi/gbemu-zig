@@ -23,11 +23,12 @@ const HELP_MESSAGE =
     "    (v)iew (s)tack\n" ++
     "    (v)iew (p)pu\n" ++
     "    (v)iew (o)am\n" ++
+    "    (v)iew (d)ma\n" ++
     "    (v)iew (j)oypad\n" ++
     "\nexample: setting a breakpoint at $1234:" ++
     "  bs 1234";
 
-const DebugCmdTag = enum { quit, step, continue_, help, breakpointList, breakpointSet, breakpointUnset, breakpointClearAll, viewRegisters, viewStack, viewPpu, viewOam, viewJoypad };
+const DebugCmdTag = enum { quit, step, continue_, help, breakpointList, breakpointSet, breakpointUnset, breakpointClearAll, viewRegisters, viewStack, viewPpu, viewOam, viewDma, viewJoypad };
 
 const DebugCmd = union(DebugCmdTag) {
     quit: void,
@@ -42,6 +43,7 @@ const DebugCmd = union(DebugCmdTag) {
     viewStack: void,
     viewPpu: void,
     viewOam: void,
+    viewDma: void,
     viewJoypad: void,
 
     pub fn parse(buf: []u8) ?DebugCmd {
@@ -82,6 +84,7 @@ const DebugCmd = union(DebugCmdTag) {
                     's' => .viewStack,
                     'p' => .viewPpu,
                     'o' => .viewOam,
+                    'd' => .viewDma,
                     'j' => .viewJoypad,
                     else => null,
                 };
@@ -160,6 +163,9 @@ const DebugCmd = union(DebugCmdTag) {
                     std.debug.print("${x:0>4}: ${x:0>2} (tileNumber = {d:0>3})\n", .{ 0xfe00 + i + 2, gb.read(0xfe00 + i + 2), gb.read(0xfe00 + i + 2) });
                     std.debug.print("${x:0>4}: ${x:0>2} (flags = {b:0>8})\n", .{ 0xfe00 + i + 3, gb.read(0xfe00 + i + 3), gb.read(0xfe00 + i + 3) });
                 }
+            },
+            .viewDma => {
+                gb.dma.printState();
             },
             .viewJoypad => {
                 gb.joypad.printState();

@@ -118,12 +118,16 @@ const Debug = struct {
     breakpoints: std.ArrayList(u16),
     stackBase: u16,
 
+    frameTimeNs: u64,
+
     pub fn init(breakpoints: std.ArrayList(u16)) Debug {
         return Debug{
             .paused = std.atomic.Value(bool).init(false),
             .stepModeEnabled = false,
             .breakpoints = breakpoints,
             .stackBase = 0xfffe,
+
+            .frameTimeNs = 0,
         };
     }
 
@@ -133,6 +137,39 @@ const Debug = struct {
 
     pub fn setPaused(debug: *Debug, val: bool) void {
         debug.paused.store(val, .monotonic);
+    }
+};
+
+const Dma = struct {
+    const Mode = enum {
+        idle,
+        transfer,
+    };
+
+    mode: Dma.Mode,
+    transferPending: bool,
+    startAddr: u16,
+    bytesTransferred: u16,
+
+    pub fn init() Dma {
+        return Dma{
+            .mode = .idle,
+            .transferPending = false,
+            .startAddr = 0x0000,
+            .bytesTransferred = 0,
+        };
+    }
+
+    pub fn printState(dma: *const Dma) void {
+        std.debug.print("mode={s} transferPending={} startAddr={x:0>4} bytesTransferred={}\n", .{
+            switch (dma.mode) {
+                .idle => "idle",
+                .transfer => "transfer",
+            },
+            dma.transferPending,
+            dma.startAddr,
+            dma.bytesTransferred,
+        });
     }
 };
 
@@ -286,6 +323,7 @@ pub const Gb = struct {
 
     ppu: Ppu,
     joypad: Joypad,
+    dma: Dma,
 
     screen: []Pixel,
 
@@ -359,6 +397,7 @@ pub const Gb = struct {
             .screen = screen,
             .ppu = Ppu.init(palette),
             .joypad = Joypad.init(),
+            .dma = Dma.init(),
             .scanningOam = false,
             .isDrawing = false,
             .inVBlank = std.atomic.Value(bool).init(false),
@@ -514,6 +553,9 @@ pub const Gb = struct {
             // I/O Registers
             0xff00...0xff7f => {
                 gb.ioRegs[addr - 0xff00].store(val, .monotonic);
+                if (addr == IoReg.DMA) {
+                    gb.dma.transferPending = true;
+                }
             },
             // HRAM
             0xff80...0xfffe => {

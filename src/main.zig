@@ -8,10 +8,11 @@ const Button = @import("gameboy.zig").Button;
 const Palette = @import("gameboy.zig").Ppu.Palette;
 const stepCpu = @import("cpu/step.zig").stepCpu;
 const stepPpu = @import("ppu.zig").stepPpu;
+const stepDma = @import("dma.zig").stepDma;
 const stepJoypad = @import("joypad.zig").stepJoypad;
 const debugBreak = @import("debug.zig").debugBreak;
 
-const SCALE = 4;
+const SCALE = 2;
 
 var forceQuit = false;
 
@@ -66,7 +67,7 @@ pub fn main() !void {
     _ = c.SDL_UpdateTexture(texture, null, @ptrCast(pixels), 160 * 3);
 
     if (false) {
-        try gb.debug.breakpoints.append(0x0040);
+        try gb.debug.breakpoints.append(0x0295);
     }
 
     var gameboyThread = try std.Thread.spawn(.{}, runGameboy, .{
@@ -144,20 +145,31 @@ pub fn main() !void {
         _ = c.SDL_RenderCopy(renderer, texture, null, null);
         c.SDL_RenderPresent(renderer);
 
+        if (false and frames % 15 == 0) {
+            std.debug.print("actual **** frameTime: {} ns = {} micros = {} ms\n", .{ gb.debug.frameTimeNs, gb.debug.frameTimeNs / 1000, gb.debug.frameTimeNs / 1000 / 1000 });
+            const expected: u64 = (16416 + 1140) * 1000;
+            std.debug.print("expected ** frameTime: {} ns = {} micros = {} ms\n", .{ expected, expected / 1000, expected / 1000 / 1000 });
+        }
+
         c.SDL_Delay(17);
         frames +%= 1;
     }
 }
 
 fn runGameboy(gb: *Gb, pixels: []Pixel) !void {
+    var err: u64 = 0;
     while (gb.isRunning()) {
+        const start = try std.time.Instant.now();
+
         const lcdOnAtStartOfFrame = gb.isLcdOn();
 
         const CYCLES_UNTIL_VBLANK: usize = 16416;
-        _ = try simulate(CYCLES_UNTIL_VBLANK, gb);
+        err +%= try simulate(CYCLES_UNTIL_VBLANK, gb);
 
         std.debug.assert(gb.ppu.mode == .vBlank);
         std.debug.assert(gb.isInVBlank());
+
+        gb.debug.frameTimeNs = (try std.time.Instant.now()).since(start);
 
         if (lcdOnAtStartOfFrame) {
             std.mem.copyForwards(Pixel, pixels, gb.screen);
@@ -167,7 +179,7 @@ fn runGameboy(gb: *Gb, pixels: []Pixel) !void {
         std.time.sleep(FRAME_CYCLES * 1000);
 
         const VBLANK_CYCLES: usize = 1140;
-        _ = try simulate(VBLANK_CYCLES, gb);
+        err +%= try simulate(VBLANK_CYCLES, gb);
 
         std.debug.assert(gb.ppu.mode != .vBlank);
         std.debug.assert(!gb.isInVBlank());
@@ -183,9 +195,10 @@ fn simulate(minCycles: usize, gb: *Gb) !usize {
         for (0..cpuCycles) |_| {
             stepJoypad(gb);
             stepPpu(gb);
+            stepDma(gb);
         }
 
         cycles += cpuCycles;
     }
-    return cycles;
+    return cycles -| minCycles;
 }
