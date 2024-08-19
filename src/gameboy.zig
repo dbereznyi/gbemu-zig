@@ -3,6 +3,9 @@ const Pixel = @import("pixel.zig").Pixel;
 const AtomicOrder = std.builtin.AtomicOrder;
 const Instr = @import("cpu/instruction.zig").Instr;
 const as16 = @import("util.zig").as16;
+const DebugCmd = @import("debug/cmd.zig").DebugCmd;
+const decodeInstrAt = @import("cpu/decode.zig").decodeInstrAt;
+const format = std.fmt.format;
 
 pub const IoReg = .{
     .JOYP = 0xff00,
@@ -114,20 +117,32 @@ pub const Button = .{
 
 const Debug = struct {
     paused: std.atomic.Value(bool),
+    skipCurrentBreakpoint: bool,
     stepModeEnabled: bool,
     breakpoints: std.ArrayList(u16),
     stackBase: u16,
 
     frameTimeNs: u64,
 
-    pub fn init(breakpoints: std.ArrayList(u16)) Debug {
+    pendingCommand: ?DebugCmd,
+    pendingResultBuf: []u8,
+    pendingResult: ?[]u8,
+    pendingResultSem: std.Thread.Semaphore,
+
+    pub fn init(breakpoints: std.ArrayList(u16), pendingResultBuf: []u8) Debug {
         return Debug{
             .paused = std.atomic.Value(bool).init(false),
+            .skipCurrentBreakpoint = false,
             .stepModeEnabled = false,
             .breakpoints = breakpoints,
             .stackBase = 0xfffe,
 
             .frameTimeNs = 0,
+
+            .pendingCommand = null,
+            .pendingResultBuf = pendingResultBuf,
+            .pendingResult = null,
+            .pendingResultSem = std.Thread.Semaphore{},
         };
     }
 
@@ -137,6 +152,19 @@ const Debug = struct {
 
     pub fn setPaused(debug: *Debug, val: bool) void {
         debug.paused.store(val, .monotonic);
+    }
+
+    pub fn sendCommand(debug: *Debug, cmd: DebugCmd) void {
+        debug.pendingCommand = cmd;
+    }
+
+    pub fn receiveCommand(debug: *Debug) ?DebugCmd {
+        return debug.pendingCommand;
+    }
+
+    pub fn acknowledgeCommand(debug: *Debug) void {
+        debug.pendingCommand = null;
+        debug.pendingResultSem.post();
     }
 };
 
@@ -160,8 +188,8 @@ const Dma = struct {
         };
     }
 
-    pub fn printState(dma: *const Dma) void {
-        std.debug.print("mode={s} transferPending={} startAddr={x:0>4} bytesTransferred={}\n", .{
+    pub fn printState(dma: *const Dma, writer: anytype) !void {
+        try format(writer, "mode={s} transferPending={} startAddr={x:0>4} bytesTransferred={}\n", .{
             switch (dma.mode) {
                 .idle => "idle",
                 .transfer => "transfer",
@@ -207,8 +235,8 @@ const Joypad = struct {
         _ = joypad.data.fetchAnd(~button, .monotonic);
     }
 
-    pub fn printState(joypad: *Joypad) void {
-        std.debug.print("data={b:0>8} cyclesSinceLowEdgeTransition={}\n", .{ joypad.data.load(.monotonic), joypad.cyclesSinceLowEdgeTransition });
+    pub fn printState(joypad: *Joypad, writer: anytype) !void {
+        try format(writer, "data={b:0>8} cyclesSinceLowEdgeTransition={}\n", .{ joypad.data.load(.monotonic), joypad.cyclesSinceLowEdgeTransition });
     }
 };
 
@@ -277,14 +305,19 @@ pub const Ppu = struct {
         };
     }
 
-    pub fn printState(ppu: *const Ppu) void {
-        std.debug.print("dots={d:>6} y={d:0>3} x={d:0>3} wy={d:0>3} windowY={d:0>3} mode={}\n", .{
+    pub fn printState(ppu: *const Ppu, writer: anytype) !void {
+        try format(writer, "dots={d:>6} y={d:0>3} x={d:0>3} wy={d:0>3} windowY={d:0>3} mode={s}\n", .{
             ppu.dots,
             ppu.y,
             ppu.x,
             ppu.wy,
             ppu.windowY,
-            ppu.mode,
+            switch (ppu.mode) {
+                .oam => "oam",
+                .drawing => "drawing",
+                .hBlank => "hBlank",
+                .vBlank => "vBlank",
+            },
         });
     }
 };
@@ -368,6 +401,7 @@ pub const Gb = struct {
         }
 
         const breakpoints = try std.ArrayList(u16).initCapacity(alloc, 128);
+        const pendingResultBuf = try alloc.alloc(u8, 4096);
 
         return Gb{
             .pc = 0x0100,
@@ -385,7 +419,7 @@ pub const Gb = struct {
             .carry = false,
             .branchCond = false,
             .ime = false,
-            .execState = ExecState.running,
+            .execState = .running,
             .skipPcIncrement = false,
             .vram = vram,
             .wram = wram,
@@ -402,7 +436,7 @@ pub const Gb = struct {
             .isDrawing = false,
             .inVBlank = std.atomic.Value(bool).init(false),
             .running = std.atomic.Value(bool).init(true),
-            .debug = Debug.init(breakpoints),
+            .debug = Debug.init(breakpoints, pendingResultBuf),
         };
     }
 
@@ -614,6 +648,31 @@ pub const Gb = struct {
         std.debug.print("IE: %{b:0>8} IF: %{b:0>8}\n", .{
             gb.read(IoReg.IE),
             gb.read(IoReg.IF),
+        });
+    }
+
+    pub fn printCurrentAndNextInstruction(gb: *Gb) !void {
+        var instrStrBuf: [64]u8 = undefined;
+
+        const instr = decodeInstrAt(gb.pc, gb);
+        const instrStr = try instr.toStr(&instrStrBuf);
+        std.debug.print("\n", .{});
+        std.debug.print("==> ${x:0>4}: {s} (${x:0>2} ${x:0>2} ${x:0>2}) \n", .{
+            gb.pc,
+            instrStr,
+            gb.read(gb.pc),
+            gb.read(gb.pc + 1),
+            gb.read(gb.pc + 2),
+        });
+
+        const instrNext = decodeInstrAt(gb.pc + instr.size(), gb);
+        const instrNextStr = try instrNext.toStr(&instrStrBuf);
+        std.debug.print("    ${x:0>4}: {s} (${x:0>2} ${x:0>2} ${x:0>2}) \n", .{
+            gb.pc + instr.size(),
+            instrNextStr,
+            gb.read(gb.pc + instr.size()),
+            gb.read(gb.pc + instr.size() + 1),
+            gb.read(gb.pc + instr.size() + 2),
         });
     }
 };

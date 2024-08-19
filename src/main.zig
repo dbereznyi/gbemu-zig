@@ -10,7 +10,9 @@ const stepCpu = @import("cpu/step.zig").stepCpu;
 const stepPpu = @import("ppu.zig").stepPpu;
 const stepDma = @import("dma.zig").stepDma;
 const stepJoypad = @import("joypad.zig").stepJoypad;
-const debugBreak = @import("debug.zig").debugBreak;
+const shouldDebugBreak = @import("debug/shouldDebugBreak.zig").shouldDebugBreak;
+const runDebugger = @import("debug/runDebugger.zig").runDebugger;
+const executeDebugCmd = @import("debug/executeCmd.zig").executeCmd;
 
 const SCALE = 2;
 
@@ -59,28 +61,14 @@ pub fn main() !void {
     var gb = try Gb.init(alloc, rom, Palette.GREEN);
     defer gb.deinit(alloc);
 
+    const debuggerThread = try std.Thread.spawn(.{}, runDebugger, .{&gb});
+    debuggerThread.detach();
+
     _ = c.SDL_UpdateTexture(texture, null, @ptrCast(gb.screen), 160 * 3);
 
-    if (false) {
-        try gb.debug.breakpoints.append(0x0295);
+    if (true) {
+        try gb.debug.breakpoints.append(0x0100);
     }
-
-    //var gameboyThread = try std.Thread.spawn(.{}, runGameboy, .{
-    //    &gb,
-    //    pixels,
-    //});
-    //defer {
-    //    if (gb.debug.isPaused()) {
-    //        // If the debugger is blocking gameboyThread, it's safe to detach
-    //        // and let the main thread exit.
-    //        gameboyThread.detach();
-    //    } else {
-    //        // If gameboyThread is still running normally, we want to wait for
-    //        // its current loop iteration to finish and exit on its own.
-    //        // (This avoids some SEGFAULT errors occurring when CTRL+C quitting.)
-    //        gameboyThread.join();
-    //    }
-    //}
 
     // In order to gracefully handle CTRL+C.
     std.posix.sigaction(std.c.SIG.INT, &std.posix.Sigaction{
@@ -135,10 +123,12 @@ pub fn main() !void {
         const start = try std.time.Instant.now();
         const lcdOnAtStartOfFrame = gb.isLcdOn();
 
+        try handleDebugCmd(&gb);
+
         const CYCLES_UNTIL_VBLANK: usize = 16416;
-        _ = try simulate(CYCLES_UNTIL_VBLANK, &gb);
-        std.debug.assert(gb.ppu.mode == .vBlank);
-        std.debug.assert(gb.isInVBlank());
+        if (!gb.debug.isPaused()) {
+            _ = try simulate(CYCLES_UNTIL_VBLANK, &gb);
+        }
 
         if (lcdOnAtStartOfFrame) {
             _ = c.SDL_UpdateTexture(texture, null, @ptrCast(gb.screen), 160 * 3);
@@ -148,9 +138,9 @@ pub fn main() !void {
         c.SDL_RenderPresent(renderer);
 
         const VBLANK_CYCLES: usize = 1140;
-        _ = try simulate(VBLANK_CYCLES, &gb);
-        std.debug.assert(gb.ppu.mode != .vBlank);
-        std.debug.assert(!gb.isInVBlank());
+        if (!gb.debug.isPaused()) {
+            _ = try simulate(VBLANK_CYCLES, &gb);
+        }
 
         if (false and frames % 15 == 0) {
             std.debug.print("actual **** frameTime: {} ns = {} micros = {} ms\n", .{ gb.debug.frameTimeNs, gb.debug.frameTimeNs / 1000, gb.debug.frameTimeNs / 1000 / 1000 });
@@ -169,7 +159,14 @@ pub fn main() !void {
 fn simulate(minCycles: usize, gb: *Gb) !usize {
     var cycles: usize = 0;
     while (cycles < minCycles) {
-        try debugBreak(gb);
+        try handleDebugCmd(gb);
+        if (shouldDebugBreak(gb)) {
+            try gb.printCurrentAndNextInstruction();
+            std.debug.print("\n> ", .{});
+            gb.debug.setPaused(true);
+            gb.debug.stepModeEnabled = true;
+            return cycles;
+        }
 
         const cpuCycles = stepCpu(gb);
         for (0..cpuCycles) |_| {
@@ -181,4 +178,10 @@ fn simulate(minCycles: usize, gb: *Gb) !usize {
         cycles += cpuCycles;
     }
     return cycles -| minCycles;
+}
+
+fn handleDebugCmd(gb: *Gb) !void {
+    const debugCmd = gb.debug.receiveCommand() orelse return;
+    try executeDebugCmd(debugCmd, gb);
+    gb.debug.acknowledgeCommand();
 }
