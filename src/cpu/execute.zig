@@ -308,7 +308,8 @@ fn jpCond(gb: *Gb, address: u16, cond: bool) void {
 
 fn jpHl(gb: *Gb) void {
     const destAddr = Src16.read(.HL, gb);
-    gb.pc = calcJpDestAddr(destAddr);
+    // subtract 1 byte to account for PC getting incremented by the size of JP HL (1 byte)
+    gb.pc = destAddr - 1;
 }
 
 fn calcRetDestAddr(address: u16) u16 {

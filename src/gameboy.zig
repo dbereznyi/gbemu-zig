@@ -8,6 +8,10 @@ const format = std.fmt.format;
 
 pub const IoReg = .{
     .JOYP = 0xff00,
+    .DIV = 0xff04,
+    .TIMA = 0xff05,
+    .TMA = 0xff06,
+    .TAC = 0xff07,
     .IF = 0xff0f,
     .LCDC = 0xff40,
     .STAT = 0xff41,
@@ -27,6 +31,11 @@ pub const IoReg = .{
 pub const JoypFlag = .{
     .SELECT_BUTTONS = 0b0010_0000,
     .SELECT_DPAD = 0b0001_0000,
+};
+
+pub const TacFlag = .{
+    .ENABLE = 0b0000_0100,
+    .CLOCK_SELECT = 0b0000_0011,
 };
 
 pub const LcdcFlag = .{
@@ -206,6 +215,20 @@ const Dma = struct {
     }
 };
 
+const Timer = struct {
+    cycles_elapsed: usize,
+
+    pub fn init() Timer {
+        return Timer{
+            .cycles_elapsed = 0,
+        };
+    }
+
+    pub fn printState(timer: *const Timer, writer: anytype) !void {
+        try format(writer, "cycles_elapsed={}\n", .{timer.cycles_elapsed});
+    }
+};
+
 const Joypad = struct {
     const Mode = enum {
         waitingForLowEdge,
@@ -371,6 +394,7 @@ pub const Gb = struct {
     ppu: Ppu,
     joypad: Joypad,
     dma: Dma,
+    timer: Timer,
 
     screen: []Pixel,
 
@@ -446,6 +470,7 @@ pub const Gb = struct {
             .ppu = Ppu.init(palette),
             .joypad = Joypad.init(),
             .dma = Dma.init(),
+            .timer = Timer.init(),
             .scanningOam = false,
             .isDrawing = false,
             .inVBlank = std.atomic.Value(bool).init(false),
@@ -540,7 +565,7 @@ pub const Gb = struct {
             0xe000...0xfdff => gb.wram[addr - 0xc000],
             // OAM
             0xfe00...0xfe9f => blk: {
-                if (!gb.isLcdOn() or !gb.scanningOam) {
+                if (!gb.isLcdOn() or !gb.scanningOam or gb.debug.isPaused()) {
                     const val = gb.oam[addr - 0xfe00];
                     break :blk val;
                 } else {
@@ -587,7 +612,7 @@ pub const Gb = struct {
             },
             // OAM
             0xfe00...0xfe9f => {
-                if (!gb.isLcdOn() or !gb.scanningOam) {
+                if (!gb.isLcdOn() or !gb.scanningOam or gb.debug.isPaused()) {
                     gb.oam[addr - 0xfe00] = val;
                 } else {
                     std.log.warn("Attempted to write to OAM while in use (${x} -> {x})\n", .{ val, addr });
@@ -598,8 +623,10 @@ pub const Gb = struct {
             // I/O Registers
             0xff00...0xff7f => {
                 gb.ioRegs[addr - 0xff00].store(val, .monotonic);
-                if (addr == IoReg.DMA) {
-                    gb.dma.transferPending = true;
+                switch (addr) {
+                    IoReg.DIV => gb.ioRegs[addr - 0xff00].store(0, .monotonic),
+                    IoReg.DMA => gb.dma.transferPending = true,
+                    else => {},
                 }
             },
             // HRAM

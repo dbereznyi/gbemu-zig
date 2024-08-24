@@ -9,6 +9,7 @@ const stepCpu = @import("cpu/step.zig").stepCpu;
 const stepPpu = @import("ppu.zig").stepPpu;
 const stepDma = @import("dma.zig").stepDma;
 const stepJoypad = @import("joypad.zig").stepJoypad;
+const stepTimer = @import("timer.zig").stepTimer;
 const shouldDebugBreak = @import("debug/shouldDebugBreak.zig").shouldDebugBreak;
 const runDebugger = @import("debug/runDebugger.zig").runDebugger;
 const executeDebugCmd = @import("debug/executeCmd.zig").executeCmd;
@@ -67,8 +68,8 @@ pub fn main() !void {
 
     _ = c.SDL_UpdateTexture(texture, null, @ptrCast(gb.screen), 160 * 3);
 
-    if (true) {
-        try gb.debug.breakpoints.append(0x0100);
+    if (false) {
+        try gb.debug.breakpoints.append(0x01e5);
     }
 
     var frames: usize = 0;
@@ -157,6 +158,7 @@ fn simulate(minCycles: usize, gb: *Gb) !usize {
             stepJoypad(gb);
             stepPpu(gb);
             stepDma(gb);
+            stepTimer(gb);
         }
 
         cycles += cpuCycles;

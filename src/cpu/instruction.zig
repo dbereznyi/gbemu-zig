@@ -245,6 +245,7 @@ pub const Instr = union(InstrTag) {
 
             .JP => |addr| try std.fmt.bufPrint(&dstBuf, "${x:0>4}", .{addr}),
             .JP_COND => |args| try std.fmt.bufPrint(&dstBuf, "${x:0>4}", .{args.addr}),
+            .JP_HL => try std.fmt.bufPrint(&dstBuf, "hl", .{}),
             .JR => |offset| try std.fmt.bufPrint(&dstBuf, "{s}{}", .{ if (offset & 0b1000_0000 == 0) "+" else "", @as(i8, @bitCast(offset)) }),
             .JR_COND => |args| try std.fmt.bufPrint(&dstBuf, "{s}{}", .{ if (args.offset & 0b1000_0000 == 0) "+" else "", @as(i8, @bitCast(args.offset)) }),
             .CALL => |addr| try std.fmt.bufPrint(&dstBuf, "${x:0>4}", .{addr}),
