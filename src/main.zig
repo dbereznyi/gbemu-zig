@@ -2,7 +2,6 @@ const c = @cImport({
     @cInclude("SDL2/SDL.h");
 });
 const std = @import("std");
-const Pixel = @import("pixel.zig").Pixel;
 const Gb = @import("gameboy.zig").Gb;
 const Button = @import("gameboy.zig").Button;
 const Palette = @import("gameboy.zig").Ppu.Palette;
@@ -16,7 +15,9 @@ const executeDebugCmd = @import("debug/executeCmd.zig").executeCmd;
 
 const SCALE = 2;
 
-var forceQuit = false;
+const CYCLES_UNTIL_VBLANK: usize = 16416;
+const VBLANK_CYCLES: usize = 1140;
+const FRAME_CYCLES: usize = CYCLES_UNTIL_VBLANK + VBLANK_CYCLES;
 
 pub fn main() !void {
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
@@ -70,26 +71,8 @@ pub fn main() !void {
         try gb.debug.breakpoints.append(0x0100);
     }
 
-    // In order to gracefully handle CTRL+C.
-    std.posix.sigaction(std.c.SIG.INT, &std.posix.Sigaction{
-        .handler = .{ .handler = struct {
-            pub fn handler(_: c_int) callconv(.C) void {
-                forceQuit = true;
-            }
-        }.handler },
-        .mask = std.posix.empty_sigset,
-        .flags = 0,
-    }, null) catch {
-        std.log.warn("could not register signal handler for SIG_INT\n", .{});
-    };
-
     var frames: usize = 0;
     while (gb.isRunning()) {
-        if (forceQuit) {
-            gb.setIsRunning(false);
-            return;
-        }
-
         var event: c.SDL_Event = undefined;
         while (c.SDL_PollEvent(&event) != 0) {
             switch (event.type) {
@@ -125,7 +108,6 @@ pub fn main() !void {
 
         try handleDebugCmd(&gb);
 
-        const CYCLES_UNTIL_VBLANK: usize = 16416;
         if (!gb.debug.isPaused()) {
             _ = try simulate(CYCLES_UNTIL_VBLANK, &gb);
         }
@@ -137,20 +119,18 @@ pub fn main() !void {
         _ = c.SDL_RenderCopy(renderer, texture, null, null);
         c.SDL_RenderPresent(renderer);
 
-        const VBLANK_CYCLES: usize = 1140;
         if (!gb.debug.isPaused()) {
             _ = try simulate(VBLANK_CYCLES, &gb);
         }
 
         if (false and frames % 15 == 0) {
             std.debug.print("actual **** frameTime: {} ns = {} micros = {} ms\n", .{ gb.debug.frameTimeNs, gb.debug.frameTimeNs / 1000, gb.debug.frameTimeNs / 1000 / 1000 });
-            const expected: u64 = (16416 + 1140) * 1000;
+            const expected: u64 = (FRAME_CYCLES) * 1000;
             std.debug.print("expected ** frameTime: {} ns = {} micros = {} ms\n", .{ expected, expected / 1000, expected / 1000 / 1000 });
         }
 
         const actualFrameTimeNs = (try std.time.Instant.now()).since(start);
         gb.debug.frameTimeNs = actualFrameTimeNs;
-        const FRAME_CYCLES: usize = CYCLES_UNTIL_VBLANK + 1140;
         std.time.sleep(FRAME_CYCLES * 1000 -| actualFrameTimeNs);
         frames +%= 1;
     }
@@ -161,8 +141,12 @@ fn simulate(minCycles: usize, gb: *Gb) !usize {
     while (cycles < minCycles) {
         try handleDebugCmd(gb);
         if (shouldDebugBreak(gb)) {
+            gb.debug.stdOutMutex.lock();
+            std.debug.print("\n", .{});
             try gb.printCurrentAndNextInstruction();
             std.debug.print("\n> ", .{});
+            gb.debug.stdOutMutex.unlock();
+
             gb.debug.setPaused(true);
             gb.debug.stepModeEnabled = true;
             return cycles;

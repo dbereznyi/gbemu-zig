@@ -1,6 +1,5 @@
 const std = @import("std");
 const Pixel = @import("pixel.zig").Pixel;
-const AtomicOrder = std.builtin.AtomicOrder;
 const Instr = @import("cpu/instruction.zig").Instr;
 const as16 = @import("util.zig").as16;
 const DebugCmd = @import("debug/cmd.zig").DebugCmd;
@@ -124,10 +123,13 @@ const Debug = struct {
 
     frameTimeNs: u64,
 
+    lastCommand: ?DebugCmd,
     pendingCommand: ?DebugCmd,
     pendingResultBuf: []u8,
     pendingResult: ?[]u8,
     pendingResultSem: std.Thread.Semaphore,
+
+    stdOutMutex: std.Thread.Mutex,
 
     pub fn init(breakpoints: std.ArrayList(u16), pendingResultBuf: []u8) Debug {
         return Debug{
@@ -139,10 +141,13 @@ const Debug = struct {
 
             .frameTimeNs = 0,
 
+            .lastCommand = null,
             .pendingCommand = null,
             .pendingResultBuf = pendingResultBuf,
             .pendingResult = null,
             .pendingResultSem = std.Thread.Semaphore{},
+
+            .stdOutMutex = std.Thread.Mutex{},
         };
     }
 
@@ -236,7 +241,16 @@ const Joypad = struct {
     }
 
     pub fn printState(joypad: *Joypad, writer: anytype) !void {
-        try format(writer, "data={b:0>8} cyclesSinceLowEdgeTransition={}\n", .{ joypad.data.load(.monotonic), joypad.cyclesSinceLowEdgeTransition });
+        const data = joypad.data.load(.monotonic);
+        const down: u1 = if (data & Button.DOWN > 0) 1 else 0;
+        const up: u1 = if (data & Button.UP > 0) 1 else 0;
+        const left: u1 = if (data & Button.LEFT > 0) 1 else 0;
+        const right: u1 = if (data & Button.RIGHT > 0) 1 else 0;
+        const start: u1 = if (data & Button.START > 0) 1 else 0;
+        const select: u1 = if (data & Button.SELECT > 0) 1 else 0;
+        const b: u1 = if (data & Button.B > 0) 1 else 0;
+        const a: u1 = if (data & Button.A > 0) 1 else 0;
+        try format(writer, "U={} D={} L={} R={} ST={} SE={} B={} A={}\n", .{ down, up, left, right, start, select, b, a });
     }
 };
 
@@ -401,7 +415,7 @@ pub const Gb = struct {
         }
 
         const breakpoints = try std.ArrayList(u16).initCapacity(alloc, 128);
-        const pendingResultBuf = try alloc.alloc(u8, 4096);
+        const pendingResultBuf = try alloc.alloc(u8, 8 * 1024);
 
         return Gb{
             .pc = 0x0100,
@@ -448,6 +462,7 @@ pub const Gb = struct {
         alloc.free(gb.hram);
         alloc.free(gb.screen);
         gb.debug.breakpoints.deinit();
+        alloc.free(gb.debug.pendingResultBuf);
     }
 
     pub fn isRunning(gb: *Gb) bool {
@@ -498,10 +513,6 @@ pub const Gb = struct {
 
     pub fn isLcdOn(gb: *Gb) bool {
         return gb.ioRegs[IoReg.LCDC - 0xff00].load(.monotonic) & LcdcFlag.ON > 0;
-    }
-
-    pub fn isInVBlank(gb: *Gb) bool {
-        return gb.inVBlank.load(.monotonic);
     }
 
     pub fn read(gb: *Gb, addr: u16) u8 {
@@ -635,17 +646,17 @@ pub const Gb = struct {
         return gb.ioRegs[IoReg.IF - 0xff00].load(.monotonic) > 0;
     }
 
-    pub fn printDebugState(gb: *Gb) void {
-        std.debug.print("PC: ${x:0>4} SP: ${x:0>4}\n", .{ gb.pc, gb.sp });
-        std.debug.print("Z: {} N: {} H: {} C: {}\n", .{ gb.zero, gb.negative, gb.halfCarry, gb.carry });
-        std.debug.print("A: ${x:0>2} B: ${x:0>2} D: ${x:0>2} H: ${x:0>2}\n", .{ gb.a, gb.b, gb.d, gb.h });
-        std.debug.print("F: ${x:0>2} C: ${x:0>2} E: ${x:0>2} L: ${x:0>2}\n", .{ gb.readFlags(), gb.c, gb.e, gb.l });
-        std.debug.print("LY: ${x:0>2} LCDC: %{b:0>8} STAT: %{b:0>8}\n", .{
+    pub fn printDebugState(gb: *Gb, writer: anytype) !void {
+        try format(writer, "PC: ${x:0>4} SP: ${x:0>4}\n", .{ gb.pc, gb.sp });
+        try format(writer, "Z: {} N: {} H: {} C: {}\n", .{ gb.zero, gb.negative, gb.halfCarry, gb.carry });
+        try format(writer, "A: ${x:0>2} B: ${x:0>2} D: ${x:0>2} H: ${x:0>2}\n", .{ gb.a, gb.b, gb.d, gb.h });
+        try format(writer, "F: ${x:0>2} C: ${x:0>2} E: ${x:0>2} L: ${x:0>2}\n", .{ gb.readFlags(), gb.c, gb.e, gb.l });
+        try format(writer, "LY: ${x:0>2} LCDC: %{b:0>8} STAT: %{b:0>8}\n", .{
             gb.read(IoReg.LY),
             gb.read(IoReg.LCDC),
             gb.read(IoReg.STAT),
         });
-        std.debug.print("IE: %{b:0>8} IF: %{b:0>8}\n", .{
+        try format(writer, "IE: %{b:0>8} IF: %{b:0>8}\n", .{
             gb.read(IoReg.IE),
             gb.read(IoReg.IF),
         });
@@ -656,23 +667,32 @@ pub const Gb = struct {
 
         const instr = decodeInstrAt(gb.pc, gb);
         const instrStr = try instr.toStr(&instrStrBuf);
-        std.debug.print("\n", .{});
-        std.debug.print("==> ${x:0>4}: {s} (${x:0>2} ${x:0>2} ${x:0>2}) \n", .{
+        std.debug.print("==> ${x:0>4}: {s} ", .{
             gb.pc,
             instrStr,
-            gb.read(gb.pc),
-            gb.read(gb.pc + 1),
-            gb.read(gb.pc + 2),
         });
+        std.debug.print("(", .{});
+        for (0..instr.size()) |i| {
+            std.debug.print("${x:0>2}", .{gb.read(gb.pc + @as(u16, @intCast(i)))});
+            if (i < instr.size() - 1) {
+                std.debug.print(" ", .{});
+            }
+        }
+        std.debug.print(")\n", .{});
 
         const instrNext = decodeInstrAt(gb.pc + instr.size(), gb);
         const instrNextStr = try instrNext.toStr(&instrStrBuf);
-        std.debug.print("    ${x:0>4}: {s} (${x:0>2} ${x:0>2} ${x:0>2}) \n", .{
+        std.debug.print("    ${x:0>4}: {s} ", .{
             gb.pc + instr.size(),
             instrNextStr,
-            gb.read(gb.pc + instr.size()),
-            gb.read(gb.pc + instr.size() + 1),
-            gb.read(gb.pc + instr.size() + 2),
         });
+        std.debug.print("(", .{});
+        for (0..instrNext.size()) |i| {
+            std.debug.print("${x:0>2}", .{gb.read(gb.pc + instr.size() + @as(u16, @intCast(i)))});
+            if (i < instrNext.size() - 1) {
+                std.debug.print(" ", .{});
+            }
+        }
+        std.debug.print(")\n", .{});
     }
 };

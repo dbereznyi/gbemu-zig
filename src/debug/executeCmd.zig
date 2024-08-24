@@ -6,24 +6,29 @@ const format = std.fmt.format;
 const HELP_MESSAGE =
     "available commands:\n" ++
     "  general\n" ++
-    "    (t)race execution, following jumps and function calls\n" ++
-    "    (c)ontinue execution\n" ++
     "    (h)elp\n" ++
     "    (q)uit\n" ++
+    "  execution\n" ++
+    "    (p)ause execution, allowing for debugging\n" ++
+    "    (t)race execution, following jumps and function calls\n" ++
+    "    (c)ontinue execution\n" ++
     "  breakpoints\n" ++
     "    (b)reakpoint (l)ist\n" ++
     "    (b)reakpoint (s)et <value of PC to break on (hex)>\n" ++
     "    (b)reakpoint (u)nset <breakpoint address to unset (hex)>\n" ++
     "    (b)reakpoint (c)lear all\n" ++
     "  viewing internal state/regions of memory\n" ++
-    "    (v)iew (r)registers\n" ++
+    "    (v)iew (r)egisters\n" ++
     "    (v)iew (s)tack\n" ++
     "    (v)iew (p)pu\n" ++
     "    (v)iew (o)am\n" ++
     "    (v)iew (d)ma\n" ++
     "    (v)iew (j)oypad\n" ++
-    "\nexample: setting a breakpoint at $1234:" ++
-    "  bs 1234\n";
+    "\n" ++
+    "pressing enter will repeat the last-executed command\n" ++
+    "\n" ++
+    "example: setting a breakpoint at $1234:\n" ++
+    "    bs 1234\n";
 
 pub fn executeCmd(cmd: DebugCmd, gb: *Gb) !void {
     var fbs = std.io.fixedBufferStream(gb.debug.pendingResultBuf);
@@ -35,17 +40,23 @@ pub fn executeCmd(cmd: DebugCmd, gb: *Gb) !void {
             gb.debug.setPaused(false);
         },
         .trace => {
-            gb.debug.skipCurrentBreakpoint = true;
-            gb.debug.setPaused(false);
+            if (gb.debug.isPaused()) {
+                gb.debug.skipCurrentBreakpoint = true;
+                gb.debug.setPaused(false);
+            } else {
+                try format(writer, "Must pause execution to use this command", .{});
+            }
         },
         .continue_ => {
-            gb.debug.skipCurrentBreakpoint = true;
-            gb.debug.stepModeEnabled = false;
-            gb.debug.setPaused(false);
+            if (gb.debug.isPaused()) {
+                gb.debug.skipCurrentBreakpoint = true;
+                gb.debug.stepModeEnabled = false;
+                gb.debug.setPaused(false);
+            } else {
+                try format(writer, "Must pause execution to use this command", .{});
+            }
         },
-        .help => {
-            try format(writer, "{s}", .{HELP_MESSAGE});
-        },
+        .help => try format(writer, "{s}", .{HELP_MESSAGE}),
         .breakpointList => blk: {
             if (gb.debug.breakpoints.items.len == 0) {
                 try format(writer, "No active breakpoints set.\n", .{});
@@ -80,7 +91,7 @@ pub fn executeCmd(cmd: DebugCmd, gb: *Gb) !void {
             gb.debug.breakpoints.clearRetainingCapacity();
             try format(writer, "All breakpoints cleared.\n", .{});
         },
-        .viewRegisters => gb.printDebugState(),
+        .viewRegisters => try gb.printDebugState(writer),
         .viewStack => {
             var addr = gb.sp;
             while (addr < gb.debug.stackBase) {
@@ -88,9 +99,7 @@ pub fn executeCmd(cmd: DebugCmd, gb: *Gb) !void {
                 addr += 1;
             }
         },
-        .viewPpu => {
-            try gb.ppu.printState(writer);
-        },
+        .viewPpu => try gb.ppu.printState(writer),
         .viewOam => {
             var i: u16 = 0;
             while (i < gb.oam.len) : (i += 4) {
@@ -101,12 +110,8 @@ pub fn executeCmd(cmd: DebugCmd, gb: *Gb) !void {
                 try format(writer, "${x:0>4}: ${x:0>2} (flags = {b:0>8})\n", .{ 0xfe00 + i + 3, gb.read(0xfe00 + i + 3), gb.read(0xfe00 + i + 3) });
             }
         },
-        .viewDma => {
-            try gb.dma.printState(writer);
-        },
-        .viewJoypad => {
-            try gb.joypad.printState(writer);
-        },
+        .viewDma => try gb.dma.printState(writer),
+        .viewJoypad => try gb.joypad.printState(writer),
     }
 
     gb.debug.pendingResult = fbs.getWritten();
