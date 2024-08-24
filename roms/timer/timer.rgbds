@@ -113,37 +113,12 @@ CycleTACMode:
     ld a, [rTAC]
     and $03
 
-    ld hl, .jumpTable
+    ld hl, NextTimerModeTable
     ld b, 0
-    rlc a
-    rlc a
     ld c, a
     add hl, bc
-    jp hl
+    ld a, [hl]
 
-.jumpTable
-    nop
-    jp .clock4KHz
-    nop
-    jp .clock262KHz
-    nop
-    jp .clock65KHz
-    nop
-    jp .clock16KHz
-
-.clock4KHz
-    ld a, TACF_16KHZ
-    jp .loadTAC
-.clock262KHz
-    ld a, TACF_4KHZ
-    jp .loadTAC
-.clock65KHz
-    ld a, TACF_262KHZ
-    jp .loadTAC
-.clock16KHz
-    ld a, TACF_65KHZ
-
-.loadTAC
     or TACF_START
     ld [rTAC], a
 
@@ -201,7 +176,7 @@ TimerInterrupt:
 
 .incSpriteX
     ld a, [SpriteX]
-    inc a
+    add 2
     cp 160 + 8
     jp c, .noClamp
     ld a, 8
@@ -232,6 +207,13 @@ SpriteAttrs:
     db 1,  ; tile number
     db 0,  ; flags
 SpriteAttrsEnd:
+
+NextTimerModeTable:
+    db TACF_16KHZ   ; mode 00
+    db TACF_4KHZ    ; mode 01
+    db TACF_262KHZ  ; mode 10
+    db TACF_65KHZ   ; mode 11
+.End:
 
 SECTION "WRAM", WRAM0[$c000]
 
