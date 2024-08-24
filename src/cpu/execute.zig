@@ -290,63 +290,54 @@ fn jrCond(gb: *Gb, offset: u8, cond: bool) void {
     }
 }
 
-fn calcJpDestAddr(address: u16) u16 {
-    // subtract 3 bytes to account for PC getting incremented by the size of JP (3 bytes)
-    return address -% 3;
-}
-
 fn jp(gb: *Gb, address: u16) void {
-    gb.pc = calcJpDestAddr(address);
+    gb.pc = address;
+    gb.skipPcIncrement = true;
 }
 
 fn jpCond(gb: *Gb, address: u16, cond: bool) void {
     if (cond) {
-        gb.pc = calcJpDestAddr(address);
+        gb.pc = address;
+        gb.skipPcIncrement = true;
         gb.branchCond = true;
     }
 }
 
 fn jpHl(gb: *Gb) void {
-    const destAddr = Src16.read(.HL, gb);
-    // subtract 1 byte to account for PC getting incremented by the size of JP HL (1 byte)
-    gb.pc = destAddr - 1;
-}
-
-fn calcRetDestAddr(address: u16) u16 {
-    // subtract 1 byte to account for PC getting incremented by the size of RET (1 byte)
-    return address -% 1;
+    gb.pc = Src16.read(.HL, gb);
+    gb.skipPcIncrement = true;
 }
 
 fn ret(gb: *Gb) void {
-    gb.pc = calcRetDestAddr(gb.pop16());
+    gb.pc = gb.pop16();
+    gb.skipPcIncrement = true;
 }
 
 fn retCond(gb: *Gb, cond: bool) void {
     if (cond) {
-        gb.pc = calcRetDestAddr(gb.pop16());
+        gb.pc = gb.pop16();
+        gb.skipPcIncrement = true;
         gb.branchCond = true;
     }
 }
 
 fn reti(gb: *Gb) void {
-    gb.pc = calcRetDestAddr(gb.pop16());
+    gb.pc = gb.pop16();
+    gb.skipPcIncrement = true;
     gb.ime = true;
-}
-
-fn calcCallDestAddr(address: u16) u16 {
-    // subtract 3 bytes to account for PC getting incremented by the size of CALL (3 bytes)
-    return address -% 3;
 }
 
 fn call(gb: *Gb, address: u16) void {
     gb.push16(gb.pc +% 3);
-    gb.pc = calcCallDestAddr(address);
+    gb.pc = address;
+    gb.skipPcIncrement = true;
 }
 
 fn callCond(gb: *Gb, address: u16, cond: bool) void {
     if (cond) {
         gb.push16(gb.pc +% 3);
-        gb.pc = calcCallDestAddr(address);
+        gb.pc = address;
+        gb.skipPcIncrement = true;
         gb.branchCond = true;
     }
 }

@@ -44,8 +44,6 @@ pub fn executeCmd(cmd: DebugCmd, gb: *Gb) !void {
             if (gb.debug.isPaused()) {
                 gb.debug.skipCurrentBreakpoint = true;
                 gb.debug.setPaused(false);
-            } else {
-                try format(writer, "Must pause execution to use this command", .{});
             }
         },
         .continue_ => {
@@ -53,8 +51,6 @@ pub fn executeCmd(cmd: DebugCmd, gb: *Gb) !void {
                 gb.debug.skipCurrentBreakpoint = true;
                 gb.debug.stepModeEnabled = false;
                 gb.debug.setPaused(false);
-            } else {
-                try format(writer, "Must pause execution to use this command", .{});
             }
         },
         .help => try format(writer, "{s}", .{HELP_MESSAGE}),

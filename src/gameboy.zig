@@ -379,8 +379,6 @@ pub const Gb = struct {
     branchCond: bool,
     ime: bool,
     execState: ExecState,
-    // Used to simulate the bug that occurs when HALT is called with IME not set
-    // and interrupts pending.
     skipPcIncrement: bool,
 
     vram: []u8,
