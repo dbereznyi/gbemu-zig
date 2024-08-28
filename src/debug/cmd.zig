@@ -1,6 +1,6 @@
 const std = @import("std");
 
-const DebugCmdTag = enum { quit, trace, continue_, help, breakpointList, breakpointSet, breakpointUnset, breakpointClearAll, viewRegisters, viewStack, viewPpu, viewOam, viewDma, viewJoypad, viewTimer };
+const DebugCmdTag = enum { quit, trace, continue_, help, breakpointList, breakpointSet, breakpointUnset, breakpointClearAll, viewRegisters, viewStack, viewPpu, viewOam, viewDma, viewJoypad, viewTimer, viewCart };
 
 pub const DebugCmd = union(DebugCmdTag) {
     quit: void,
@@ -18,6 +18,7 @@ pub const DebugCmd = union(DebugCmdTag) {
     viewDma: void,
     viewJoypad: void,
     viewTimer: void,
+    viewCart: void,
 
     pub fn parse(buf: []u8) ?DebugCmd {
         const bufTrimmed = std.mem.trim(u8, buf, " \t\r\n");
@@ -61,6 +62,7 @@ pub const DebugCmd = union(DebugCmdTag) {
                     'd' => .viewDma,
                     'j' => .viewJoypad,
                     't' => .viewTimer,
+                    'c' => .viewCart,
                     else => null,
                 };
             },

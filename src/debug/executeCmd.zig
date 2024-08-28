@@ -25,6 +25,7 @@ const HELP_MESSAGE =
     "    (v)iew (d)ma\n" ++
     "    (v)iew (j)oypad\n" ++
     "    (v)iew (t)imer\n" ++
+    "    (v)iew (c)artridge\n" ++
     "\n" ++
     "pressing enter will repeat the last-executed command\n" ++
     "\n" ++
@@ -110,6 +111,7 @@ pub fn executeCmd(cmd: DebugCmd, gb: *Gb) !void {
         .viewDma => try gb.dma.printState(writer),
         .viewJoypad => try gb.joypad.printState(writer),
         .viewTimer => try gb.timer.printState(writer),
+        .viewCart => try gb.cart.printState(writer),
     }
 
     gb.debug.pendingResult = fbs.getWritten();
