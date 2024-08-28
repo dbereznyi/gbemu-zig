@@ -68,8 +68,8 @@ pub fn main() !void {
 
     _ = c.SDL_UpdateTexture(texture, null, @ptrCast(gb.screen), 160 * 3);
 
-    if (false) {
-        try gb.debug.breakpoints.append(0x01e5);
+    if (true) {
+        try gb.debug.breakpoints.append(0x0100);
     }
 
     var frames: usize = 0;

@@ -21,13 +21,15 @@ pub fn shouldDebugBreak(gb: *Gb) bool {
     if (!gb.isRunning()) {
         return false;
     }
-    if (breakpointHit or gb.debug.stepModeEnabled) {
-        if (gb.debug.skipCurrentBreakpoint) {
-            gb.debug.skipCurrentBreakpoint = false;
-            return false;
-        }
-        return true;
-    } else {
+    if (gb.debug.skipCurrentInstruction) {
+        gb.debug.skipCurrentInstruction = false;
         return false;
     }
+    if (gb.debug.stepModeEnabled) {
+        return true;
+    }
+    if (breakpointHit) {
+        return true;
+    }
+    return false;
 }

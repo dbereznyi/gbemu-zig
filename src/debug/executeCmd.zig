@@ -43,13 +43,13 @@ pub fn executeCmd(cmd: DebugCmd, gb: *Gb) !void {
         },
         .trace => {
             if (gb.debug.isPaused()) {
-                gb.debug.skipCurrentBreakpoint = true;
+                gb.debug.skipCurrentInstruction = true;
                 gb.debug.setPaused(false);
             }
         },
         .continue_ => {
             if (gb.debug.isPaused()) {
-                gb.debug.skipCurrentBreakpoint = true;
+                gb.debug.skipCurrentInstruction = true;
                 gb.debug.stepModeEnabled = false;
                 gb.debug.setPaused(false);
             }

@@ -2,6 +2,7 @@ const std = @import("std");
 const Pixel = @import("pixel.zig").Pixel;
 const Instr = @import("cpu/instruction.zig").Instr;
 const as16 = @import("util.zig").as16;
+const BoundedStack = @import("util.zig").BoundedStack;
 const DebugCmd = @import("debug/cmd.zig").DebugCmd;
 const decodeInstrAt = @import("cpu/decode.zig").decodeInstrAt;
 const format = std.fmt.format;
@@ -124,11 +125,18 @@ pub const Button = .{
 };
 
 const Debug = struct {
+    const PcInstr = struct {
+        pc: u16,
+        instr: Instr,
+    };
+    const MAX_TRACE_LENGTH = 16;
+
     paused: std.atomic.Value(bool),
-    skipCurrentBreakpoint: bool,
+    skipCurrentInstruction: bool,
     stepModeEnabled: bool,
     breakpoints: std.ArrayList(u16),
     stackBase: u16,
+    executionTrace: BoundedStack(PcInstr, MAX_TRACE_LENGTH),
 
     frameTimeNs: u64,
 
@@ -140,13 +148,18 @@ const Debug = struct {
 
     stdOutMutex: std.Thread.Mutex,
 
-    pub fn init(breakpoints: std.ArrayList(u16), pendingResultBuf: []u8) Debug {
+    pub fn init(alloc: std.mem.Allocator) !Debug {
+        const breakpoints = try std.ArrayList(u16).initCapacity(alloc, 128);
+        const executionTrace = BoundedStack(PcInstr, MAX_TRACE_LENGTH).init();
+        const pendingResultBuf = try alloc.alloc(u8, 8 * 1024);
+
         return Debug{
             .paused = std.atomic.Value(bool).init(false),
-            .skipCurrentBreakpoint = false,
+            .skipCurrentInstruction = false,
             .stepModeEnabled = false,
             .breakpoints = breakpoints,
             .stackBase = 0xfffe,
+            .executionTrace = executionTrace,
 
             .frameTimeNs = 0,
 
@@ -158,6 +171,10 @@ const Debug = struct {
 
             .stdOutMutex = std.Thread.Mutex{},
         };
+    }
+
+    pub fn deinit(debug: *const Debug) void {
+        debug.breakpoints.deinit();
     }
 
     pub fn isPaused(debug: *Debug) bool {
@@ -179,6 +196,20 @@ const Debug = struct {
     pub fn acknowledgeCommand(debug: *Debug) void {
         debug.pendingCommand = null;
         debug.pendingResultSem.post();
+    }
+
+    pub fn addToExecutionTrace(debug: *Debug, pc: u16, instr: Instr) void {
+        debug.executionTrace.push(.{ .pc = pc, .instr = instr });
+    }
+
+    pub fn printExecutionTrace(debug: *const Debug) void {
+        var items_buf: [MAX_TRACE_LENGTH]PcInstr = undefined;
+        const items = debug.executionTrace.getItemsReversed(&items_buf);
+        for (items) |item| {
+            var instr_str_buf: [64]u8 = undefined;
+            const instr_str = item.instr.toStr(&instr_str_buf) catch "?";
+            std.debug.print("${x:0>4}: {s}\n", .{ item.pc, instr_str });
+        }
     }
 };
 
@@ -474,6 +505,13 @@ const Cart = struct {
             .huc1 => "huc1",
         };
         try format(writer, "mapper={s} has_ram={d} has_battery={d} rom_size={} ram_size={}\n", .{ mapper_str, if (cart.has_ram) @as(u1, 1) else @as(u1, 0), if (cart.has_battery) @as(u1, 1) else @as(u1, 0), cart.rom_size, cart.ram_size });
+
+        switch (cart.mapper) {
+            .mbc1 => {
+                try format(writer, "rom_bank={} ram_bank={} ram_enable={} banking_mode={}\n", .{ cart.mbc1.current_rom_bank, cart.mbc1.current_ram_bank, cart.mbc1.ram_enable, cart.mbc1.banking_mode });
+            },
+            else => {},
+        }
     }
 
     pub fn readRom(cart: *Cart, addr: u16) u8 {
@@ -516,8 +554,10 @@ const Cart = struct {
                 },
                 // RAM bank select
                 0x4000...0x5fff => {
-                    const bank: u2 = @truncate(val & 0b0000_0011);
-                    cart.mbc1.current_ram_bank = bank;
+                    if (cart.mbc1.banking_mode == 1) {
+                        const bank: u2 = @truncate(val & 0b0000_0011);
+                        cart.mbc1.current_ram_bank = bank;
+                    }
                 },
                 // Banking mode select
                 0x6000...0x7fff => {
@@ -657,9 +697,6 @@ pub const Gb = struct {
             pixel.* = palette[0];
         }
 
-        const breakpoints = try std.ArrayList(u16).initCapacity(alloc, 128);
-        const pendingResultBuf = try alloc.alloc(u8, 8 * 1024);
-
         return Gb{
             .pc = 0x0100,
             .sp = 0xfffe,
@@ -694,7 +731,7 @@ pub const Gb = struct {
             .isDrawing = false,
             .inVBlank = std.atomic.Value(bool).init(false),
             .running = std.atomic.Value(bool).init(true),
-            .debug = Debug.init(breakpoints, pendingResultBuf),
+            .debug = try Debug.init(alloc),
         };
     }
 
@@ -887,6 +924,11 @@ pub const Gb = struct {
 
     pub fn anyInterruptsPending(gb: *Gb) bool {
         return gb.ioRegs[IoReg.IF - 0xff00].load(.monotonic) > 0;
+    }
+
+    pub fn panic(gb: *Gb, comptime msg: []const u8, args: anytype) noreturn {
+        gb.debug.printExecutionTrace();
+        std.debug.panic(msg, args);
     }
 
     pub fn printDebugState(gb: *Gb, writer: anytype) !void {

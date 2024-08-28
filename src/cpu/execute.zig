@@ -13,8 +13,9 @@ pub fn executeCurrentInstruction(gb: *Gb) usize {
     gb.branchCond = false;
 
     const instr = decodeInstrAt(gb.pc, gb);
+    gb.debug.addToExecutionTrace(gb.pc, instr);
     switch (instr) {
-        .INVALID => |opcode| std.debug.panic("invalid opcode ${x}\n", .{opcode}),
+        .INVALID => |opcode| gb.panic("invalid opcode ${x}\n", .{opcode}),
 
         .NOP => {},
         .HALT => halt(gb),
