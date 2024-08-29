@@ -11,6 +11,7 @@ pub fn stepCpu(gb: *Gb) u64 {
         .running => {
             if (interruptPending) {
                 handleInterrupt(gb);
+                return 5;
             }
             return executeCurrentInstruction(gb);
         },
@@ -18,6 +19,7 @@ pub fn stepCpu(gb: *Gb) u64 {
             if (interruptPending) {
                 handleInterrupt(gb);
                 gb.execState = .running;
+                return 5;
             }
             return 1;
         },
@@ -25,6 +27,7 @@ pub fn stepCpu(gb: *Gb) u64 {
             if (interruptPending) {
                 discardInterrupt(gb);
                 gb.execState = .running;
+                return 5; // TODO probably not accurate
             }
             return 1;
         },

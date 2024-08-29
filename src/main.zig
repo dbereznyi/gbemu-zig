@@ -100,7 +100,7 @@ pub fn main() !void {
 
     _ = c.SDL_UpdateTexture(texture, null, @ptrCast(gb.screen), 160 * 3);
 
-    if (true) {
+    if (false) {
         try gb.debug.breakpoints.append(.{ .bank = 16, .addr = 0x7074 });
         gb.debug.stackBase = 0xdfff;
     }

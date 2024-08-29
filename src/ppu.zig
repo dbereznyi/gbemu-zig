@@ -226,6 +226,7 @@ fn colorIdAt(x: usize, y: usize, gb: *Gb, objAttrs: []const Ppu.ObjectAttribute,
         return 0;
     }
 
+    const obj_tile_data = gb.vram[0x0000..0x0fff];
     const bgTileData = if (lcdc & LcdcFlag.TILE_DATA > 0) gb.vram[0x0000..0x1000] else gb.vram[0x0800..0x1800];
     const bgTileMap = if (lcdc & LcdcFlag.BG_TILE_MAP > 0) gb.vram[0x1c00..0x2000] else gb.vram[0x1800..0x1c00];
     const winTileMap = if (lcdc & LcdcFlag.WIN_TILE_MAP > 0) gb.vram[0x1c00..0x2000] else gb.vram[0x1800..0x1c00];
@@ -280,7 +281,7 @@ fn colorIdAt(x: usize, y: usize, gb: *Gb, objAttrs: []const Ppu.ObjectAttribute,
             const tileX = if (obj.flags & ObjFlag.X_FLIP_ON > 0) 7 - tileXBase else tileXBase;
             const tileNumber = if (lcdc & LcdcFlag.OBJ_SIZE_LARGE > 0) obj.tileNumber & 0b1111_1110 else obj.tileNumber;
             const tileDataIndex = (@as(usize, tileNumber) * 16) + (tileY * 2);
-            const tile = bgTileData[tileDataIndex .. tileDataIndex + 2];
+            const tile = obj_tile_data[tileDataIndex .. tileDataIndex + 2];
             const pixelMask = @as(u8, 1) << @as(u3, @truncate(7 - tileX));
             const highBit = (tile[1] & pixelMask) >> @as(u3, @truncate(7 - tileX));
             const lowBit = (tile[0] & pixelMask) >> @as(u3, @truncate(7 - tileX));
