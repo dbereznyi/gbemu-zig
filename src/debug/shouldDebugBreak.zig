@@ -8,8 +8,10 @@ const DEBUGGING_ENABLED = true;
 
 pub fn shouldDebugBreak(gb: *Gb) bool {
     var breakpointHit = false;
-    for (gb.debug.breakpoints.items) |addr| {
-        if (gb.pc == addr) {
+    for (gb.debug.breakpoints.items) |breakpoint| {
+        const addr = breakpoint.addr;
+        const bank = breakpoint.bank;
+        if (gb.pc == addr and gb.cart.getBank(gb.pc) == bank) {
             breakpointHit = true;
             break;
         }

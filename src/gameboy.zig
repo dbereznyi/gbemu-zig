@@ -124,19 +124,24 @@ pub const Button = .{
     .DOWN = 0b1000_0000,
 };
 
-const Debug = struct {
-    const PcInstr = struct {
+pub const Debug = struct {
+    const TraceLine = struct {
+        bank: u8,
         pc: u16,
         instr: Instr,
     };
-    const MAX_TRACE_LENGTH = 16;
+    pub const Breakpoint = struct {
+        bank: u8,
+        addr: u16,
+    };
+    pub const MAX_TRACE_LENGTH = 16;
 
     paused: std.atomic.Value(bool),
     skipCurrentInstruction: bool,
     stepModeEnabled: bool,
-    breakpoints: std.ArrayList(u16),
+    breakpoints: std.ArrayList(Breakpoint),
     stackBase: u16,
-    executionTrace: BoundedStack(PcInstr, MAX_TRACE_LENGTH),
+    executionTrace: BoundedStack(TraceLine, MAX_TRACE_LENGTH),
 
     frameTimeNs: u64,
 
@@ -149,8 +154,8 @@ const Debug = struct {
     stdOutMutex: std.Thread.Mutex,
 
     pub fn init(alloc: std.mem.Allocator) !Debug {
-        const breakpoints = try std.ArrayList(u16).initCapacity(alloc, 128);
-        const executionTrace = BoundedStack(PcInstr, MAX_TRACE_LENGTH).init();
+        const breakpoints = try std.ArrayList(Breakpoint).initCapacity(alloc, 128);
+        const executionTrace = BoundedStack(TraceLine, MAX_TRACE_LENGTH).init();
         const pendingResultBuf = try alloc.alloc(u8, 8 * 1024);
 
         return Debug{
@@ -198,17 +203,21 @@ const Debug = struct {
         debug.pendingResultSem.post();
     }
 
-    pub fn addToExecutionTrace(debug: *Debug, pc: u16, instr: Instr) void {
-        debug.executionTrace.push(.{ .pc = pc, .instr = instr });
+    pub fn addToExecutionTrace(debug: *Debug, bank: u8, pc: u16, instr: Instr) void {
+        debug.executionTrace.push(.{ .bank = bank, .pc = pc, .instr = instr });
     }
 
-    pub fn printExecutionTrace(debug: *const Debug) void {
-        var items_buf: [MAX_TRACE_LENGTH]PcInstr = undefined;
+    pub fn printExecutionTrace(debug: *const Debug, writer: anytype, count: usize) !void {
+        std.debug.assert(count <= MAX_TRACE_LENGTH);
+
+        var items_buf: [MAX_TRACE_LENGTH]TraceLine = undefined;
         const items = debug.executionTrace.getItemsReversed(&items_buf);
-        for (items) |item| {
+        const start_index = MAX_TRACE_LENGTH - count;
+        for (start_index..MAX_TRACE_LENGTH) |i| {
+            const item = items[i];
             var instr_str_buf: [64]u8 = undefined;
             const instr_str = item.instr.toStr(&instr_str_buf) catch "?";
-            std.debug.print("${x:0>4}: {s}\n", .{ item.pc, instr_str });
+            try format(writer, "    rom{d:_>3}::{x:0>4}: {s}\n", .{ item.bank, item.pc, instr_str });
         }
     }
 };
@@ -514,6 +523,17 @@ const Cart = struct {
         }
     }
 
+    pub fn getBank(cart: *const Cart, addr: u16) u8 {
+        if (addr < 0x4000) {
+            return 0;
+        }
+        return switch (cart.mapper) {
+            .none => 1,
+            .mbc1 => cart.mbc1.current_rom_bank,
+            else => std.debug.panic("TODO implement getCurrentlySelectedBank read for {}\n", .{cart.mapper}),
+        };
+    }
+
     pub fn readRom(cart: *Cart, addr: u16) u8 {
         std.debug.assert(addr < 0x8000);
 
@@ -522,7 +542,11 @@ const Cart = struct {
                 return cart.rom[addr];
             },
             .mbc1 => {
-                const actual_addr = addr + (0x4000 * (@as(u16, @intCast(cart.mbc1.current_rom_bank)) - 1));
+                if (addr < 0x4000) {
+                    // TODO handle bank 0 being switched out
+                    return cart.rom[addr];
+                }
+                const actual_addr = @as(usize, @intCast(addr)) + (0x4000 * (@as(usize, @intCast(cart.mbc1.current_rom_bank)) - 1));
                 std.debug.assert(actual_addr < cart.rom.len);
                 return cart.rom[actual_addr];
             },
@@ -587,7 +611,7 @@ const Cart = struct {
                 if (cart.mbc1.ram_enable == 0) {
                     return 0xff;
                 }
-                const actual_addr = (addr - 0xa000) + (0x4000 * (@as(u16, @intCast(cart.mbc1.current_ram_bank)) - 1));
+                const actual_addr = (@as(usize, @intCast(addr)) - 0xa000) + (0x2000 * @as(usize, @intCast(cart.mbc1.current_ram_bank)));
                 std.debug.assert(actual_addr < cart.ram.len);
                 return cart.ram[actual_addr];
             },
@@ -611,7 +635,7 @@ const Cart = struct {
                 if (cart.mbc1.ram_enable == 0) {
                     return;
                 }
-                const actual_addr = (addr - 0xa000) + (0x4000 * (@as(u16, @intCast(cart.mbc1.current_ram_bank)) - 1));
+                const actual_addr = (@as(usize, @intCast(addr)) - 0xa000) + (0x2000 * @as(usize, @intCast(cart.mbc1.current_ram_bank)));
                 std.debug.assert(actual_addr < cart.ram.len);
                 cart.ram[actual_addr] = val;
             },
@@ -927,7 +951,7 @@ pub const Gb = struct {
     }
 
     pub fn panic(gb: *Gb, comptime msg: []const u8, args: anytype) noreturn {
-        gb.debug.printExecutionTrace();
+        gb.debug.printExecutionTrace(std.io.getStdOut().writer(), Debug.MAX_TRACE_LENGTH) catch unreachable;
         std.debug.panic(msg, args);
     }
 
@@ -948,36 +972,38 @@ pub const Gb = struct {
     }
 
     pub fn printCurrentAndNextInstruction(gb: *Gb) !void {
-        var instrStrBuf: [64]u8 = undefined;
+        const PRINT_INSTR_BYTES = false;
 
-        const instr = decodeInstrAt(gb.pc, gb);
-        const instrStr = try instr.toStr(&instrStrBuf);
-        std.debug.print("==> ${x:0>4}: {s} ", .{
-            gb.pc,
-            instrStr,
-        });
-        std.debug.print("(", .{});
-        for (0..instr.size()) |i| {
-            std.debug.print("${x:0>2}", .{gb.read(gb.pc + @as(u16, @intCast(i)))});
-            if (i < instr.size() - 1) {
-                std.debug.print(" ", .{});
-            }
-        }
-        std.debug.print(")\n", .{});
+        try gb.debug.printExecutionTrace(std.io.getStdOut().writer(), 5);
 
-        const instrNext = decodeInstrAt(gb.pc + instr.size(), gb);
-        const instrNextStr = try instrNext.toStr(&instrStrBuf);
-        std.debug.print("    ${x:0>4}: {s} ", .{
-            gb.pc + instr.size(),
-            instrNextStr,
-        });
-        std.debug.print("(", .{});
-        for (0..instrNext.size()) |i| {
-            std.debug.print("${x:0>2}", .{gb.read(gb.pc + instr.size() + @as(u16, @intCast(i)))});
-            if (i < instrNext.size() - 1) {
-                std.debug.print(" ", .{});
+        var pc_offset: u16 = 0;
+
+        for (0..6) |instr_offset| {
+            var instrStrBuf: [64]u8 = undefined;
+            const instr = decodeInstrAt(gb.pc + pc_offset, gb);
+            const bank = gb.cart.getBank(gb.pc + pc_offset);
+
+            const instr_str = try instr.toStr(&instrStrBuf);
+            std.debug.print("{s} rom{d:_>3}::{x:0>4}: {s} ", .{
+                if (instr_offset == 0) "==>" else "   ",
+                bank,
+                gb.pc + pc_offset,
+                instr_str,
+            });
+
+            if (PRINT_INSTR_BYTES) {
+                std.debug.print("(", .{});
+                for (0..instr.size()) |i| {
+                    std.debug.print("${x:0>2}", .{gb.read(gb.pc + pc_offset + @as(u16, @intCast(i)))});
+                    if (i < instr.size() - 1) {
+                        std.debug.print(" ", .{});
+                    }
+                }
+                std.debug.print(")", .{});
             }
+            std.debug.print("\n", .{});
+
+            pc_offset += instr.size();
         }
-        std.debug.print(")\n", .{});
     }
 };

@@ -13,7 +13,7 @@ pub fn executeCurrentInstruction(gb: *Gb) usize {
     gb.branchCond = false;
 
     const instr = decodeInstrAt(gb.pc, gb);
-    gb.debug.addToExecutionTrace(gb.pc, instr);
+    gb.debug.addToExecutionTrace(gb.cart.getBank(gb.pc), gb.pc, instr);
     switch (instr) {
         .INVALID => |opcode| gb.panic("invalid opcode ${x}\n", .{opcode}),
 
@@ -163,8 +163,8 @@ fn adc(gb: *Gb, src: Src8) void {
 
     gb.zero = sum == 0;
     gb.negative = false;
-    gb.halfCarry = checkHalfCarry(x, y + carry);
-    gb.carry = checkCarry(x, y + carry);
+    gb.halfCarry = checkHalfCarry(x, y +% carry);
+    gb.carry = checkCarry(x, y +% carry);
 }
 
 fn sub(gb: *Gb, src: Src8) void {
@@ -174,8 +174,8 @@ fn sub(gb: *Gb, src: Src8) void {
 
     gb.zero = diff == 0;
     gb.negative = true;
-    gb.halfCarry = !checkHalfCarry(gb.a, ~x + 1);
-    gb.carry = !checkCarry(gb.a, ~x + 1);
+    gb.halfCarry = !checkHalfCarry(gb.a, ~x +% 1);
+    gb.carry = !checkCarry(gb.a, ~x +% 1);
 }
 
 fn sbc(gb: *Gb, src: Src8) void {
@@ -186,8 +186,8 @@ fn sbc(gb: *Gb, src: Src8) void {
 
     gb.zero = diff == 0;
     gb.negative = true;
-    gb.halfCarry = !checkHalfCarry(gb.a, ~(x + carry) + 1);
-    gb.carry = !checkCarry(gb.a, ~(x + carry) + 1);
+    gb.halfCarry = !checkHalfCarry(gb.a, ~(x +% carry) +% 1);
+    gb.carry = !checkCarry(gb.a, ~(x +% carry) +% 1);
 }
 
 fn and_(gb: *Gb, src: Src8) void {
@@ -229,8 +229,8 @@ fn cp(gb: *Gb, src: Src8) void {
 
     gb.zero = result == 0;
     gb.negative = true;
-    gb.halfCarry = !checkHalfCarry(gb.a, ~x + 1);
-    gb.carry = !checkCarry(gb.a, ~x + 1);
+    gb.halfCarry = !checkHalfCarry(gb.a, ~x +% 1);
+    gb.carry = !checkCarry(gb.a, ~x +% 1);
 }
 
 fn inc8(gb: *Gb, dst: Dst8) void {

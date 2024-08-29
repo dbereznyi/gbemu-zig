@@ -1,14 +1,35 @@
 const std = @import("std");
+const Breakpoint = @import("../gameboy.zig").Debug.Breakpoint;
 
-const DebugCmdTag = enum { quit, trace, continue_, help, breakpointList, breakpointSet, breakpointUnset, breakpointClearAll, viewRegisters, viewStack, viewPpu, viewOam, viewDma, viewJoypad, viewTimer, viewCart };
+const DebugCmdTag = enum {
+    quit,
+    pause,
+    trace,
+    continue_,
+    help,
+    breakpointList,
+    breakpointSet,
+    breakpointUnset,
+    breakpointClearAll,
+    viewRegisters,
+    viewStack,
+    viewPpu,
+    viewOam,
+    viewDma,
+    viewJoypad,
+    viewTimer,
+    viewCart,
+    viewExecutionTrace,
+};
 
 pub const DebugCmd = union(DebugCmdTag) {
     quit: void,
+    pause: void,
     trace: void,
     continue_: void,
     help: void,
     breakpointList: void,
-    breakpointSet: u16,
+    breakpointSet: Breakpoint,
     breakpointUnset: u16,
     breakpointClearAll: void,
     viewRegisters: void,
@@ -19,6 +40,7 @@ pub const DebugCmd = union(DebugCmdTag) {
     viewJoypad: void,
     viewTimer: void,
     viewCart: void,
+    viewExecutionTrace: void,
 
     pub fn parse(buf: []u8) ?DebugCmd {
         const bufTrimmed = std.mem.trim(u8, buf, " \t\r\n");
@@ -27,6 +49,7 @@ pub const DebugCmd = union(DebugCmdTag) {
         const command = p.pop() orelse return .trace;
         return switch (command) {
             'q' => .quit,
+            'p' => .pause,
             't' => .trace,
             'c' => .continue_,
             'h' => .help,
@@ -36,15 +59,20 @@ pub const DebugCmd = union(DebugCmdTag) {
                 switch (modifier) {
                     's' => {
                         _ = p.until(Parser.isHexNumeral);
-                        const addrStr = p.toEnd() orelse break :blk null;
-                        const addr = std.fmt.parseInt(u16, addrStr, 16) catch break :blk null;
-                        break :blk DebugCmd{ .breakpointSet = addr };
+                        const addr_str = p.untilByte(' ') orelse (p.toEnd() orelse break :blk null);
+                        const addr = std.fmt.parseInt(u16, addr_str, 16) catch break :blk null;
+
+                        _ = p.until(Parser.isNumeral) orelse break :blk DebugCmd{ .breakpointSet = .{ .addr = addr, .bank = if (addr < 0x4000) 0 else 1 } };
+                        const bank_number_str = p.toEnd() orelse break :blk null;
+                        const bank_number = std.fmt.parseInt(u8, bank_number_str, 10) catch break :blk null;
+
+                        break :blk DebugCmd{ .breakpointSet = .{ .addr = addr, .bank = bank_number } };
                     },
                     'u' => {
-                        _ = p.until(Parser.isHexNumeral);
+                        _ = p.until(Parser.isNumeral);
                         const addrStr = p.toEnd() orelse break :blk null;
-                        const addr = std.fmt.parseInt(u16, addrStr, 16) catch break :blk null;
-                        break :blk DebugCmd{ .breakpointUnset = addr };
+                        const number = std.fmt.parseInt(u16, addrStr, 10) catch break :blk null;
+                        break :blk DebugCmd{ .breakpointUnset = number };
                     },
                     'l' => break :blk .breakpointList,
                     'c' => break :blk .breakpointClearAll,
@@ -63,6 +91,7 @@ pub const DebugCmd = union(DebugCmdTag) {
                     'j' => .viewJoypad,
                     't' => .viewTimer,
                     'c' => .viewCart,
+                    'e' => .viewExecutionTrace,
                     else => null,
                 };
             },
@@ -194,6 +223,13 @@ const Parser = struct {
         const start = self.i;
         self.i = self.buf.len;
         return self.buf[start..];
+    }
+
+    pub fn isNumeral(val: u8) bool {
+        return switch (val) {
+            '0'...'9' => true,
+            else => false,
+        };
     }
 
     pub fn isHexNumeral(val: u8) bool {

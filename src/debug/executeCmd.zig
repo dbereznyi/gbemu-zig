@@ -2,6 +2,7 @@ const std = @import("std");
 const Gb = @import("../gameboy.zig").Gb;
 const DebugCmd = @import("cmd.zig").DebugCmd;
 const format = std.fmt.format;
+const MAX_TRACE_LENGTH = @import("../gameboy.zig").Debug.MAX_TRACE_LENGTH;
 
 const HELP_MESSAGE =
     "available commands:\n" ++
@@ -14,8 +15,8 @@ const HELP_MESSAGE =
     "    (c)ontinue execution\n" ++
     "  breakpoints\n" ++
     "    (b)reakpoint (l)ist\n" ++
-    "    (b)reakpoint (s)et <value of PC to break on (hex)>\n" ++
-    "    (b)reakpoint (u)nset <breakpoint address to unset (hex)>\n" ++
+    "    (b)reakpoint (s)et <value of PC to break on (hex)> <optional: ROM bank>\n" ++
+    "    (b)reakpoint (u)nset <breakpoint number>\n" ++
     "    (b)reakpoint (c)lear all\n" ++
     "  viewing internal state/regions of memory\n" ++
     "    (v)iew (r)egisters\n" ++
@@ -41,6 +42,12 @@ pub fn executeCmd(cmd: DebugCmd, gb: *Gb) !void {
             gb.setIsRunning(false);
             gb.debug.setPaused(false);
         },
+        .pause => {
+            if (!gb.debug.isPaused()) {
+                try gb.printCurrentAndNextInstruction();
+                gb.debug.setPaused(true);
+            }
+        },
         .trace => {
             if (gb.debug.isPaused()) {
                 gb.debug.skipCurrentInstruction = true;
@@ -62,28 +69,21 @@ pub fn executeCmd(cmd: DebugCmd, gb: *Gb) !void {
             }
 
             try format(writer, "Active breakpoints:\n", .{});
-            for (gb.debug.breakpoints.items) |breakpoint| {
-                try format(writer, "  ${x:0>4}\n", .{breakpoint});
-            }
-        },
-        .breakpointSet => |addr| {
-            try gb.debug.breakpoints.append(addr);
-            try format(writer, "Set breakpoint at ${x:0>4}\n", .{addr});
-        },
-        .breakpointUnset => |addr| blk: {
-            var indexToRemoveMaybe: ?usize = null;
             for (gb.debug.breakpoints.items, 0..) |breakpoint, i| {
-                if (breakpoint == addr) {
-                    indexToRemoveMaybe = i;
-                    break;
-                }
+                try format(writer, "  #{} ${x:0>4} (bank {})\n", .{ i, breakpoint.addr, breakpoint.bank });
             }
-            const indexToRemove = indexToRemoveMaybe orelse {
-                try format(writer, "No breakpoint set at ${x:0>4}\n", .{addr});
+        },
+        .breakpointSet => |breakpoint| {
+            try gb.debug.breakpoints.append(breakpoint);
+            try format(writer, "Set breakpoint at ${x:0>4} (bank {}).\n", .{ breakpoint.addr, breakpoint.bank });
+        },
+        .breakpointUnset => |index| blk: {
+            if (index >= gb.debug.breakpoints.items.len) {
+                try format(writer, "Breakpoint #{} does not exist.\n", .{index});
                 break :blk;
-            };
-            _ = gb.debug.breakpoints.orderedRemove(indexToRemove);
-            try format(writer, "Unset breakpoint at ${x:0>4}\n", .{addr});
+            }
+            _ = gb.debug.breakpoints.orderedRemove(index);
+            try format(writer, "Unset breakpoint #{}.\n", .{index});
         },
         .breakpointClearAll => {
             gb.debug.breakpoints.clearRetainingCapacity();
@@ -112,6 +112,7 @@ pub fn executeCmd(cmd: DebugCmd, gb: *Gb) !void {
         .viewJoypad => try gb.joypad.printState(writer),
         .viewTimer => try gb.timer.printState(writer),
         .viewCart => try gb.cart.printState(writer),
+        .viewExecutionTrace => try gb.debug.printExecutionTrace(writer, MAX_TRACE_LENGTH),
     }
 
     gb.debug.pendingResult = fbs.getWritten();

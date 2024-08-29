@@ -2,6 +2,7 @@ const c = @cImport({
     @cInclude("SDL2/SDL.h");
 });
 const std = @import("std");
+const Pixel = @import("pixel.zig").Pixel;
 const Gb = @import("gameboy.zig").Gb;
 const Button = @import("gameboy.zig").Button;
 const Palette = @import("gameboy.zig").Ppu.Palette;
@@ -13,8 +14,9 @@ const stepTimer = @import("timer.zig").stepTimer;
 const shouldDebugBreak = @import("debug/shouldDebugBreak.zig").shouldDebugBreak;
 const runDebugger = @import("debug/runDebugger.zig").runDebugger;
 const executeDebugCmd = @import("debug/executeCmd.zig").executeCmd;
+const renderVramViewer = @import("ppu.zig").renderVramViewer;
 
-const SCALE = 2;
+const SCALE = 3;
 
 const CYCLES_UNTIL_VBLANK: usize = 16416;
 const VBLANK_CYCLES: usize = 1140;
@@ -41,6 +43,8 @@ pub fn main() !void {
     }
     defer c.SDL_Quit();
 
+    // Main window
+
     const window = c.SDL_CreateWindow("gameboy", c.SDL_WINDOWPOS_UNDEFINED, c.SDL_WINDOWPOS_UNDEFINED, 160 * SCALE, 144 * SCALE, c.SDL_WINDOW_OPENGL) orelse {
         c.SDL_Log("Unable to create window: %s", c.SDL_GetError());
         return error.SDLInitializationFailed;
@@ -59,6 +63,34 @@ pub fn main() !void {
     };
     defer c.SDL_DestroyTexture(texture);
 
+    // VRAM viewer window
+
+    const VRAM_WINDOW_WIDTH = 16 * 8;
+    const VRAM_WINDOW_HEIGHT = 3 * 8 * 8;
+
+    const vram_window = c.SDL_CreateWindow("vram viewer", c.SDL_WINDOWPOS_UNDEFINED, c.SDL_WINDOWPOS_UNDEFINED, VRAM_WINDOW_WIDTH * SCALE, VRAM_WINDOW_HEIGHT * SCALE, c.SDL_WINDOW_OPENGL) orelse {
+        c.SDL_Log("Unable to create window: %s", c.SDL_GetError());
+        return error.SDLInitializationFailed;
+    };
+    defer c.SDL_DestroyWindow(window);
+
+    const vram_renderer = c.SDL_CreateRenderer(vram_window, -1, 0) orelse {
+        c.SDL_Log("Unable to create renderer: %s", c.SDL_GetError());
+        return error.SDLInitializationFailed;
+    };
+    defer c.SDL_DestroyRenderer(renderer);
+
+    const vram_texture = c.SDL_CreateTexture(vram_renderer, c.SDL_PIXELFORMAT_RGB24, c.SDL_TEXTUREACCESS_STREAMING, VRAM_WINDOW_WIDTH, VRAM_WINDOW_HEIGHT) orelse {
+        c.SDL_Log("Unable to create texture: %s", c.SDL_GetError());
+        return error.SDLInitializationFailed;
+    };
+    defer c.SDL_DestroyTexture(texture);
+
+    var vram_pixels = try alloc.alloc(Pixel, VRAM_WINDOW_HEIGHT * VRAM_WINDOW_WIDTH);
+    defer alloc.free(vram_pixels);
+
+    // ---
+
     const rom = try std.fs.cwd().readFileAlloc(alloc, romFilepath, 1024 * 1024 * 1024);
     var gb = try Gb.init(alloc, rom, Palette.GREEN);
     defer gb.deinit(alloc);
@@ -69,7 +101,8 @@ pub fn main() !void {
     _ = c.SDL_UpdateTexture(texture, null, @ptrCast(gb.screen), 160 * 3);
 
     if (true) {
-        try gb.debug.breakpoints.append(0x0100);
+        try gb.debug.breakpoints.append(.{ .bank = 16, .addr = 0x7074 });
+        gb.debug.stackBase = 0xdfff;
     }
 
     var frames: usize = 0;
@@ -99,6 +132,15 @@ pub fn main() !void {
                     c.SDLK_DOWN => gb.joypad.pressButton(Button.DOWN),
                     else => {},
                 },
+                c.SDL_WINDOWEVENT => {
+                    if (event.window.event == c.SDL_WINDOWEVENT_CLOSE) {
+                        if (event.window.windowID == c.SDL_GetWindowID(vram_window)) {
+                            c.SDL_HideWindow(vram_window);
+                        } else if (event.window.windowID == c.SDL_GetWindowID(window)) {
+                            gb.setIsRunning(false);
+                        }
+                    }
+                },
                 c.SDL_QUIT => gb.setIsRunning(false),
                 else => {},
             }
@@ -119,6 +161,12 @@ pub fn main() !void {
         _ = c.SDL_RenderClear(renderer);
         _ = c.SDL_RenderCopy(renderer, texture, null, null);
         c.SDL_RenderPresent(renderer);
+
+        renderVramViewer(&gb, &vram_pixels);
+        _ = c.SDL_UpdateTexture(vram_texture, null, @ptrCast(vram_pixels), VRAM_WINDOW_WIDTH * 3);
+        _ = c.SDL_RenderClear(vram_renderer);
+        _ = c.SDL_RenderCopy(vram_renderer, vram_texture, null, null);
+        c.SDL_RenderPresent(vram_renderer);
 
         if (!gb.debug.isPaused()) {
             _ = try simulate(VBLANK_CYCLES, &gb);
