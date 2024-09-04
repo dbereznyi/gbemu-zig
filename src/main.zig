@@ -7,6 +7,7 @@ const Gb = @import("gameboy.zig").Gb;
 const Button = @import("gameboy.zig").Button;
 const Palette = @import("gameboy.zig").Ppu.Palette;
 const stepCpu = @import("cpu/step.zig").stepCpu;
+const stepCpuAccurate = @import("cpu/step.zig").stepCpuAccurate;
 const stepPpu = @import("ppu.zig").stepPpu;
 const stepDma = @import("dma.zig").stepDma;
 const stepJoypad = @import("joypad.zig").stepJoypad;
@@ -101,8 +102,8 @@ pub fn main() !void {
     _ = c.SDL_UpdateTexture(texture, null, @ptrCast(gb.screen), 160 * 3);
 
     if (false) {
-        try gb.debug.breakpoints.append(.{ .bank = 16, .addr = 0x7074 });
-        gb.debug.stackBase = 0xdfff;
+        try gb.debug.breakpoints.append(.{ .bank = 0, .addr = 0x0100 });
+        //gb.debug.stackBase = 0xdfff;
     }
 
     var frames: usize = 0;
@@ -152,7 +153,7 @@ pub fn main() !void {
         try handleDebugCmd(&gb);
 
         if (!gb.debug.isPaused()) {
-            _ = try simulate(CYCLES_UNTIL_VBLANK, &gb);
+            try simulateAccurate(CYCLES_UNTIL_VBLANK, &gb);
         }
 
         if (lcdOnAtStartOfFrame) {
@@ -169,7 +170,7 @@ pub fn main() !void {
         c.SDL_RenderPresent(vram_renderer);
 
         if (!gb.debug.isPaused()) {
-            _ = try simulate(VBLANK_CYCLES, &gb);
+            try simulateAccurate(VBLANK_CYCLES, &gb);
         }
 
         if (false and frames % 15 == 0) {
@@ -212,6 +213,28 @@ fn simulate(minCycles: usize, gb: *Gb) !usize {
         cycles += cpuCycles;
     }
     return cycles -| minCycles;
+}
+
+fn simulateAccurate(cycles: usize, gb: *Gb) !void {
+    for (0..cycles) |_| {
+        try handleDebugCmd(gb);
+        if (shouldDebugBreak(gb)) {
+            gb.debug.stdOutMutex.lock();
+            std.debug.print("\n", .{});
+            try gb.printCurrentAndNextInstruction();
+            std.debug.print("\n> ", .{});
+            gb.debug.stdOutMutex.unlock();
+
+            gb.debug.setPaused(true);
+            gb.debug.stepModeEnabled = true;
+        }
+
+        stepCpuAccurate(gb);
+        stepJoypad(gb);
+        stepPpu(gb);
+        stepDma(gb);
+        stepTimer(gb);
+    }
 }
 
 fn handleDebugCmd(gb: *Gb) !void {

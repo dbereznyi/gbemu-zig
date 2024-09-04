@@ -7,6 +7,12 @@ pub fn as16(high: u8, low: u8) u16 {
     return (high16 << 8) | low16;
 }
 
+pub fn incAs16(high: u8, low: u8, new_high: *u8, new_low: *u8) void {
+    const inc = as16(high, low) +% 1;
+    new_high.* = @truncate(inc >> 8);
+    new_low.* = @truncate(inc);
+}
+
 /// A fixed-capacity stack.
 /// Pushing an item when the stack size is at capacity causes the item
 /// at the bottom to be discarded.

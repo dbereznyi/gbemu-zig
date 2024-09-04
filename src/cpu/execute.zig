@@ -387,10 +387,10 @@ fn stop(gb: *Gb) void {
 
 fn addSp(gb: *Gb, value: u8) void {
     const valueI8: i8 = @bitCast(value);
-    const spI16: i16 = @intCast(gb.sp);
+    const spI16: i16 = @bitCast(gb.sp);
 
     const initialSp = gb.sp;
-    gb.sp = @intCast(spI16 +% valueI8);
+    gb.sp = @bitCast(spI16 +% valueI8);
 
     gb.zero = false;
     gb.negative = false;
@@ -574,8 +574,55 @@ fn set(gb: *Gb, dst: Dst8, n: u3) void {
     dst.write(result, gb);
 }
 
-fn daa(_: *Gb) void {
-    // TODO implement
+fn daa(gb: *Gb) void {
+    const a_low = gb.a & 0b0000_1111;
+    const a_high = (gb.a & 0b1111_0000) >> 4;
+
+    if (gb.negative) {
+        if (gb.carry) {
+            if (gb.halfCarry) {
+                gb.a +%= 0x9a;
+                gb.carry = true;
+            } else {
+                gb.a +%= 0xa0;
+                gb.carry = true;
+            }
+        } else {
+            if (gb.halfCarry) {
+                gb.a +%= 0xfa;
+                gb.carry = false;
+            } else {
+                gb.a +%= 0x00;
+                gb.carry = false;
+            }
+        }
+    } else {
+        if (gb.carry) {
+            if (gb.halfCarry) {
+                gb.a +%= 0x66;
+                gb.carry = true;
+            } else {
+                gb.a +%= if (a_low < 0xa) 0x60 else 0x66;
+                gb.carry = true;
+            }
+        } else {
+            if (gb.halfCarry) {
+                gb.a +%= if (a_high < 0xa) 0x06 else 0x66;
+                gb.carry = if (a_high < 0xa) false else true;
+            } else {
+                if (a_high < 0xa) {
+                    gb.a +%= if (a_low < 0xa) 0x00 else 0x06;
+                    gb.carry = false;
+                } else {
+                    gb.a +%= if (a_low < 0xa) 0x60 else 0x66;
+                    gb.carry = true;
+                }
+            }
+        }
+    }
+
+    gb.zero = gb.a == 0;
+    gb.halfCarry = false;
 }
 
 fn cpl(gb: *Gb) void {

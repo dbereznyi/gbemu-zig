@@ -44,14 +44,23 @@ pub const Dst16 = union(Dst16Tag) {
     SP: void,
     Ind: u16,
 
+    pub fn decode(val: u2) Dst16 {
+        return switch (val) {
+            0 => Dst16.BC,
+            1 => Dst16.DE,
+            2 => Dst16.HL,
+            3 => Dst16.SP,
+        };
+    }
+
     pub fn read(dst: Dst16, gb: *Gb) u16 {
         return switch (dst) {
-            Dst16.AF => util.as16(gb.a, Gb.readFlags(gb)),
-            Dst16.BC => util.as16(gb.b, gb.c),
-            Dst16.DE => util.as16(gb.d, gb.e),
-            Dst16.HL => util.as16(gb.h, gb.l),
-            Dst16.SP => gb.sp,
-            Dst16.Ind => |ind| gb.read(ind),
+            .AF => util.as16(gb.a, Gb.readFlags(gb)),
+            .BC => util.as16(gb.b, gb.c),
+            .DE => util.as16(gb.d, gb.e),
+            .HL => util.as16(gb.h, gb.l),
+            .SP => gb.sp,
+            .Ind => |ind| gb.read(ind),
         };
     }
 
@@ -60,26 +69,26 @@ pub const Dst16 = union(Dst16Tag) {
         const valHigh: u8 = @truncate(val >> 8);
 
         switch (dst) {
-            Dst16.AF => {
+            .AF => {
                 gb.*.a = valHigh;
                 Gb.writeFlags(gb, valLow);
             },
-            Dst16.BC => {
+            .BC => {
                 gb.*.b = valHigh;
                 gb.*.c = valLow;
             },
-            Dst16.DE => {
+            .DE => {
                 gb.*.d = valHigh;
                 gb.*.e = valLow;
             },
-            Dst16.HL => {
+            .HL => {
                 gb.*.h = valHigh;
                 gb.*.l = valLow;
             },
-            Dst16.SP => {
+            .SP => {
                 gb.*.sp = val;
             },
-            Dst16.Ind => |ind| {
+            .Ind => |ind| {
                 gb.write(ind, valLow);
                 gb.write(ind + 1, valHigh);
             },
@@ -88,34 +97,34 @@ pub const Dst16 = union(Dst16Tag) {
 
     pub fn toStr(dst: Dst16, buf: []u8) ![]u8 {
         return switch (dst) {
-            Dst16.AF => try std.fmt.bufPrint(buf, "af", .{}),
-            Dst16.BC => try std.fmt.bufPrint(buf, "bc", .{}),
-            Dst16.DE => try std.fmt.bufPrint(buf, "de", .{}),
-            Dst16.HL => try std.fmt.bufPrint(buf, "hl", .{}),
-            Dst16.SP => try std.fmt.bufPrint(buf, "sp", .{}),
-            Dst16.Ind => |ind| try std.fmt.bufPrint(buf, "${x:0>4}", .{ind}),
+            .AF => try std.fmt.bufPrint(buf, "af", .{}),
+            .BC => try std.fmt.bufPrint(buf, "bc", .{}),
+            .DE => try std.fmt.bufPrint(buf, "de", .{}),
+            .HL => try std.fmt.bufPrint(buf, "hl", .{}),
+            .SP => try std.fmt.bufPrint(buf, "sp", .{}),
+            .Ind => |ind| try std.fmt.bufPrint(buf, "${x:0>4}", .{ind}),
         };
     }
 
     pub fn size(dst: Dst16) u16 {
         return switch (dst) {
-            Dst16.AF => 0,
-            Dst16.BC => 0,
-            Dst16.DE => 0,
-            Dst16.HL => 0,
-            Dst16.SP => 0,
-            Dst16.Ind => 2,
+            .AF => 0,
+            .BC => 0,
+            .DE => 0,
+            .HL => 0,
+            .SP => 0,
+            .Ind => 2,
         };
     }
 
     pub fn cycles(dst: Dst16) usize {
         return switch (dst) {
-            Dst16.AF => 0,
-            Dst16.BC => 0,
-            Dst16.DE => 0,
-            Dst16.HL => 0,
-            Dst16.SP => 0,
-            Dst16.Ind => 3,
+            .AF => 0,
+            .BC => 0,
+            .DE => 0,
+            .HL => 0,
+            .SP => 0,
+            .Ind => 3,
         };
     }
 };
@@ -146,7 +155,7 @@ pub const Src16 = union(Src16Tag) {
             Src16.DE => util.as16(gb.d, gb.e),
             Src16.HL => util.as16(gb.h, gb.l),
             Src16.SP => gb.sp,
-            Src16.SPOffset => |offset| gb.sp + @as(u16, offset),
+            Src16.SPOffset => |offset| gb.sp +% @as(u16, offset),
             Src16.Imm => |imm| imm,
         };
     }
@@ -223,6 +232,28 @@ pub const Dst8 = union(Dst8Tag) {
     IndHLInc: void,
     IndHLDec: void,
 
+    pub fn decode(val: u3) Dst8 {
+        return switch (val) {
+            0 => Dst8.B,
+            1 => Dst8.C,
+            2 => Dst8.D,
+            3 => Dst8.E,
+            4 => Dst8.H,
+            5 => Dst8.L,
+            6 => Dst8.IndHL,
+            7 => Dst8.A,
+        };
+    }
+
+    pub fn decodeIndLoad(val: u2) Dst8 {
+        return switch (val) {
+            0 => Dst8.IndBC,
+            1 => Dst8.IndDE,
+            2 => Dst8.IndHLInc,
+            3 => Dst8.IndHLDec,
+        };
+    }
+
     pub fn read(dst: Dst8, gb: *Gb) u8 {
         const val = switch (dst) {
             Dst8.A => gb.a,
@@ -240,12 +271,7 @@ pub const Dst8 = union(Dst8Tag) {
             Dst8.IndHL => gb.read(util.as16(gb.h, gb.l)),
             Dst8.IndHLInc => blk: {
                 const x = gb.read(util.as16(gb.h, gb.l));
-
-                const hl = util.as16(gb.h, gb.l);
-                const hlInc = hl +% 1;
-                gb.h = @truncate(hlInc >> 8);
-                gb.l = @truncate(hlInc);
-
+                incHL(gb);
                 break :blk x;
             },
             Dst8.IndHLDec => blk: {
@@ -260,13 +286,13 @@ pub const Dst8 = union(Dst8Tag) {
 
     pub fn write(dst: Dst8, val: u8, gb: *Gb) void {
         switch (dst) {
-            Dst8.A => gb.*.a = val,
-            Dst8.B => gb.*.b = val,
-            Dst8.C => gb.*.c = val,
-            Dst8.D => gb.*.d = val,
-            Dst8.E => gb.*.e = val,
-            Dst8.H => gb.*.h = val,
-            Dst8.L => gb.*.l = val,
+            Dst8.A => gb.a = val,
+            Dst8.B => gb.b = val,
+            Dst8.C => gb.c = val,
+            Dst8.D => gb.d = val,
+            Dst8.E => gb.e = val,
+            Dst8.H => gb.h = val,
+            Dst8.L => gb.l = val,
             Dst8.Ind => |ind| gb.write(ind, val),
             Dst8.IndIoReg => |ind| gb.write(0xff00 + @as(u16, ind), val),
             Dst8.IndC => gb.write(0xff00 + @as(u16, gb.c), val),
@@ -381,6 +407,19 @@ pub const Src8 = union(Src8Tag) {
     IndHLInc: void,
     IndHLDec: void,
     Imm: u8,
+
+    pub fn decode(val: u3) Src8 {
+        return switch (val) {
+            0 => Src8.B,
+            1 => Src8.C,
+            2 => Src8.D,
+            3 => Src8.E,
+            4 => Src8.H,
+            5 => Src8.L,
+            6 => Src8.IndHL,
+            7 => Src8.A,
+        };
+    }
 
     pub fn read(src: Src8, gb: *Gb) u8 {
         return switch (src) {

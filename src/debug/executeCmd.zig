@@ -90,6 +90,11 @@ pub fn executeCmd(cmd: DebugCmd, gb: *Gb) !void {
             try format(writer, "All breakpoints cleared.\n", .{});
         },
         .viewRegisters => try gb.printDebugState(writer),
+        .viewMemory => |args| {
+            for (args.start..args.end) |addr| {
+                try format(writer, "{x:0>4}: {x:0>2}\n", .{ addr, gb.read(@truncate(addr)) });
+            }
+        },
         .viewStack => {
             var addr = gb.sp;
             while (addr < gb.debug.stackBase) {

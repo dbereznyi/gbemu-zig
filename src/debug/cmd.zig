@@ -12,6 +12,7 @@ const DebugCmdTag = enum {
     breakpointUnset,
     breakpointClearAll,
     viewRegisters,
+    viewMemory,
     viewStack,
     viewPpu,
     viewOam,
@@ -23,6 +24,11 @@ const DebugCmdTag = enum {
 };
 
 pub const DebugCmd = union(DebugCmdTag) {
+    pub const AddrRange = struct {
+        start: u16,
+        end: u16,
+    };
+
     quit: void,
     pause: void,
     trace: void,
@@ -33,6 +39,7 @@ pub const DebugCmd = union(DebugCmdTag) {
     breakpointUnset: u16,
     breakpointClearAll: void,
     viewRegisters: void,
+    viewMemory: AddrRange,
     viewStack: void,
     viewPpu: void,
     viewOam: void,
@@ -84,6 +91,17 @@ pub const DebugCmd = union(DebugCmdTag) {
 
                 break :blk switch (modifier) {
                     'r' => .viewRegisters,
+                    'm' => m: {
+                        _ = p.until(Parser.isHexNumeral);
+                        const addr_str = p.untilByte(' ') orelse (p.toEnd() orelse break :m null);
+                        const addr = std.fmt.parseInt(u16, addr_str, 16) catch break :m null;
+
+                        _ = p.until(Parser.isNumeral) orelse break :m DebugCmd{ .viewMemory = .{ .start = addr, .end = addr +% 16 } };
+                        const num_bytes_str = p.toEnd() orelse break :m null;
+                        const num_bytes = std.fmt.parseInt(u8, num_bytes_str, 10) catch break :blk null;
+
+                        break :m DebugCmd{ .viewMemory = .{ .start = addr, .end = addr +% num_bytes } };
+                    },
                     's' => .viewStack,
                     'p' => .viewPpu,
                     'o' => .viewOam,

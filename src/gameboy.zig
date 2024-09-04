@@ -212,8 +212,8 @@ pub const Debug = struct {
 
         var items_buf: [MAX_TRACE_LENGTH]TraceLine = undefined;
         const items = debug.executionTrace.getItemsReversed(&items_buf);
-        const start_index = MAX_TRACE_LENGTH - count;
-        for (start_index..MAX_TRACE_LENGTH) |i| {
+        const start_index = items.len -| count;
+        for (start_index..items.len) |i| {
             const item = items[i];
             var instr_str_buf: [64]u8 = undefined;
             const instr_str = item.instr.toStr(&instr_str_buf) catch "?";
@@ -659,6 +659,12 @@ pub const Gb = struct {
     halfCarry: bool,
     carry: bool,
 
+    // Internal registers.
+    ir: u8,
+    current_instr_cycle: u3,
+    w: u8,
+    z: u8,
+
     // For instructions that evaluate a condition,
     // this is set to true if the condition evaluated to true.
     branchCond: bool,
@@ -735,6 +741,10 @@ pub const Gb = struct {
             .negative = false,
             .halfCarry = false,
             .carry = false,
+            .ir = 0,
+            .current_instr_cycle = 0,
+            .w = 0,
+            .z = 0,
             .branchCond = false,
             .ime = false,
             .execState = .running,
@@ -841,7 +851,7 @@ pub const Gb = struct {
             // WRAM
             0xc000...0xdfff => gb.wram[addr - 0xc000],
             // Echo RAM
-            0xe000...0xfdff => gb.wram[addr - 0xc000],
+            0xe000...0xfdff => gb.wram[addr - 0xe000],
             // OAM
             0xfe00...0xfe9f => blk: {
                 if (!gb.isLcdOn() or !gb.scanningOam or gb.debug.isPaused()) {
@@ -885,7 +895,7 @@ pub const Gb = struct {
             // Echo RAM
             0xe000...0xfdff => {
                 std.log.warn("Writing to Echo RAM (${x} -> {x})\n", .{ val, addr });
-                gb.wram[addr - 0xc000] = val;
+                gb.wram[addr - 0xe000] = val;
             },
             // OAM
             0xfe00...0xfe9f => {
@@ -951,6 +961,7 @@ pub const Gb = struct {
     }
 
     pub fn panic(gb: *Gb, comptime msg: []const u8, args: anytype) noreturn {
+        std.debug.print("\n", .{});
         gb.debug.printExecutionTrace(std.io.getStdOut().writer(), Debug.MAX_TRACE_LENGTH) catch unreachable;
         std.debug.panic(msg, args);
     }
