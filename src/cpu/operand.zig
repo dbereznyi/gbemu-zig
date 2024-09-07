@@ -2,13 +2,22 @@ const std = @import("std");
 const Gb = @import("../gameboy.zig").Gb;
 const util = @import("../util.zig");
 
-pub const Condition = enum {
+pub const Cond = enum {
     NZ,
     Z,
     NC,
     C,
 
-    pub fn check(cond: Condition, gb: *Gb) bool {
+    pub fn decode(val: u2) Cond {
+        return switch (val) {
+            0 => .NZ,
+            1 => .Z,
+            2 => .NC,
+            3 => .C,
+        };
+    }
+
+    pub fn check(cond: Cond, gb: *Gb) bool {
         return switch (cond) {
             .NZ => !gb.zero,
             .Z => gb.zero,
@@ -17,7 +26,7 @@ pub const Condition = enum {
         };
     }
 
-    pub fn toStr(cond: Condition, buf: []u8) ![]u8 {
+    pub fn toStr(cond: Cond, buf: []u8) ![]u8 {
         return switch (cond) {
             .NZ => try std.fmt.bufPrint(buf, "nz", .{}),
             .Z => try std.fmt.bufPrint(buf, "z", .{}),
@@ -148,6 +157,15 @@ pub const Src16 = union(Src16Tag) {
     SPOffset: u8,
     Imm: u16,
 
+    pub fn decode(val: u2) Src16 {
+        return switch (val) {
+            0 => Src16.BC,
+            1 => Src16.DE,
+            2 => Src16.HL,
+            3 => Src16.SP,
+        };
+    }
+
     pub fn read(src: Src16, gb: *const Gb) u16 {
         return switch (src) {
             Src16.AF => util.as16(gb.a, Gb.readFlags(gb)),
@@ -157,6 +175,30 @@ pub const Src16 = union(Src16Tag) {
             Src16.SP => gb.sp,
             Src16.SPOffset => |offset| gb.sp +% @as(u16, offset),
             Src16.Imm => |imm| imm,
+        };
+    }
+
+    pub fn readUpper(src: Src16, gb: *const Gb) u8 {
+        return switch (src) {
+            Src16.AF => gb.a,
+            Src16.BC => gb.b,
+            Src16.DE => gb.d,
+            Src16.HL => gb.h,
+            Src16.SP => @truncate(gb.sp >> 8),
+            Src16.SPOffset => |offset| @truncate((gb.sp +% @as(u16, offset)) >> 8),
+            Src16.Imm => |imm| @truncate(imm >> 8),
+        };
+    }
+
+    pub fn readLower(src: Src16, gb: *const Gb) u8 {
+        return switch (src) {
+            Src16.AF => gb.readFlags(),
+            Src16.BC => gb.c,
+            Src16.DE => gb.e,
+            Src16.HL => gb.l,
+            Src16.SP => @truncate(gb.sp),
+            Src16.SPOffset => |offset| @truncate(gb.sp +% @as(u16, offset)),
+            Src16.Imm => |imm| @truncate(imm),
         };
     }
 
@@ -255,7 +297,7 @@ pub const Dst8 = union(Dst8Tag) {
     }
 
     pub fn read(dst: Dst8, gb: *Gb) u8 {
-        const val = switch (dst) {
+        return switch (dst) {
             Dst8.A => gb.a,
             Dst8.B => gb.b,
             Dst8.C => gb.c,
@@ -280,8 +322,6 @@ pub const Dst8 = union(Dst8Tag) {
                 break :blk x;
             },
         };
-
-        return val;
     }
 
     pub fn write(dst: Dst8, val: u8, gb: *Gb) void {
@@ -308,6 +348,19 @@ pub const Dst8 = union(Dst8Tag) {
                 decHL(gb);
             },
         }
+    }
+
+    pub fn getPtr(dst: Dst8, gb: *Gb) *u8 {
+        return switch (dst) {
+            .A => &gb.a,
+            .B => &gb.b,
+            .C => &gb.c,
+            .D => &gb.d,
+            .E => &gb.e,
+            .H => &gb.h,
+            .L => &gb.l,
+            else => gb.panic("Dst8.getPtr called with non-register argument: {}\n", .{dst}),
+        };
     }
 
     pub fn toStr(dst: Dst8, buf: []u8) ![]u8 {

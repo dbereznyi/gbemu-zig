@@ -1,6 +1,6 @@
 const std = @import("std");
 const Gb = @import("../gameboy.zig").Gb;
-const Condition = @import("operand.zig").Condition;
+const Cond = @import("operand.zig").Cond;
 const Src8 = @import("operand.zig").Src8;
 const Dst8 = @import("operand.zig").Dst8;
 const Src16 = @import("operand.zig").Src16;
@@ -81,12 +81,12 @@ const DstSrc16 = struct {
 };
 
 const CondAddr = struct {
-    cond: Condition,
+    cond: Cond,
     addr: u16,
 };
 
 const CondOffset = struct {
-    cond: Condition,
+    cond: Cond,
     offset: u8,
 };
 
@@ -134,7 +134,7 @@ pub const Instr = union(InstrTag) {
     CALL: u16,
     CALL_COND: CondAddr,
     RET: void,
-    RET_COND: Condition,
+    RET_COND: Cond,
     RETI: void,
     RST: u8,
 
