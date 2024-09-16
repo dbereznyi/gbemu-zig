@@ -6,6 +6,7 @@ const BoundedStack = @import("util.zig").BoundedStack;
 const DebugCmd = @import("debug/cmd.zig").DebugCmd;
 const decodeInstrAt = @import("cpu/decode.zig").decodeInstrAt;
 const format = std.fmt.format;
+const PrefixOp = @import("cpu/prefix_op.zig").PrefixOp;
 
 pub const IoReg = .{
     .JOYP = 0xff00,
@@ -108,6 +109,7 @@ pub const StatFlag = .{
 
 pub const ExecState = enum {
     running,
+    handling_interrupt,
     halted,
     haltedDiscardInterrupt,
     stopped,
@@ -664,6 +666,8 @@ pub const Gb = struct {
     current_instr_cycle: u3,
     w: u8,
     z: u8,
+    prefix_op: PrefixOp,
+    enable_interrupts_next_cycle: bool,
 
     // For instructions that evaluate a condition,
     // this is set to true if the condition evaluated to true.
@@ -745,6 +749,8 @@ pub const Gb = struct {
             .current_instr_cycle = 0,
             .w = 0,
             .z = 0,
+            .prefix_op = undefined,
+            .enable_interrupts_next_cycle = false,
             .branchCond = false,
             .ime = false,
             .execState = .running,
@@ -957,7 +963,9 @@ pub const Gb = struct {
     }
 
     pub fn anyInterruptsPending(gb: *Gb) bool {
-        return gb.ioRegs[IoReg.IF - 0xff00].load(.monotonic) > 0;
+        const ie = gb.ioRegs[IoReg.IE - 0xff00].load(.monotonic);
+        const if_ = gb.ioRegs[IoReg.IF - 0xff00].load(.monotonic);
+        return (ie & if_ & 0x1f) != 0;
     }
 
     pub fn panic(gb: *Gb, comptime msg: []const u8, args: anytype) noreturn {

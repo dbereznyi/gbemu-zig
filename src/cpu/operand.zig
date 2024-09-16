@@ -350,7 +350,7 @@ pub const Dst8 = union(Dst8Tag) {
         }
     }
 
-    pub fn getPtr(dst: Dst8, gb: *Gb) *u8 {
+    pub fn getPtr(comptime dst: Dst8, gb: *Gb) *u8 {
         return switch (dst) {
             .A => &gb.a,
             .B => &gb.b,
@@ -359,7 +359,7 @@ pub const Dst8 = union(Dst8Tag) {
             .E => &gb.e,
             .H => &gb.h,
             .L => &gb.l,
-            else => gb.panic("Dst8.getPtr called with non-register argument: {}\n", .{dst}),
+            else => @compileError("getPtr() called with invalid Dst8"),
         };
     }
 

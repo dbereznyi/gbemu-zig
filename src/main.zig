@@ -7,7 +7,7 @@ const Gb = @import("gameboy.zig").Gb;
 const Button = @import("gameboy.zig").Button;
 const Palette = @import("gameboy.zig").Ppu.Palette;
 const stepCpu = @import("cpu/step.zig").stepCpu;
-const stepCpuAccurate = @import("cpu/step.zig").stepCpuAccurate;
+const stepCpuAccurate = @import("cpu/step_accurate.zig").stepCpuAccurate;
 const stepPpu = @import("ppu.zig").stepPpu;
 const stepDma = @import("dma.zig").stepDma;
 const stepJoypad = @import("joypad.zig").stepJoypad;
@@ -101,7 +101,7 @@ pub fn main() !void {
 
     _ = c.SDL_UpdateTexture(texture, null, @ptrCast(gb.screen), 160 * 3);
 
-    if (false) {
+    if (true) {
         try gb.debug.breakpoints.append(.{ .bank = 0, .addr = 0x0100 });
         //gb.debug.stackBase = 0xdfff;
     }
@@ -217,16 +217,12 @@ fn simulate(minCycles: usize, gb: *Gb) !usize {
 
 fn simulateAccurate(cycles: usize, gb: *Gb) !void {
     for (0..cycles) |_| {
-        try handleDebugCmd(gb);
-        if (shouldDebugBreak(gb)) {
-            gb.debug.stdOutMutex.lock();
-            std.debug.print("\n", .{});
-            try gb.printCurrentAndNextInstruction();
-            std.debug.print("\n> ", .{});
-            gb.debug.stdOutMutex.unlock();
-
-            gb.debug.setPaused(true);
-            gb.debug.stepModeEnabled = true;
+        if (gb.debug.isPaused()) {
+            return;
+        }
+        if (gb.enable_interrupts_next_cycle) {
+            gb.enable_interrupts_next_cycle = false;
+            gb.ime = true;
         }
 
         stepCpuAccurate(gb);

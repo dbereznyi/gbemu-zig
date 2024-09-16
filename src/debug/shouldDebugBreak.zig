@@ -23,7 +23,8 @@ pub fn shouldDebugBreak(gb: *Gb) bool {
     if (!gb.isRunning()) {
         return false;
     }
-    if (gb.debug.skipCurrentInstruction) {
+    // Note: with stepAccurate(), skipCurrentInstruction should be ignored.
+    if (false and gb.debug.skipCurrentInstruction) {
         gb.debug.skipCurrentInstruction = false;
         return false;
     }
