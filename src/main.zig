@@ -69,7 +69,13 @@ pub fn main() !void {
     const VRAM_WINDOW_WIDTH = 16 * 8;
     const VRAM_WINDOW_HEIGHT = 3 * 8 * 8;
 
-    const vram_window = c.SDL_CreateWindow("vram viewer", c.SDL_WINDOWPOS_UNDEFINED, c.SDL_WINDOWPOS_UNDEFINED, VRAM_WINDOW_WIDTH * SCALE, VRAM_WINDOW_HEIGHT * SCALE, c.SDL_WINDOW_OPENGL) orelse {
+    var main_window_x: c_int = undefined;
+    var main_window_y: c_int = undefined;
+    _ = c.SDL_GetWindowPosition(window, &main_window_x, &main_window_y);
+    const vram_window_x = main_window_x + (160 * SCALE);
+    const vram_window_y = main_window_y;
+
+    const vram_window = c.SDL_CreateWindow("vram viewer", vram_window_x, vram_window_y, VRAM_WINDOW_WIDTH * SCALE, VRAM_WINDOW_HEIGHT * SCALE, c.SDL_WINDOW_OPENGL) orelse {
         c.SDL_Log("Unable to create window: %s", c.SDL_GetError());
         return error.SDLInitializationFailed;
     };
