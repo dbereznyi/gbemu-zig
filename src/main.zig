@@ -71,7 +71,7 @@ pub fn main() !void {
 
     var main_window_x: c_int = undefined;
     var main_window_y: c_int = undefined;
-    _ = c.SDL_GetWindowPosition(window, &main_window_x, &main_window_y);
+    c.SDL_GetWindowPosition(window, &main_window_x, &main_window_y);
     const vram_window_x = main_window_x + (160 * SCALE);
     const vram_window_y = main_window_y;
 
@@ -159,7 +159,7 @@ pub fn main() !void {
         try handleDebugCmd(&gb);
 
         if (!gb.debug.isPaused()) {
-            try simulateAccurate(CYCLES_UNTIL_VBLANK, &gb);
+            try simulateAccurate(FRAME_CYCLES, &gb);
         }
 
         if (lcdOnAtStartOfFrame) {
@@ -174,10 +174,6 @@ pub fn main() !void {
         _ = c.SDL_RenderClear(vram_renderer);
         _ = c.SDL_RenderCopy(vram_renderer, vram_texture, null, null);
         c.SDL_RenderPresent(vram_renderer);
-
-        if (!gb.debug.isPaused()) {
-            try simulateAccurate(VBLANK_CYCLES, &gb);
-        }
 
         if (false and frames % 15 == 0) {
             std.debug.print("actual **** frameTime: {} ns = {} micros = {} ms\n", .{ gb.debug.frameTimeNs, gb.debug.frameTimeNs / 1000, gb.debug.frameTimeNs / 1000 / 1000 });
