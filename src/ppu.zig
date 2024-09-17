@@ -50,9 +50,7 @@ pub fn stepPpu(gb: *Gb) void {
 
                 gb.setStatMode(StatFlag.MODE_2);
 
-                if (gb.isLcdOn()) {
-                    gb.ppu.objAttrsLine = readObjectAttributesForLine(gb.ppu.y, &gb.ppu.objAttrsLineBuf, gb);
-                }
+                gb.ppu.objAttrsLine = readObjectAttributesForLine(gb.ppu.y, &gb.ppu.objAttrsLineBuf, gb);
             } else if (gb.ppu.dots % LINE_DOTS == DRAWING_START - 4) {
                 gb.scanningOam = false;
                 gb.ppu.mode = .drawing;
