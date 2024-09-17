@@ -870,7 +870,7 @@ pub const Gb = struct {
                 }
             },
             // Not useable
-            0xfea0...0xfeff => std.debug.panic("Attempted to read from prohibited memory at ${x}\n", .{addr}),
+            0xfea0...0xfeff => gb.panic("Attempted to read from prohibited memory at ${x}\n", .{addr}),
             // I/O Registers
             0xff00...0xff7f => gb.ioRegs[addr - 0xff00].load(.monotonic),
             // HRAM
@@ -889,7 +889,7 @@ pub const Gb = struct {
                 if (!gb.isVramInUse() or gb.debug.isPaused()) {
                     gb.vram[addr - 0x8000] = val;
                 } else {
-                    std.debug.panic("Attempted to write to VRAM while in use (${x} -> {x})\n", .{ val, addr });
+                    gb.panic("Attempted to write to VRAM while in use (${x} -> {x})\n", .{ val, addr });
                 }
             },
             // External RAM
@@ -912,7 +912,7 @@ pub const Gb = struct {
                 }
             },
             // Not useable
-            0xfea0...0xfeff => std.debug.panic("Attempted to write to prohibited memory (${x} -> ${x})\n", .{ val, addr }),
+            0xfea0...0xfeff => gb.panic("Attempted to write to prohibited memory (${x} -> ${x})\n", .{ val, addr }),
             // I/O Registers
             0xff00...0xff7f => {
                 gb.ioRegs[addr - 0xff00].store(val, .monotonic);
@@ -963,9 +963,8 @@ pub const Gb = struct {
     }
 
     pub fn anyInterruptsPending(gb: *Gb) bool {
-        const ie = gb.ioRegs[IoReg.IE - 0xff00].load(.monotonic);
         const if_ = gb.ioRegs[IoReg.IF - 0xff00].load(.monotonic);
-        return (ie & if_ & 0x1f) != 0;
+        return (gb.ie & if_ & 0x1f) != 0;
     }
 
     pub fn panic(gb: *Gb, comptime msg: []const u8, args: anytype) noreturn {
@@ -984,9 +983,10 @@ pub const Gb = struct {
             gb.read(IoReg.LCDC),
             gb.read(IoReg.STAT),
         });
-        try format(writer, "IE: %{b:0>8} IF: %{b:0>8}\n", .{
+        try format(writer, "IE: %{b:0>8} IF: %{b:0>8} IME: {}\n", .{
             gb.read(IoReg.IE),
             gb.read(IoReg.IF),
+            @as(u1, if (gb.ime) 1 else 0),
         });
     }
 

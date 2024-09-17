@@ -1,3 +1,5 @@
+const std = @import("std");
+
 pub const AluOp = enum {
     add,
     adc,
@@ -49,8 +51,8 @@ pub const AluOp = enum {
 
                 zero.* = result == 0;
                 negative.* = true;
-                halfCarry.* = checkHalfCarry(x, y);
-                carry.* = checkCarry(x, y);
+                halfCarry.* = !checkHalfCarry(x, y);
+                carry.* = !checkCarry(x, y);
 
                 dst.* = result;
             },
@@ -61,8 +63,8 @@ pub const AluOp = enum {
 
                 zero.* = result == 0;
                 negative.* = true;
-                halfCarry.* = checkHalfCarry(x, y);
-                carry.* = checkCarry(x, y);
+                halfCarry.* = !checkHalfCarry(x, y);
+                carry.* = !checkCarry(x, y);
 
                 dst.* = result;
             },
@@ -109,8 +111,8 @@ pub const AluOp = enum {
 
                 zero.* = result == 0;
                 negative.* = true;
-                halfCarry.* = checkHalfCarry(x, y);
-                carry.* = checkCarry(x, y);
+                halfCarry.* = !checkHalfCarry(x, y);
+                carry.* = !checkCarry(x, y);
             },
         }
     }

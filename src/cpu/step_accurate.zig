@@ -21,11 +21,13 @@ pub fn stepCpuAccurate(gb: *Gb) void {
         .running => stepCurrentInstr(gb),
         .halted => {
             if (gb.anyInterruptsPending()) {
+                //std.debug.print("waking up from HALT mode\n", .{});
                 gb.ir = 0; // NOP
                 gb.execState = .running;
             }
         },
         .handling_interrupt => {
+            //std.debug.print("isr stage {}\n", .{gb.current_instr_cycle});
             switch (gb.current_instr_cycle) {
                 0 => gb.pc -%= 1,
                 1 => gb.sp -%= 1,
@@ -56,6 +58,7 @@ pub fn stepCpuAccurate(gb: *Gb) void {
                     gb.ime = false;
                 },
                 else => {
+                    gb.execState = .running;
                     fetchOpcode(gb, .normal);
                     return;
                 },
@@ -142,11 +145,11 @@ fn stepCurrentInstr(gb: *Gb) void {
             const dst_encoding = @as(u3, @truncate(gb.ir >> 3));
             const dst = Dst8.decode(dst_encoding);
 
-            if (src == Src8.IndHL and dst == Dst8.IndHL) {
+            if (src == .IndHL and dst == .IndHL) {
                 stepHalt(gb);
-            } else if (src == Src8.IndHL) {
+            } else if (src == .IndHL) {
                 stepLdRegInd(gb, dst, src);
-            } else if (dst == Dst8.IndHL) {
+            } else if (dst == .IndHL) {
                 stepLdIndReg(gb, dst, src);
             } else {
                 stepLdRegReg(gb, dst, src);
@@ -508,8 +511,8 @@ fn stepAluOp(gb: *Gb, op: AluOp, src: Src8) void {
 fn stepAluOpImm(gb: *Gb, comptime op: AluOp) void {
     switch (gb.current_instr_cycle) {
         0 => {
-            gb.pc +%= 1;
             gb.z = gb.read(gb.pc);
+            gb.pc +%= 1;
         },
         else => {
             op.execute(
