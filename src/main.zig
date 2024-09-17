@@ -107,7 +107,7 @@ pub fn main() !void {
 
     _ = c.SDL_UpdateTexture(texture, null, @ptrCast(gb.screen), 160 * 3);
 
-    if (false) {
+    if (true) {
         try gb.debug.breakpoints.append(.{ .bank = 0, .addr = 0x01d7 });
         //gb.debug.stackBase = 0xdfff;
     }
@@ -158,9 +158,7 @@ pub fn main() !void {
 
         try handleDebugCmd(&gb);
 
-        if (!gb.debug.isPaused()) {
-            try simulateAccurate(FRAME_CYCLES, &gb);
-        }
+        try simulateAccurate(FRAME_CYCLES, &gb);
 
         if (lcdOnAtStartOfFrame) {
             _ = c.SDL_UpdateTexture(texture, null, @ptrCast(gb.screen), 160 * 3);
