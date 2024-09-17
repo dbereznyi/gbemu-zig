@@ -1,11 +1,12 @@
 const std = @import("std");
 const Breakpoint = @import("../gameboy.zig").Debug.Breakpoint;
+const Button = @import("../gameboy.zig").Button;
 
 const DebugCmdTag = enum {
     quit,
     pause,
     trace,
-    continue_,
+    resume_,
     help,
     breakpointList,
     breakpointSet,
@@ -21,6 +22,8 @@ const DebugCmdTag = enum {
     viewTimer,
     viewCart,
     viewExecutionTrace,
+    joypadPress,
+    joypadRelease,
 };
 
 pub const DebugCmd = union(DebugCmdTag) {
@@ -32,7 +35,7 @@ pub const DebugCmd = union(DebugCmdTag) {
     quit: void,
     pause: void,
     trace: void,
-    continue_: void,
+    resume_: void,
     help: void,
     breakpointList: void,
     breakpointSet: Breakpoint,
@@ -48,6 +51,8 @@ pub const DebugCmd = union(DebugCmdTag) {
     viewTimer: void,
     viewCart: void,
     viewExecutionTrace: void,
+    joypadPress: Button,
+    joypadRelease: Button,
 
     pub fn parse(buf: []u8) ?DebugCmd {
         const bufTrimmed = std.mem.trim(u8, buf, " \t\r\n");
@@ -58,7 +63,7 @@ pub const DebugCmd = union(DebugCmdTag) {
             'q' => .quit,
             'p' => .pause,
             't' => .trace,
-            'c' => .continue_,
+            'r' => .resume_,
             'h' => .help,
             'b' => blk: {
                 const modifier = p.pop() orelse break :blk null;
@@ -110,6 +115,36 @@ pub const DebugCmd = union(DebugCmdTag) {
                     't' => .viewTimer,
                     'c' => .viewCart,
                     'e' => .viewExecutionTrace,
+                    else => null,
+                };
+            },
+            'j' => blk: {
+                const modifier = p.pop() orelse break :blk null;
+
+                _ = p.until(Parser.isNonWhitespace);
+
+                const button_char = p.pop() orelse break :blk null;
+                const button: Button = switch (button_char) {
+                    'a' => Button.a,
+                    'b' => Button.b,
+                    's' => s: {
+                        const c = p.pop() orelse break :blk null;
+                        break :s switch (c) {
+                            't' => Button.start,
+                            'e' => Button.select,
+                            else => break :blk null,
+                        };
+                    },
+                    'u' => Button.up,
+                    'l' => Button.left,
+                    'r' => Button.right,
+                    'd' => Button.down,
+                    else => break :blk null,
+                };
+
+                break :blk switch (modifier) {
+                    'p' => DebugCmd{ .joypadPress = button },
+                    'r' => DebugCmd{ .joypadRelease = button },
                     else => null,
                 };
             },
@@ -257,5 +292,9 @@ const Parser = struct {
             'A'...'F' => true,
             else => false,
         };
+    }
+
+    pub fn isNonWhitespace(val: u8) bool {
+        return !std.ascii.isWhitespace(val);
     }
 };

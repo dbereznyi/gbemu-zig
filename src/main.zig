@@ -101,8 +101,8 @@ pub fn main() !void {
 
     _ = c.SDL_UpdateTexture(texture, null, @ptrCast(gb.screen), 160 * 3);
 
-    if (true) {
-        try gb.debug.breakpoints.append(.{ .bank = 0, .addr = 0x0048 });
+    if (false) {
+        try gb.debug.breakpoints.append(.{ .bank = 0, .addr = 0x01d7 });
         //gb.debug.stackBase = 0xdfff;
     }
 
@@ -112,25 +112,25 @@ pub fn main() !void {
         while (c.SDL_PollEvent(&event) != 0) {
             switch (event.type) {
                 c.SDL_KEYUP => switch (event.key.keysym.sym) {
-                    c.SDLK_a => gb.joypad.releaseButton(Button.START),
-                    c.SDLK_s => gb.joypad.releaseButton(Button.SELECT),
-                    c.SDLK_z => gb.joypad.releaseButton(Button.A),
-                    c.SDLK_x => gb.joypad.releaseButton(Button.B),
-                    c.SDLK_RIGHT => gb.joypad.releaseButton(Button.RIGHT),
-                    c.SDLK_LEFT => gb.joypad.releaseButton(Button.LEFT),
-                    c.SDLK_UP => gb.joypad.releaseButton(Button.UP),
-                    c.SDLK_DOWN => gb.joypad.releaseButton(Button.DOWN),
+                    c.SDLK_a => gb.joypad.releaseButton(Button.start),
+                    c.SDLK_s => gb.joypad.releaseButton(Button.select),
+                    c.SDLK_z => gb.joypad.releaseButton(Button.a),
+                    c.SDLK_x => gb.joypad.releaseButton(Button.b),
+                    c.SDLK_RIGHT => gb.joypad.releaseButton(Button.right),
+                    c.SDLK_LEFT => gb.joypad.releaseButton(Button.left),
+                    c.SDLK_UP => gb.joypad.releaseButton(Button.up),
+                    c.SDLK_DOWN => gb.joypad.releaseButton(Button.down),
                     else => {},
                 },
                 c.SDL_KEYDOWN => switch (event.key.keysym.sym) {
-                    c.SDLK_a => gb.joypad.pressButton(Button.START),
-                    c.SDLK_s => gb.joypad.pressButton(Button.SELECT),
-                    c.SDLK_z => gb.joypad.pressButton(Button.A),
-                    c.SDLK_x => gb.joypad.pressButton(Button.B),
-                    c.SDLK_RIGHT => gb.joypad.pressButton(Button.RIGHT),
-                    c.SDLK_LEFT => gb.joypad.pressButton(Button.LEFT),
-                    c.SDLK_UP => gb.joypad.pressButton(Button.UP),
-                    c.SDLK_DOWN => gb.joypad.pressButton(Button.DOWN),
+                    c.SDLK_a => gb.joypad.pressButton(Button.start),
+                    c.SDLK_s => gb.joypad.pressButton(Button.select),
+                    c.SDLK_z => gb.joypad.pressButton(Button.a),
+                    c.SDLK_x => gb.joypad.pressButton(Button.b),
+                    c.SDLK_RIGHT => gb.joypad.pressButton(Button.right),
+                    c.SDLK_LEFT => gb.joypad.pressButton(Button.left),
+                    c.SDLK_UP => gb.joypad.pressButton(Button.up),
+                    c.SDLK_DOWN => gb.joypad.pressButton(Button.down),
                     else => {},
                 },
                 c.SDL_WINDOWEVENT => {

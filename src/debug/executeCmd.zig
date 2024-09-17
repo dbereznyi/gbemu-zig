@@ -27,6 +27,9 @@ const HELP_MESSAGE =
     "    (v)iew (j)oypad\n" ++
     "    (v)iew (t)imer\n" ++
     "    (v)iew (c)artridge\n" ++
+    "  simulating joypad button presses/releases\n" ++
+    "    (j)oypad (p)ress <button to press: a,b,st,se,u,l,r,d>\n" ++
+    "    (j)oypad (r)elease <button to release: a,b,st,se,u,l,r,d>\n" ++
     "\n" ++
     "pressing enter will repeat the last-executed command\n" ++
     "\n" ++
@@ -54,7 +57,7 @@ pub fn executeCmd(cmd: DebugCmd, gb: *Gb) !void {
                 gb.debug.setPaused(false);
             }
         },
-        .continue_ => {
+        .resume_ => {
             if (gb.debug.isPaused()) {
                 gb.debug.skipCurrentInstruction = true;
                 gb.debug.stepModeEnabled = false;
@@ -118,6 +121,8 @@ pub fn executeCmd(cmd: DebugCmd, gb: *Gb) !void {
         .viewTimer => try gb.timer.printState(writer),
         .viewCart => try gb.cart.printState(writer),
         .viewExecutionTrace => try gb.debug.printExecutionTrace(writer, MAX_TRACE_LENGTH),
+        .joypadPress => |button| gb.joypad.pressButton(button),
+        .joypadRelease => |button| gb.joypad.releaseButton(button),
     }
 
     gb.debug.pendingResult = fbs.getWritten();

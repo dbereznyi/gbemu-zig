@@ -1203,7 +1203,9 @@ fn stepPrefix(gb: *Gb) void {
                     &gb.halfCarry,
                     &gb.carry,
                 );
-                dst.write(result, gb);
+                if (gb.prefix_op != .bit) {
+                    dst.write(result, gb);
+                }
 
                 fetchOpcode(gb, .normal);
                 return;

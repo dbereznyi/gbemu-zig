@@ -115,15 +115,15 @@ pub const ExecState = enum {
     stopped,
 };
 
-pub const Button = .{
-    .A = 0b0000_0001,
-    .B = 0b0000_0010,
-    .SELECT = 0b0000_0100,
-    .START = 0b0000_1000,
-    .RIGHT = 0b0001_0000,
-    .LEFT = 0b0010_0000,
-    .UP = 0b0100_0000,
-    .DOWN = 0b1000_0000,
+pub const Button = enum(u8) {
+    a = 0b0000_0001,
+    b = 0b0000_0010,
+    select = 0b0000_0100,
+    start = 0b0000_1000,
+    right = 0b0001_0000,
+    left = 0b0010_0000,
+    up = 0b0100_0000,
+    down = 0b1000_0000,
 };
 
 pub const Debug = struct {
@@ -297,24 +297,24 @@ const Joypad = struct {
         return @truncate((joypad.data.load(.monotonic) & 0b1111_0000) >> 4);
     }
 
-    pub fn pressButton(joypad: *Joypad, button: u8) void {
-        _ = joypad.data.fetchOr(button, .monotonic);
+    pub fn pressButton(joypad: *Joypad, button: Button) void {
+        _ = joypad.data.fetchOr(@intFromEnum(button), .monotonic);
     }
 
-    pub fn releaseButton(joypad: *Joypad, button: u8) void {
-        _ = joypad.data.fetchAnd(~button, .monotonic);
+    pub fn releaseButton(joypad: *Joypad, button: Button) void {
+        _ = joypad.data.fetchAnd(~@intFromEnum(button), .monotonic);
     }
 
     pub fn printState(joypad: *Joypad, writer: anytype) !void {
         const data = joypad.data.load(.monotonic);
-        const down: u1 = if (data & Button.DOWN > 0) 1 else 0;
-        const up: u1 = if (data & Button.UP > 0) 1 else 0;
-        const left: u1 = if (data & Button.LEFT > 0) 1 else 0;
-        const right: u1 = if (data & Button.RIGHT > 0) 1 else 0;
-        const start: u1 = if (data & Button.START > 0) 1 else 0;
-        const select: u1 = if (data & Button.SELECT > 0) 1 else 0;
-        const b: u1 = if (data & Button.B > 0) 1 else 0;
-        const a: u1 = if (data & Button.A > 0) 1 else 0;
+        const down: u1 = if (data & @intFromEnum(Button.down) > 0) 1 else 0;
+        const up: u1 = if (data & @intFromEnum(Button.up) > 0) 1 else 0;
+        const left: u1 = if (data & @intFromEnum(Button.left) > 0) 1 else 0;
+        const right: u1 = if (data & @intFromEnum(Button.right) > 0) 1 else 0;
+        const start: u1 = if (data & @intFromEnum(Button.start) > 0) 1 else 0;
+        const select: u1 = if (data & @intFromEnum(Button.select) > 0) 1 else 0;
+        const b: u1 = if (data & @intFromEnum(Button.b) > 0) 1 else 0;
+        const a: u1 = if (data & @intFromEnum(Button.a) > 0) 1 else 0;
         try format(writer, "U={} D={} L={} R={} ST={} SE={} B={} A={}\n", .{ down, up, left, right, start, select, b, a });
     }
 };
