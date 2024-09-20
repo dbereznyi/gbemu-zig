@@ -241,7 +241,7 @@ pub const Instr = union(InstrTag) {
             .DEC_8 => |dst| try dst.toStr(&dstBuf),
             .DEC_16 => |dst| try dst.toStr(&dstBuf),
             .ADD_16 => |args| try args.dst.toStr(&dstBuf),
-            .ADD_SP => |n8| try std.fmt.bufPrint(&dstBuf, "${x:0>2}", .{n8}),
+            .ADD_SP => |_| try std.fmt.bufPrint(&dstBuf, "sp", .{}),
 
             .JP => |addr| try std.fmt.bufPrint(&dstBuf, "${x:0>4}", .{addr}),
             .JP_COND => |args| try std.fmt.bufPrint(&dstBuf, "${x:0>4}", .{args.addr}),
@@ -283,6 +283,7 @@ pub const Instr = union(InstrTag) {
             .OR => |src| try src.toStr(&srcBuf),
             .CP => |src| try src.toStr(&srcBuf),
             .ADD_16 => |args| try args.src.toStr(&srcBuf),
+            .ADD_SP => |n8| try std.fmt.bufPrint(&srcBuf, "{s}{}", .{ if (n8 & 0b1000_0000 == 0) "+" else "", @as(i8, @bitCast(n8)) }),
 
             .PUSH => |src| try src.toStr(&srcBuf),
 

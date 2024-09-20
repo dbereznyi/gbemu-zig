@@ -51,7 +51,11 @@ pub fn stepPpu(gb: *Gb) void {
                 gb.setStatMode(StatFlag.MODE_2);
 
                 if (gb.isLcdOn()) {
-                    gb.ppu.objAttrsLine = readObjectAttributesForLine(gb.ppu.y, &gb.ppu.objAttrsLineBuf, gb);
+                    gb.ppu.objAttrsLine = readObjectAttributesForLine(
+                        gb.ppu.y,
+                        &gb.ppu.objAttrsLineBuf,
+                        gb,
+                    );
                 } else {
                     gb.ppu.objAttrsLine.len = 0;
                 }
@@ -77,7 +81,14 @@ pub fn stepPpu(gb: *Gb) void {
                 gb.setStatMode(StatFlag.MODE_3);
             } else if (gb.ppu.dots % LINE_DOTS >= DRAWING_START + 12) {
                 for (gb.ppu.x..gb.ppu.x + 4) |x| {
-                    const colorId = colorIdAt(x, gb.ppu.y, gb, gb.ppu.objAttrsLine, &gb.ppu.windowY, gb.ppu.wy);
+                    const colorId = colorIdAt(
+                        x,
+                        gb.ppu.y,
+                        gb,
+                        gb.ppu.objAttrsLine,
+                        &gb.ppu.windowY,
+                        gb.ppu.wy,
+                    );
                     gb.screen[gb.ppu.y * 160 + x] = gb.ppu.palette[colorId];
                 }
                 gb.ppu.x = (gb.ppu.x + 4) % 160;

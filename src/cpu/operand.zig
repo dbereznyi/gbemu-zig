@@ -209,7 +209,7 @@ pub const Src16 = union(Src16Tag) {
             Src16.DE => try std.fmt.bufPrint(buf, "de", .{}),
             Src16.HL => try std.fmt.bufPrint(buf, "hl", .{}),
             Src16.SP => try std.fmt.bufPrint(buf, "sp", .{}),
-            Src16.SPOffset => |offset| try std.fmt.bufPrint(buf, "sp + ${x:0>2}", .{offset}),
+            Src16.SPOffset => |offset| try std.fmt.bufPrint(buf, "sp + {}", .{offset}),
             Src16.Imm => |imm| try std.fmt.bufPrint(buf, "${x:0>4}", .{imm}),
         };
     }

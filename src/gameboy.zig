@@ -667,7 +667,7 @@ pub const Gb = struct {
     w: u8,
     z: u8,
     prefix_op: PrefixOp,
-    enable_interrupts_next_cycle: bool,
+    cycles_until_ei: u2,
 
     // For instructions that evaluate a condition,
     // this is set to true if the condition evaluated to true.
@@ -750,7 +750,7 @@ pub const Gb = struct {
             .w = 0,
             .z = 0,
             .prefix_op = undefined,
-            .enable_interrupts_next_cycle = false,
+            .cycles_until_ei = 0,
             .branchCond = false,
             .ime = false,
             .execState = .running,
@@ -886,6 +886,9 @@ pub const Gb = struct {
             0x0000...0x7fff => gb.cart.writeRom(addr, val),
             // VRAM
             0x8000...0x9fff => {
+                if (val == 0x7f) {
+                    gb.panic("${x:0>2} -> ${x:0>4}\n", .{ addr, val });
+                }
                 if (!gb.isVramInUse() or gb.debug.isPaused()) {
                     gb.vram[addr - 0x8000] = val;
                 } else {
@@ -970,6 +973,9 @@ pub const Gb = struct {
     pub fn panic(gb: *Gb, comptime msg: []const u8, args: anytype) noreturn {
         std.debug.print("\n", .{});
         gb.debug.printExecutionTrace(std.io.getStdOut().writer(), Debug.MAX_TRACE_LENGTH) catch unreachable;
+        std.debug.print("\n", .{});
+        gb.printDebugState(std.io.getStdOut().writer()) catch unreachable;
+        std.debug.print("\n", .{});
         std.debug.panic(msg, args);
     }
 

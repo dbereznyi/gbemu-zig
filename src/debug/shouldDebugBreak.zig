@@ -7,6 +7,22 @@ const Interrupt = @import("../gameboy.zig").Interrupt;
 const DEBUGGING_ENABLED = true;
 
 pub fn shouldDebugBreak(gb: *Gb) bool {
+    if (!DEBUGGING_ENABLED) {
+        return false;
+    }
+    if (!gb.isRunning()) {
+        return false;
+    }
+
+    // Note: with stepAccurate(), skipCurrentInstruction should be ignored.
+    if (false and gb.debug.skipCurrentInstruction) {
+        gb.debug.skipCurrentInstruction = false;
+        return false;
+    }
+    if (gb.debug.stepModeEnabled) {
+        return true;
+    }
+
     var breakpointHit = false;
     for (gb.debug.breakpoints.items) |breakpoint| {
         const addr = breakpoint.addr;
@@ -15,21 +31,6 @@ pub fn shouldDebugBreak(gb: *Gb) bool {
             breakpointHit = true;
             break;
         }
-    }
-
-    if (!DEBUGGING_ENABLED) {
-        return false;
-    }
-    if (!gb.isRunning()) {
-        return false;
-    }
-    // Note: with stepAccurate(), skipCurrentInstruction should be ignored.
-    if (false and gb.debug.skipCurrentInstruction) {
-        gb.debug.skipCurrentInstruction = false;
-        return false;
-    }
-    if (gb.debug.stepModeEnabled) {
-        return true;
     }
     if (breakpointHit) {
         return true;

@@ -107,9 +107,10 @@ pub fn main() !void {
 
     _ = c.SDL_UpdateTexture(texture, null, @ptrCast(gb.screen), 160 * 3);
 
-    if (false) {
-        try gb.debug.breakpoints.append(.{ .bank = 0, .addr = 0x0100 });
-        //gb.debug.stackBase = 0xdfff;
+    if (true) {
+        //try gb.debug.breakpoints.append(.{ .bank = 0, .addr = 0x0150 });
+        //try gb.debug.breakpoints.append(.{ .bank = 0, .addr = 0x0181 });
+        gb.debug.stackBase = 0xdfff;
     }
 
     var frames: usize = 0;
@@ -175,7 +176,7 @@ pub fn main() !void {
 
         if (false and frames % 15 == 0) {
             std.debug.print("actual **** frameTime: {} ns = {} micros = {} ms\n", .{ gb.debug.frameTimeNs, gb.debug.frameTimeNs / 1000, gb.debug.frameTimeNs / 1000 / 1000 });
-            const expected: u64 = (FRAME_CYCLES) * 1000;
+            const expected: u64 = FRAME_CYCLES * 1000;
             std.debug.print("expected ** frameTime: {} ns = {} micros = {} ms\n", .{ expected, expected / 1000, expected / 1000 / 1000 });
         }
 
@@ -220,10 +221,10 @@ fn simulateAccurate(cycles: usize, gb: *Gb) !void {
         if (gb.debug.isPaused()) {
             return;
         }
-        if (gb.enable_interrupts_next_cycle) {
-            gb.enable_interrupts_next_cycle = false;
+        if (gb.cycles_until_ei == 1) {
             gb.ime = true;
         }
+        gb.cycles_until_ei -|= 1;
 
         stepCpuAccurate(gb);
         stepJoypad(gb);

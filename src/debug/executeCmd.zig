@@ -12,7 +12,7 @@ const HELP_MESSAGE =
     "  execution\n" ++
     "    (p)ause execution, allowing for debugging\n" ++
     "    (t)race execution, following jumps and function calls\n" ++
-    "    (c)ontinue execution\n" ++
+    "    (r)esume execution\n" ++
     "  breakpoints\n" ++
     "    (b)reakpoint (l)ist\n" ++
     "    (b)reakpoint (s)et <value of PC to break on (hex)> <optional: ROM bank>\n" ++
@@ -54,6 +54,7 @@ pub fn executeCmd(cmd: DebugCmd, gb: *Gb) !void {
         .trace => {
             if (gb.debug.isPaused()) {
                 gb.debug.skipCurrentInstruction = true;
+                gb.debug.stepModeEnabled = true;
                 gb.debug.setPaused(false);
             }
         },

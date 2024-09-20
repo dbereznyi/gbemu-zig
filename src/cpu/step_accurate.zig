@@ -1239,14 +1239,14 @@ fn stepPrefix(gb: *Gb) void {
 }
 
 fn stepDi(gb: *Gb) void {
-    gb.enable_interrupts_next_cycle = false;
+    gb.cycles_until_ei = 0;
     gb.ime = false;
 
     fetchOpcode(gb, .normal);
 }
 
 fn stepEi(gb: *Gb) void {
-    gb.enable_interrupts_next_cycle = true;
+    gb.cycles_until_ei = 2;
 
     fetchOpcode(gb, .normal);
 }
