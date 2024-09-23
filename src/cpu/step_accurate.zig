@@ -598,22 +598,24 @@ fn stepIncDec16(gb: *Gb, comptime dst: Dst16, comptime mode: IncDec) void {
 fn stepAddHLReg16(gb: *Gb, comptime src: Src16) void {
     switch (gb.current_instr_cycle) {
         0 => {
+            var zero_dummy: bool = undefined;
             AluOp.execute(
                 .add,
                 &gb.l,
                 src.readLower(gb),
-                &gb.zero,
+                &zero_dummy,
                 &gb.negative,
                 &gb.halfCarry,
                 &gb.carry,
             );
         },
         else => {
+            var zero_dummy: bool = undefined;
             AluOp.execute(
                 .adc,
                 &gb.h,
                 src.readUpper(gb),
-                &gb.zero,
+                &zero_dummy,
                 &gb.negative,
                 &gb.halfCarry,
                 &gb.carry,
@@ -1258,6 +1260,7 @@ fn stepAddSPe8(gb: *Gb) void {
             gb.pc +%= 1;
         },
         1 => {
+            gb.w = gb.z; // storing copy of z to use on next cycle
             AluOp.execute(
                 .add,
                 &gb.z,
@@ -1267,12 +1270,25 @@ fn stepAddSPe8(gb: *Gb) void {
                 &gb.halfCarry,
                 &gb.carry,
             );
+            gb.zero = false;
+            gb.negative = false;
         },
         2 => {
-            const sp_msb: u8 = @truncate(gb.sp >> 8);
-            const adj: u8 = if (gb.z & 0b1000_0000 > 0) 0xff else 0x00;
-            const carry: u8 = if (gb.carry) 1 else 0;
-            gb.w = sp_msb +% adj +% carry;
+            const adj: u8 = if (gb.w & 0b1000_0000 > 1) 0xff else 0x00;
+            gb.w = @truncate(gb.sp >> 8);
+            var half_carry_dummy: bool = undefined;
+            var carry_dummy: bool = gb.carry;
+            AluOp.execute(
+                .adc,
+                &gb.w,
+                adj,
+                &gb.zero,
+                &gb.negative,
+                &half_carry_dummy,
+                &carry_dummy,
+            );
+            gb.zero = false;
+            gb.negative = false;
         },
         else => {
             gb.sp = as16(gb.w, gb.z);
@@ -1301,12 +1317,25 @@ fn stepLdHLSPe8(gb: *Gb) void {
                 &gb.halfCarry,
                 &gb.carry,
             );
+            gb.zero = false;
+            gb.negative = false;
         },
         else => {
-            const sp_msb: u8 = @truncate(gb.sp >> 8);
-            const adj: u8 = if (gb.z & 0b1000_0000 > 0) 0xff else 0x00;
-            const carry: u8 = if (gb.carry) 1 else 0;
-            gb.h = sp_msb +% adj +% carry;
+            const adj: u8 = if (gb.z & 0b1000_0000 > 1) 0xff else 0x00;
+            gb.h = @truncate(gb.sp >> 8);
+            var half_carry_dummy: bool = undefined;
+            var carry_dummy: bool = gb.carry;
+            AluOp.execute(
+                .adc,
+                &gb.h,
+                adj,
+                &gb.zero,
+                &gb.negative,
+                &half_carry_dummy,
+                &carry_dummy,
+            );
+            gb.zero = false;
+            gb.negative = false;
 
             fetchOpcode(gb, .normal);
             return;

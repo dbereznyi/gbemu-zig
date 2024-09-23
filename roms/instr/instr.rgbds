@@ -1,0 +1,160 @@
+INCLUDE "hardware.inc"
+
+SECTION "Header", ROM0[$100]
+
+	jp EntryPoint
+
+	ds $150 - @, 0 ; Make room for the header
+
+EntryPoint:
+	; Shut down audio circuitry
+	ld a, 0
+	ld [rNR52], a
+
+    ld sp, $dfff
+
+    ;jp TestCp
+    ;jp TestAdcSbc
+    jp TestAddSPe8
+Done:
+	jp Done
+
+TestCp:
+    ld de, Values ; dst
+    ld a, Values.End - Values
+    ldh [hLoopCounterOuter], a
+.outer:
+    ld hl, Values ; src
+    ld a, Values.End - Values
+    ldh [hLoopCounterInner], a
+.inner:
+    ld a, [hli]
+    ld b, a
+    ld a, [de]
+    
+    ; since cp only modifies flags, just push the contents of f onto the stack
+    cp b
+    pop bc
+    ld a, c
+    ld c, b
+    ld b, a
+    push bc
+    inc sp
+
+    ldh a, [hLoopCounterInner]
+    dec a
+    ldh [hLoopCounterInner], a
+    jp nz, .inner
+
+    inc de
+    ldh a, [hLoopCounterOuter]
+    dec a
+    ldh [hLoopCounterOuter], a
+    jp nz, .outer
+
+    jp Done
+
+TestAdcSbc:
+    ld de, Values ; dst
+    ld a, Values.End - Values
+    ldh [hLoopCounterOuter], a
+.outer:
+    ld hl, Values ; src
+    ld a, Values.End - Values
+    ldh [hLoopCounterInner], a
+.inner:
+    ld a, [hli]
+    ld b, a
+    ld a, [de]
+    
+    scf
+    ccf
+    ;adc b
+    sbc b
+    push af
+    scf
+    ld a, [de]
+    ;adc b
+    sbc b
+    push af
+
+    ldh a, [hLoopCounterInner]
+    dec a
+    ldh [hLoopCounterInner], a
+    jp nz, .inner
+
+    inc de
+    ldh a, [hLoopCounterOuter]
+    dec a
+    ldh [hLoopCounterOuter], a
+    jp nz, .outer
+    
+    jp Done
+
+TestAddSPe8:
+    ld de, Values16
+    ld a, (Values16.End - Values16) / 2
+    ldh [hLoopCounterOuter], a
+.loop:
+    ld a, [de]
+    inc de
+    ld l, a
+    ld a, [de]
+    inc de
+    ld h, a
+
+    ; save stack pointer
+    ld [hStackPointerBackupLow], sp
+    
+    ld sp, hl
+    add sp, 1
+    ld [hStackPointerLow], sp
+
+    ; restore stack pointer
+    ld a, [hStackPointerBackupHigh]
+    ld h, a
+    ld a, [hStackPointerBackupLow]
+    ld l, a
+    ld sp, hl
+
+    ; push flags 
+    push af
+    pop bc
+    ld a, c
+    ld c, b
+    ld b, a
+    push bc
+    inc sp
+
+    ; push SP (intentionally using big-endian for convenience)
+    ld a, [hStackPointerLow]
+    ld b, a
+    ld a, [hStackPointerHigh]
+    ld c, a
+    push bc
+
+    ldh a, [hLoopCounterOuter]
+    dec a
+    ldh [hLoopCounterOuter], a
+    jp nz, .loop
+    
+    jp Done
+    
+
+Values:
+    db $00,$01,$0F,$10,$1F,$7F,$80,$F0,$FF
+.End:
+
+Values16:
+    dw $0000,$0001,$000F,$0010,$001F,$007F,$0080,$00FF
+    dw $0100,$0F00,$1F00,$1000,$7FFF,$8000,$FFFF
+.End:
+
+SECTION "HRAM", HRAM
+
+hLoopCounterOuter:: db
+hLoopCounterInner:: db
+hStackPointerLow:: db
+hStackPointerHigh:: db
+hStackPointerBackupLow:: db
+hStackPointerBackupHigh:: db

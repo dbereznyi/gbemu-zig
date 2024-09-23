@@ -20,6 +20,7 @@ const HELP_MESSAGE =
     "    (b)reakpoint (c)lear all\n" ++
     "  viewing internal state/regions of memory\n" ++
     "    (v)iew (r)egisters\n" ++
+    "    (v)iew (m)emory <address (hex)> <optional: number of bytes (default 1)>\n" ++
     "    (v)iew (s)tack\n" ++
     "    (v)iew (p)pu\n" ++
     "    (v)iew (o)am\n" ++
