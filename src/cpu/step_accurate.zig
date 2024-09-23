@@ -21,13 +21,11 @@ pub fn stepCpuAccurate(gb: *Gb) void {
         .running => stepCurrentInstr(gb),
         .halted => {
             if (gb.anyInterruptsPending()) {
-                //std.debug.print("waking up from HALT mode\n", .{});
                 gb.ir = 0; // NOP
                 gb.execState = .running;
             }
         },
         .handling_interrupt => {
-            //std.debug.print("isr stage {}\n", .{gb.current_instr_cycle});
             switch (gb.current_instr_cycle) {
                 0 => gb.pc -%= 1,
                 1 => gb.sp -%= 1,
@@ -272,6 +270,7 @@ fn fetchOpcode(gb: *Gb, comptime mode: FetchMode) void {
 
     if (gb.ime and gb.anyInterruptsPending()) {
         gb.pc -%= 1;
+        gb.current_instr_cycle = 1;
         gb.execState = .handling_interrupt;
     }
 }

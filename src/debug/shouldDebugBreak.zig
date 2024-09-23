@@ -23,6 +23,10 @@ pub fn shouldDebugBreak(gb: *Gb) bool {
         return true;
     }
 
+    if (gb.ir == 0x40) { // software breakpoint ("ld b, b")
+        return true;
+    }
+
     var breakpointHit = false;
     for (gb.debug.breakpoints.items) |breakpoint| {
         const addr = breakpoint.addr;

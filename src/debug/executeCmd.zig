@@ -28,6 +28,7 @@ const HELP_MESSAGE =
     "    (v)iew (j)oypad\n" ++
     "    (v)iew (t)imer\n" ++
     "    (v)iew (c)artridge\n" ++
+    "    (v)iew (e)xecution trace\n" ++
     "  simulating joypad button presses/releases\n" ++
     "    (j)oypad (p)ress <button to press: a,b,st,se,u,l,r,d>\n" ++
     "    (j)oypad (r)elease <button to release: a,b,st,se,u,l,r,d>\n" ++

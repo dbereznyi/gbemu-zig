@@ -209,7 +209,12 @@ pub const Src16 = union(Src16Tag) {
             Src16.DE => try std.fmt.bufPrint(buf, "de", .{}),
             Src16.HL => try std.fmt.bufPrint(buf, "hl", .{}),
             Src16.SP => try std.fmt.bufPrint(buf, "sp", .{}),
-            Src16.SPOffset => |offset| try std.fmt.bufPrint(buf, "sp + {}", .{offset}),
+            Src16.SPOffset => |offset| blk: {
+                const positive = offset & 0b1000_0000 == 0;
+                const operator = if (positive) "+" else "-";
+                const value = if (positive) offset else @as(u7, @truncate(~offset + 1));
+                break :blk try std.fmt.bufPrint(buf, "sp {s} {}", .{ operator, value });
+            },
             Src16.Imm => |imm| try std.fmt.bufPrint(buf, "${x:0>4}", .{imm}),
         };
     }
