@@ -31,7 +31,7 @@ pub fn runDebugger(gb: *Gb) !void {
         gb.debug.lastCommand = cmd;
         gb.debug.sendCommand(cmd);
         gb.debug.pendingResultSem.wait();
-        const result = gb.debug.pendingResult orelse continue;
-        std.debug.print("{s}\n", .{result});
+        std.debug.print("{s}\n", .{gb.debug.pendingResult.items});
+        gb.debug.pendingResult.shrinkRetainingCapacity(0);
     }
 }

@@ -149,8 +149,7 @@ pub const Debug = struct {
 
     lastCommand: ?DebugCmd,
     pendingCommand: ?DebugCmd,
-    pendingResultBuf: []u8,
-    pendingResult: ?[]u8,
+    pendingResult: std.ArrayList(u8),
     pendingResultSem: std.Thread.Semaphore,
 
     stdOutMutex: std.Thread.Mutex,
@@ -158,7 +157,11 @@ pub const Debug = struct {
     pub fn init(alloc: std.mem.Allocator) !Debug {
         const breakpoints = try std.ArrayList(Breakpoint).initCapacity(alloc, 128);
         const executionTrace = BoundedStack(TraceLine, MAX_TRACE_LENGTH).init();
-        const pendingResultBuf = try alloc.alloc(u8, 8 * 1024);
+        // TODO Should probably use an allocator that actually frees, just in case
+        // a ton of memory gets allocated from printing a debug command's result.
+        // (Also may be a good idea to set an upper bound on how much text can be
+        // printed?)
+        const pendingResult = try std.ArrayList(u8).initCapacity(alloc, 8 * 1024);
 
         return Debug{
             .paused = std.atomic.Value(bool).init(false),
@@ -172,8 +175,7 @@ pub const Debug = struct {
 
             .lastCommand = null,
             .pendingCommand = null,
-            .pendingResultBuf = pendingResultBuf,
-            .pendingResult = null,
+            .pendingResult = pendingResult,
             .pendingResultSem = std.Thread.Semaphore{},
 
             .stdOutMutex = std.Thread.Mutex{},
@@ -182,6 +184,7 @@ pub const Debug = struct {
 
     pub fn deinit(debug: *const Debug) void {
         debug.breakpoints.deinit();
+        debug.pendingResult.deinit();
     }
 
     pub fn isPaused(debug: *Debug) bool {
@@ -783,7 +786,6 @@ pub const Gb = struct {
         alloc.free(gb.hram);
         alloc.free(gb.screen);
         gb.debug.breakpoints.deinit();
-        alloc.free(gb.debug.pendingResultBuf);
         gb.cart.deinit(alloc);
     }
 

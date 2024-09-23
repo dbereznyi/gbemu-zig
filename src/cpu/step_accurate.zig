@@ -1087,49 +1087,20 @@ fn stepRra(gb: *Gb) void {
 }
 
 fn stepDaa(gb: *Gb) void {
-    const a_low = gb.a & 0b0000_1111;
-    const a_high = (gb.a & 0b1111_0000) >> 4;
-
     if (gb.negative) {
         if (gb.carry) {
-            if (gb.halfCarry) {
-                gb.a +%= 0x9a;
-                gb.carry = true;
-            } else {
-                gb.a +%= 0xa0;
-                gb.carry = true;
-            }
-        } else {
-            if (gb.halfCarry) {
-                gb.a +%= 0xfa;
-                gb.carry = false;
-            } else {
-                gb.a +%= 0x00;
-                gb.carry = false;
-            }
+            gb.a -%= 0x60;
+        }
+        if (gb.halfCarry) {
+            gb.a -%= 0x06;
         }
     } else {
-        if (gb.carry) {
-            if (gb.halfCarry) {
-                gb.a +%= 0x66;
-                gb.carry = true;
-            } else {
-                gb.a +%= if (a_low < 0xa) 0x60 else 0x66;
-                gb.carry = true;
-            }
-        } else {
-            if (gb.halfCarry) {
-                gb.a +%= if (a_high < 0xa) 0x06 else 0x66;
-                gb.carry = if (a_high < 0xa) false else true;
-            } else {
-                if (a_high < 0xa) {
-                    gb.a +%= if (a_low < 0xa) 0x00 else 0x06;
-                    gb.carry = false;
-                } else {
-                    gb.a +%= if (a_low < 0xa) 0x60 else 0x66;
-                    gb.carry = true;
-                }
-            }
+        if (gb.carry or gb.a > 0x99) {
+            gb.a +%= 0x60;
+            gb.carry = true;
+        }
+        if (gb.halfCarry or (gb.a & 0x0f) > 0x09) {
+            gb.a +%= 0x06;
         }
     }
 

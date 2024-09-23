@@ -38,8 +38,7 @@ const HELP_MESSAGE =
     "    bs 1234\n";
 
 pub fn executeCmd(cmd: DebugCmd, gb: *Gb) !void {
-    var fbs = std.io.fixedBufferStream(gb.debug.pendingResultBuf);
-    const writer = fbs.writer();
+    const writer = gb.debug.pendingResult.writer();
 
     switch (cmd) {
         .quit => {
@@ -96,15 +95,28 @@ pub fn executeCmd(cmd: DebugCmd, gb: *Gb) !void {
         },
         .viewRegisters => try gb.printDebugState(writer),
         .viewMemory => |args| {
-            for (args.start..args.end) |addr| {
-                try format(writer, "{x:0>4}: {x:0>2}\n", .{ addr, gb.read(@truncate(addr)) });
+            for (args.start..args.end, 0..) |addr, i| {
+                if (i > 0 and i % 16 == 0) {
+                    try format(writer, "\n", .{});
+                }
+                if (i % 16 == 0) {
+                    try format(writer, "{x:0>4}: ", .{addr});
+                }
+                try format(writer, "{x:0>2} ", .{gb.read(@truncate(addr))});
             }
         },
-        .viewStack => {
-            var addr = gb.sp;
-            while (addr < gb.debug.stackBase) {
-                try format(writer, "  ${x:0>4}: ${x:0>2}\n", .{ addr, gb.read(addr) });
-                addr += 1;
+        .viewStack => blk: {
+            if (gb.sp >= gb.debug.stackBase) {
+                break :blk;
+            }
+            for (gb.sp..gb.debug.stackBase, 0..) |addr, i| {
+                if (i > 0 and i % 16 == 0) {
+                    try format(writer, "\n", .{});
+                }
+                if (i % 16 == 0) {
+                    try format(writer, "{x:0>4}: ", .{addr});
+                }
+                try format(writer, "{x:0>2} ", .{gb.read(@truncate(addr))});
             }
         },
         .viewPpu => try gb.ppu.printState(writer),
@@ -126,6 +138,4 @@ pub fn executeCmd(cmd: DebugCmd, gb: *Gb) !void {
         .joypadPress => |button| gb.joypad.pressButton(button),
         .joypadRelease => |button| gb.joypad.releaseButton(button),
     }
-
-    gb.debug.pendingResult = fbs.getWritten();
 }

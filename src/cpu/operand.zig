@@ -64,7 +64,7 @@ pub const Dst16 = union(Dst16Tag) {
 
     pub fn read(dst: Dst16, gb: *Gb) u16 {
         return switch (dst) {
-            .AF => util.as16(gb.a, Gb.readFlags(gb)),
+            .AF => util.as16(gb.a, gb.readFlags()),
             .BC => util.as16(gb.b, gb.c),
             .DE => util.as16(gb.d, gb.e),
             .HL => util.as16(gb.h, gb.l),
@@ -79,23 +79,23 @@ pub const Dst16 = union(Dst16Tag) {
 
         switch (dst) {
             .AF => {
-                gb.*.a = valHigh;
-                Gb.writeFlags(gb, valLow);
+                gb.a = valHigh;
+                gb.writeFlags(valLow);
             },
             .BC => {
-                gb.*.b = valHigh;
-                gb.*.c = valLow;
+                gb.b = valHigh;
+                gb.c = valLow;
             },
             .DE => {
-                gb.*.d = valHigh;
-                gb.*.e = valLow;
+                gb.d = valHigh;
+                gb.e = valLow;
             },
             .HL => {
-                gb.*.h = valHigh;
-                gb.*.l = valLow;
+                gb.h = valHigh;
+                gb.l = valLow;
             },
             .SP => {
-                gb.*.sp = val;
+                gb.sp = val;
             },
             .Ind => |ind| {
                 gb.write(ind, valLow);

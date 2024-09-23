@@ -15,7 +15,8 @@ EntryPoint:
 
     ;jp TestCp
     ;jp TestAdcSbc
-    jp TestAddSPe8
+    ;jp TestAddSPe8
+    jp TestDAA
 Done:
 	jp Done
 
@@ -137,6 +138,27 @@ TestAddSPe8:
     dec a
     ldh [hLoopCounterOuter], a
     jp nz, .loop
+    
+    jp Done
+
+TestDAA:
+    ld b, $ff
+.outer:
+    ld c, 7
+.inner:
+    ld e, c
+    swap e
+
+    push de
+    pop af
+    ld a, b
+    daa
+    push af
+
+    dec c
+    jr nz, .inner
+    dec b
+    jr nz, .outer
     
     jp Done
     
