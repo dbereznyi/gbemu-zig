@@ -4,10 +4,11 @@ const Ppu = @import("../gameboy.zig").Ppu;
 const IoReg = @import("../gameboy.zig").IoReg;
 const Interrupt = @import("../gameboy.zig").Interrupt;
 
-const DEBUGGING_ENABLED = true;
+const ENABLE_DEBUGGING = true;
+const ENABLE_SOFTWARE_BREAKPOINTS = false;
 
 pub fn shouldDebugBreak(gb: *Gb) bool {
-    if (!DEBUGGING_ENABLED) {
+    if (!ENABLE_DEBUGGING) {
         return false;
     }
     if (!gb.isRunning()) {
@@ -23,7 +24,7 @@ pub fn shouldDebugBreak(gb: *Gb) bool {
         return true;
     }
 
-    if (gb.ir == 0x40) { // software breakpoint ("ld b, b")
+    if (ENABLE_SOFTWARE_BREAKPOINTS and gb.ir == 0x40) { // software breakpoint ("ld b, b")
         return true;
     }
 

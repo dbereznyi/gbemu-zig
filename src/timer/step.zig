@@ -1,7 +1,7 @@
-const Gb = @import("gameboy.zig").Gb;
-const Interrupt = @import("gameboy.zig").Interrupt;
-const IoReg = @import("gameboy.zig").IoReg;
-const TacFlag = @import("gameboy.zig").TacFlag;
+const Gb = @import("../gameboy.zig").Gb;
+const Interrupt = @import("../gameboy.zig").Interrupt;
+const IoReg = @import("../gameboy.zig").IoReg;
+const TacFlag = @import("../gameboy.zig").TacFlag;
 
 pub fn stepTimer(gb: *Gb) void {
     const div = gb.read(IoReg.DIV);

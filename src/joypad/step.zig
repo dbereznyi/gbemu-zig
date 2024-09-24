@@ -1,8 +1,8 @@
 const std = @import("std");
-const Gb = @import("gameboy.zig").Gb;
-const IoReg = @import("gameboy.zig").IoReg;
-const Interrupt = @import("gameboy.zig").Interrupt;
-const JoypFlag = @import("gameboy.zig").JoypFlag;
+const Gb = @import("../gameboy.zig").Gb;
+const IoReg = @import("../gameboy.zig").IoReg;
+const Interrupt = @import("../gameboy.zig").Interrupt;
+const JoypFlag = @import("joypad.zig").Joypad.JoypFlag;
 
 pub fn stepJoypad(gb: *Gb) void {
     const joyp = gb.read(IoReg.JOYP);

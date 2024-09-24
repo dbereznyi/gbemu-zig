@@ -4,18 +4,18 @@ const c = @cImport({
 const std = @import("std");
 const Pixel = @import("pixel.zig").Pixel;
 const Gb = @import("gameboy.zig").Gb;
-const Button = @import("gameboy.zig").Button;
-const Palette = @import("gameboy.zig").Ppu.Palette;
+const Button = @import("joypad/joypad.zig").Joypad.Button;
+const Palette = @import("ppu/ppu.zig").Ppu.Palette;
 const stepCpu = @import("cpu/step.zig").stepCpu;
 const stepCpuAccurate = @import("cpu/step_accurate.zig").stepCpuAccurate;
-const stepPpu = @import("ppu.zig").stepPpu;
-const stepDma = @import("dma.zig").stepDma;
-const stepJoypad = @import("joypad.zig").stepJoypad;
-const stepTimer = @import("timer.zig").stepTimer;
+const stepPpu = @import("ppu/step.zig").stepPpu;
+const stepDma = @import("dma/step.zig").stepDma;
+const stepJoypad = @import("joypad/step.zig").stepJoypad;
+const stepTimer = @import("timer/step.zig").stepTimer;
 const shouldDebugBreak = @import("debug/shouldDebugBreak.zig").shouldDebugBreak;
 const runDebugger = @import("debug/runDebugger.zig").runDebugger;
 const executeDebugCmd = @import("debug/executeCmd.zig").executeCmd;
-const renderVramViewer = @import("ppu.zig").renderVramViewer;
+const renderVramViewer = @import("ppu/step.zig").renderVramViewer;
 
 const SCALE = 3;
 
@@ -107,7 +107,7 @@ pub fn main() !void {
 
     _ = c.SDL_UpdateTexture(texture, null, @ptrCast(gb.screen), 160 * 3);
 
-    if (true) {
+    if (false) {
         try gb.debug.breakpoints.append(.{ .bank = 0, .addr = 0x0150 });
         //try gb.debug.breakpoints.append(.{ .bank = 0, .addr = 0x0181 });
         gb.debug.stackBase = 0xdfff;

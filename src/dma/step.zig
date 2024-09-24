@@ -1,5 +1,5 @@
-const Gb = @import("gameboy.zig").Gb;
-const IoReg = @import("gameboy.zig").IoReg;
+const Gb = @import("../gameboy.zig").Gb;
+const IoReg = @import("../gameboy.zig").IoReg;
 
 pub fn stepDma(gb: *Gb) void {
     switch (gb.dma.mode) {

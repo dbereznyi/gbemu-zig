@@ -1,6 +1,6 @@
 const std = @import("std");
-const Breakpoint = @import("../gameboy.zig").Debug.Breakpoint;
-const Button = @import("../gameboy.zig").Button;
+const Breakpoint = @import("debug.zig").Debug.Breakpoint;
+const Button = @import("../joypad/joypad.zig").Joypad.Button;
 
 const DebugCmdTag = enum {
     quit,

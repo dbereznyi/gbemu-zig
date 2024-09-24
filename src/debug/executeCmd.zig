@@ -2,7 +2,7 @@ const std = @import("std");
 const Gb = @import("../gameboy.zig").Gb;
 const DebugCmd = @import("cmd.zig").DebugCmd;
 const format = std.fmt.format;
-const MAX_TRACE_LENGTH = @import("../gameboy.zig").Debug.MAX_TRACE_LENGTH;
+const MAX_TRACE_LENGTH = @import("debug.zig").Debug.MAX_TRACE_LENGTH;
 
 const HELP_MESSAGE =
     "available commands:\n" ++

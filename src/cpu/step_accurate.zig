@@ -284,7 +284,8 @@ fn stepHalt(gb: *Gb) void {
 }
 
 fn stepStop(gb: *Gb) void {
-    gb.panic("TODO: implement STOP instruction\n", .{});
+    //gb.panic("TODO: implement STOP instruction\n", .{});
+    fetchOpcode(gb, .normal);
 }
 
 fn stepLdAInd(gb: *Gb, comptime src: Src8) void {
