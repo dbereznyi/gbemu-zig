@@ -1,6 +1,6 @@
 const std = @import("std");
+const util = @import("../../util.zig");
 const Gb = @import("../gameboy.zig").Gb;
-const util = @import("../util.zig");
 
 pub const Cond = enum {
     NZ,

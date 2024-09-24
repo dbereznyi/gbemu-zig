@@ -1,5 +1,5 @@
 const std = @import("std");
-const Pixel = @import("../pixel.zig").Pixel;
+const Pixel = @import("../../pixel.zig").Pixel;
 const format = std.fmt.format;
 
 pub const Ppu = struct {

@@ -1,7 +1,7 @@
 const std = @import("std");
 const expect = std.testing.expect;
-const as16 = @import("../util.zig").as16;
-const incAs16 = @import("../util.zig").incAs16;
+const as16 = @import("../../util.zig").as16;
+const incAs16 = @import("../../util.zig").incAs16;
 const Gb = @import("../gameboy.zig").Gb;
 const Interrupt = @import("../gameboy.zig").Interrupt;
 const Cond = @import("operand.zig").Cond;
@@ -16,13 +16,13 @@ const runDebugger = @import("../debug/runDebugger.zig").runDebugger;
 const executeDebugCmd = @import("../debug/executeCmd.zig").executeCmd;
 const decodeInstrAt = @import("decode.zig").decodeInstrAt;
 
-pub fn stepCpuAccurate(gb: *Gb) void {
-    switch (gb.execState) {
+pub fn stepCpu(gb: *Gb) void {
+    switch (gb.state) {
         .running => stepCurrentInstr(gb),
         .halted => {
             if (gb.anyInterruptsPending()) {
                 gb.ir = 0; // NOP
-                gb.execState = .running;
+                gb.state = .running;
             }
         },
         .handling_interrupt => {
@@ -56,7 +56,7 @@ pub fn stepCpuAccurate(gb: *Gb) void {
                     gb.ime = false;
                 },
                 else => {
-                    gb.execState = .running;
+                    gb.state = .running;
                     fetchOpcode(gb, .normal);
                     return;
                 },
@@ -271,13 +271,13 @@ fn fetchOpcode(gb: *Gb, comptime mode: FetchMode) void {
     if (gb.ime and gb.anyInterruptsPending()) {
         gb.pc -%= 1;
         gb.current_instr_cycle = 1;
-        gb.execState = .handling_interrupt;
+        gb.state = .handling_interrupt;
     }
 }
 
 fn stepHalt(gb: *Gb) void {
     if (gb.ime or (!gb.ime and !gb.anyInterruptsPending())) {
-        gb.execState = .halted;
+        gb.state = .halted;
     }
 
     fetchOpcode(gb, .halt);

@@ -1,4 +1,5 @@
 const std = @import("std");
+const as16 = @import("../../util.zig").as16;
 const Gb = @import("../gameboy.zig").Gb;
 const Instr = @import("instruction.zig").Instr;
 const Condition = @import("operand.zig").Condition;
@@ -6,21 +7,11 @@ const Src8 = @import("operand.zig").Src8;
 const Dst8 = @import("operand.zig").Dst8;
 const Src16 = @import("operand.zig").Src16;
 const Dst16 = @import("operand.zig").Dst16;
-const as16 = @import("../util.zig").as16;
 
 pub fn decodeInstrAt(pc: u16, gb: *Gb) Instr {
     const opcode = gb.read(pc);
 
-    const opcodeReg: Src8 = switch (@as(u3, @truncate(opcode & 0b0000_0111))) {
-        0 => Src8.B,
-        1 => Src8.C,
-        2 => Src8.D,
-        3 => Src8.E,
-        4 => Src8.H,
-        5 => Src8.L,
-        6 => Src8.IndHL,
-        7 => Src8.A,
-    };
+    const opcodeReg = Src8.decode(@truncate(opcode));
 
     return switch (opcode) {
         0x00 => .NOP,

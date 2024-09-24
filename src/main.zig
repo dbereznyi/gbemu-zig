@@ -3,19 +3,13 @@ const c = @cImport({
 });
 const std = @import("std");
 const Pixel = @import("pixel.zig").Pixel;
-const Gb = @import("gameboy.zig").Gb;
-const Button = @import("joypad/joypad.zig").Joypad.Button;
-const Palette = @import("ppu/ppu.zig").Ppu.Palette;
-const stepCpu = @import("cpu/step.zig").stepCpu;
-const stepCpuAccurate = @import("cpu/step_accurate.zig").stepCpuAccurate;
-const stepPpu = @import("ppu/step.zig").stepPpu;
-const stepDma = @import("dma/step.zig").stepDma;
-const stepJoypad = @import("joypad/step.zig").stepJoypad;
-const stepTimer = @import("timer/step.zig").stepTimer;
-const shouldDebugBreak = @import("debug/shouldDebugBreak.zig").shouldDebugBreak;
-const runDebugger = @import("debug/runDebugger.zig").runDebugger;
-const executeDebugCmd = @import("debug/executeCmd.zig").executeCmd;
-const renderVramViewer = @import("ppu/step.zig").renderVramViewer;
+const Gb = @import("gameboy/gameboy.zig").Gb;
+const stepGameboy = @import("gameboy/step.zig").stepGameboy;
+const Button = @import("gameboy/joypad/joypad.zig").Joypad.Button;
+const Palette = @import("gameboy/ppu/ppu.zig").Ppu.Palette;
+const runDebugger = @import("gameboy/debug/runDebugger.zig").runDebugger;
+const executeDebugCmd = @import("gameboy/debug/executeCmd.zig").executeCmd;
+const renderVramViewer = @import("gameboy/ppu/step.zig").renderVramViewer;
 
 const SCALE = 3;
 
@@ -155,13 +149,11 @@ pub fn main() !void {
         }
 
         const start = try std.time.Instant.now();
-        const lcdOnAtStartOfFrame = gb.isLcdOn();
+        const lcd_on_at_start_of_frame = gb.isLcdOn();
 
-        try handleDebugCmd(&gb);
+        try stepGameboy(&gb, FRAME_CYCLES);
 
-        try simulateAccurate(FRAME_CYCLES, &gb);
-
-        if (lcdOnAtStartOfFrame) {
+        if (lcd_on_at_start_of_frame) {
             _ = c.SDL_UpdateTexture(texture, null, @ptrCast(gb.screen), 160 * 3);
         }
         _ = c.SDL_RenderClear(renderer);
@@ -185,57 +177,4 @@ pub fn main() !void {
         std.time.sleep(FRAME_CYCLES * 1000 -| actualFrameTimeNs);
         frames +%= 1;
     }
-}
-
-fn simulate(minCycles: usize, gb: *Gb) !usize {
-    var cycles: usize = 0;
-    while (cycles < minCycles) {
-        try handleDebugCmd(gb);
-        if (shouldDebugBreak(gb)) {
-            gb.debug.stdOutMutex.lock();
-            std.debug.print("\n", .{});
-            try gb.printCurrentAndNextInstruction();
-            std.debug.print("\n> ", .{});
-            gb.debug.stdOutMutex.unlock();
-
-            gb.debug.setPaused(true);
-            gb.debug.stepModeEnabled = true;
-            return cycles;
-        }
-
-        const cpuCycles = stepCpu(gb);
-        for (0..cpuCycles) |_| {
-            stepJoypad(gb);
-            stepPpu(gb);
-            stepDma(gb);
-            stepTimer(gb);
-        }
-
-        cycles += cpuCycles;
-    }
-    return cycles -| minCycles;
-}
-
-fn simulateAccurate(cycles: usize, gb: *Gb) !void {
-    for (0..cycles) |_| {
-        if (gb.debug.isPaused()) {
-            return;
-        }
-        if (gb.cycles_until_ei == 1) {
-            gb.ime = true;
-        }
-        gb.cycles_until_ei -|= 1;
-
-        stepCpuAccurate(gb);
-        stepJoypad(gb);
-        stepPpu(gb);
-        stepDma(gb);
-        stepTimer(gb);
-    }
-}
-
-fn handleDebugCmd(gb: *Gb) !void {
-    const debugCmd = gb.debug.receiveCommand() orelse return;
-    try executeDebugCmd(debugCmd, gb);
-    gb.debug.acknowledgeCommand();
 }

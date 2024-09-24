@@ -1,6 +1,6 @@
 const std = @import("std");
-const Pixel = @import("pixel.zig").Pixel;
-const as16 = @import("util.zig").as16;
+const Pixel = @import("../pixel.zig").Pixel;
+const as16 = @import("../util.zig").as16;
 const decodeInstrAt = @import("cpu/decode.zig").decodeInstrAt;
 const format = std.fmt.format;
 const PrefixOp = @import("cpu/prefix_op.zig").PrefixOp;
@@ -106,13 +106,14 @@ pub const StatFlag = .{
 };
 
 pub const Gb = struct {
-    pub const ExecState = enum {
+    pub const State = enum {
         running,
-        handling_interrupt,
         halted,
-        haltedDiscardInterrupt,
+        handling_interrupt,
         stopped,
     };
+
+    state: State,
 
     pc: u16,
     sp: u16,
@@ -135,13 +136,7 @@ pub const Gb = struct {
     z: u8,
     prefix_op: PrefixOp,
     cycles_until_ei: u2,
-
-    // For instructions that evaluate a condition,
-    // this is set to true if the condition evaluated to true.
-    branchCond: bool,
     ime: bool,
-    execState: ExecState,
-    skipPcIncrement: bool,
 
     vram: []u8,
     wram: []u8,
@@ -149,12 +144,13 @@ pub const Gb = struct {
     ioRegs: []std.atomic.Value(u8),
     hram: []u8,
     ie: u8,
-    cart: Cart,
 
+    cart: Cart,
     ppu: Ppu,
     joypad: Joypad,
     dma: Dma,
     timer: Timer,
+    debug: Debug,
 
     screen: []Pixel,
 
@@ -163,8 +159,6 @@ pub const Gb = struct {
     inVBlank: std.atomic.Value(bool),
 
     running: std.atomic.Value(bool),
-
-    debug: Debug,
 
     pub fn init(alloc: std.mem.Allocator, rom: []const u8, palette: [4]Pixel) !Gb {
         const vram = try alloc.alloc(u8, 8 * 1024);
@@ -199,6 +193,7 @@ pub const Gb = struct {
         }
 
         return Gb{
+            .state = .running,
             .pc = 0x0100,
             .sp = 0xfffe,
             .a = 0,
@@ -218,10 +213,7 @@ pub const Gb = struct {
             .z = 0,
             .prefix_op = undefined,
             .cycles_until_ei = 0,
-            .branchCond = false,
             .ime = false,
-            .execState = .running,
-            .skipPcIncrement = false,
             .vram = vram,
             .wram = wram,
             .oam = oam,
@@ -234,11 +226,11 @@ pub const Gb = struct {
             .joypad = Joypad.init(),
             .dma = Dma.init(),
             .timer = Timer.init(),
+            .debug = try Debug.init(alloc),
             .scanningOam = false,
             .isDrawing = false,
             .inVBlank = std.atomic.Value(bool).init(false),
             .running = std.atomic.Value(bool).init(true),
-            .debug = try Debug.init(alloc),
         };
     }
 
@@ -250,6 +242,7 @@ pub const Gb = struct {
         alloc.free(gb.hram);
         alloc.free(gb.screen);
         gb.cart.deinit(alloc);
+        gb.debug.deinit();
     }
 
     pub fn isRunning(gb: *Gb) bool {

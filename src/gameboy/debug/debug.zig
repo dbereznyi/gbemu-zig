@@ -1,7 +1,7 @@
 const std = @import("std");
 const format = std.fmt.format;
 const Instr = @import("../cpu/instruction.zig").Instr;
-const BoundedStack = @import("../util.zig").BoundedStack;
+const BoundedStack = @import("../../util.zig").BoundedStack;
 const DebugCmd = @import("cmd.zig").DebugCmd;
 
 pub const Debug = struct {

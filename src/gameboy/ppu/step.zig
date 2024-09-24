@@ -1,5 +1,5 @@
 const std = @import("std");
-const Pixel = @import("../pixel.zig").Pixel;
+const Pixel = @import("../../pixel.zig").Pixel;
 const Gb = @import("../gameboy.zig").Gb;
 const IoReg = @import("../gameboy.zig").IoReg;
 const Interrupt = @import("../gameboy.zig").Interrupt;
