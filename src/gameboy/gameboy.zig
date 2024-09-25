@@ -180,7 +180,7 @@ pub const Gb = struct {
         for (ioRegs, 0..) |_, i| {
             ioRegs[i] = std.atomic.Value(u8).init(0);
         }
-        ioRegs[IoReg.JOYP - 0xff00].store(0b0011_1111, .monotonic);
+        ioRegs[IoReg.JOYP - 0xff00].store(0b1111_1111, .monotonic);
 
         const hram = try alloc.alloc(u8, 128);
         for (hram, 0..) |_, i| {

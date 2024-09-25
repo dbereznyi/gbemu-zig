@@ -24,35 +24,35 @@ pub const Joypad = struct {
     };
 
     mode: Joypad.Mode,
-    data: std.atomic.Value(u8),
+    data: u8,
     cyclesSinceLowEdgeTransition: u8,
 
     pub fn init() Joypad {
         return Joypad{
             .mode = .waitingForLowEdge,
-            .data = std.atomic.Value(u8).init(0),
+            .data = 0,
             .cyclesSinceLowEdgeTransition = 0,
         };
     }
 
     pub fn readButtons(joypad: *Joypad) u4 {
-        return @truncate(joypad.data.load(.monotonic));
+        return @truncate(joypad.data);
     }
 
     pub fn readDpad(joypad: *Joypad) u4 {
-        return @truncate((joypad.data.load(.monotonic) & 0b1111_0000) >> 4);
+        return @truncate((joypad.data & 0b1111_0000) >> 4);
     }
 
     pub fn pressButton(joypad: *Joypad, button: Button) void {
-        _ = joypad.data.fetchOr(@intFromEnum(button), .monotonic);
+        joypad.data |= @intFromEnum(button);
     }
 
     pub fn releaseButton(joypad: *Joypad, button: Button) void {
-        _ = joypad.data.fetchAnd(~@intFromEnum(button), .monotonic);
+        joypad.data &= ~@intFromEnum(button);
     }
 
     pub fn printState(joypad: *Joypad, writer: anytype) !void {
-        const data = joypad.data.load(.monotonic);
+        const data = joypad.data;
         const down: u1 = if (data & @intFromEnum(Button.down) > 0) 1 else 0;
         const up: u1 = if (data & @intFromEnum(Button.up) > 0) 1 else 0;
         const left: u1 = if (data & @intFromEnum(Button.left) > 0) 1 else 0;

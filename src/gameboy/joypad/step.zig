@@ -18,7 +18,7 @@ pub fn stepJoypad(gb: *Gb) void {
     } else {
         result = 0xf;
     }
-    gb.write(IoReg.JOYP, (joyp & 0b1111_0000) | result);
+    gb.write(IoReg.JOYP, ((joyp & 0b1111_0000) | result) | 0xc0);
 
     switch (gb.joypad.mode) {
         .waitingForLowEdge => {
