@@ -209,8 +209,13 @@ fn readObjectAttributesForLine(y: usize, objAttrsLineBuf: *[10]Ppu.ObjectAttribu
 
     var objAttrsLineLen: usize = 0;
     for (objAttrs) |obj| {
+        const large_objects = lcdc & LcdcFlag.OBJ_SIZE_LARGE > 0;
         const yLowerBound = obj.y -| 16;
-        const yUpperBound = if (lcdc & LcdcFlag.OBJ_SIZE_LARGE > 0) obj.y else obj.y -% 8;
+        const yUpperBound = if (large_objects) obj.y else obj.y -% 8;
+
+        if (!large_objects and obj.y <= 8) {
+            continue;
+        }
 
         if (y >= yLowerBound and y < yUpperBound) {
             const i = objAttrsLineLen;

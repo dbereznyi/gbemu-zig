@@ -103,8 +103,6 @@ pub fn main() !void {
     defer alloc.free(rom);
 
     const save_data: ?[]u8 = read_save_data: {
-        std.debug.print("{s}\n{s}\n", .{ args[1], save_data_filepath });
-
         const data = std.fs.cwd().readFileAlloc(alloc, save_data_filepath, 128 * 1024) catch |err| switch (err) {
             error.FileNotFound => break :read_save_data null,
             else => {
@@ -114,7 +112,7 @@ pub fn main() !void {
         };
         break :read_save_data data;
     };
-    defer if (save_data) |data| alloc.free(data) else {};
+    defer if (save_data) |data| alloc.free(data);
 
     var gb = try Gb.init(alloc, rom, save_data, Palette.green);
     defer gb.deinit(alloc);
