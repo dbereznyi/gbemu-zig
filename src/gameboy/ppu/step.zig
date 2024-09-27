@@ -38,19 +38,18 @@ pub fn stepPpu(gb: *Gb) void {
             std.debug.assert(!gb.isDrawing);
 
             if (gb.ppu.dots % LINE_DOTS == 0) {
-                gb.scanningOam = true;
-
                 const ie = gb.read(IoReg.IE);
                 const stat = gb.read(IoReg.STAT);
                 const statInterruptsEnabled = ie & Interrupt.STAT > 0;
                 const intOnMode2 = stat & StatFlag.INT_MODE_2_ENABLE > 0;
-                if (gb.ime and statInterruptsEnabled and intOnMode2) {
+                if (statInterruptsEnabled and intOnMode2) {
                     gb.requestInterrupt(Interrupt.STAT);
                 }
 
                 gb.setStatMode(StatFlag.MODE_2);
 
                 if (gb.isLcdOn()) {
+                    gb.scanningOam = true;
                     gb.ppu.objAttrsLine = readObjectAttributesForLine(
                         gb.ppu.y,
                         &gb.ppu.objAttrsLineBuf,
@@ -89,7 +88,7 @@ pub fn stepPpu(gb: *Gb) void {
                         &gb.ppu.windowY,
                         gb.ppu.wy,
                     );
-                    gb.screen[gb.ppu.y * 160 + x] = gb.ppu.palette[colorId];
+                    gb.screen[gb.ppu.y * 160 + x] = gb.ppu.palette.data()[colorId];
                 }
                 gb.ppu.x = (gb.ppu.x + 4) % 160;
 
@@ -117,7 +116,7 @@ pub fn stepPpu(gb: *Gb) void {
                 const intOnMode0 = stat & StatFlag.INT_MODE_0_ENABLE > 0;
 
                 gb.setStatMode(StatFlag.MODE_0);
-                if (gb.ime and statInterruptsEnabled and intOnMode0) {
+                if (statInterruptsEnabled and intOnMode0) {
                     gb.requestInterrupt(Interrupt.STAT);
                 }
             } else if (gb.ppu.dots % LINE_DOTS == LINE_DOTS - 4) {
@@ -132,7 +131,7 @@ pub fn stepPpu(gb: *Gb) void {
                 gb.write(IoReg.LY, @truncate(gb.ppu.y));
                 const lycIncident = gb.ppu.y == gb.read(IoReg.LYC);
                 gb.setStatLycIncident(lycIncident);
-                if (gb.ime and statInterruptsEnabled and intOnLycIncident and lycIncident) {
+                if (statInterruptsEnabled and intOnLycIncident and lycIncident) {
                     gb.requestInterrupt(Interrupt.STAT);
                 }
 
@@ -163,10 +162,10 @@ pub fn stepPpu(gb: *Gb) void {
                 const intOnMode1 = stat & StatFlag.INT_MODE_1_ENABLE > 0;
 
                 gb.setStatMode(StatFlag.MODE_1);
-                if (gb.ime and statInterruptsEnabled and intOnMode1) {
+                if (statInterruptsEnabled and intOnMode1) {
                     gb.requestInterrupt(Interrupt.STAT);
                 }
-                if (gb.ime and vblankInterruptsEnabled) {
+                if (vblankInterruptsEnabled) {
                     gb.requestInterrupt(Interrupt.VBLANK);
                 }
             }
@@ -210,7 +209,7 @@ fn readObjectAttributesForLine(y: usize, objAttrsLineBuf: *[10]Ppu.ObjectAttribu
 
     var objAttrsLineLen: usize = 0;
     for (objAttrs) |obj| {
-        const yLowerBound = obj.y -% 16;
+        const yLowerBound = obj.y -| 16;
         const yUpperBound = if (lcdc & LcdcFlag.OBJ_SIZE_LARGE > 0) obj.y else obj.y -% 8;
 
         if (y >= yLowerBound and y < yUpperBound) {
@@ -369,6 +368,6 @@ pub fn renderVramViewer(gb: *Gb, pixels: *[]Pixel) void {
         const palette_mask = @as(u8, 0b11) << @as(u3, @truncate(palette_index * 2));
         const color_id = @as(usize, @intCast((palette & palette_mask) >> @as(u3, @truncate(palette_index * 2))));
 
-        pixel.* = gb.ppu.palette[color_id];
+        pixel.* = gb.ppu.palette.data()[color_id];
     }
 }

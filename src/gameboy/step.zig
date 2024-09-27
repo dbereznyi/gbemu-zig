@@ -24,6 +24,8 @@ pub fn stepGameboy(gb: *Gb, cycles: usize) !void {
         stepPpu(gb);
         stepDma(gb);
         stepTimer(gb);
+
+        gb.cycles +%= 1;
     }
 }
 

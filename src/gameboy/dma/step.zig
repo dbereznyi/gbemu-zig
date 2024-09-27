@@ -12,11 +12,10 @@ pub fn stepDma(gb: *Gb) void {
             }
         },
         .transfer => {
-            if (gb.dma.bytesTransferred < 160) {
-                const i = gb.dma.bytesTransferred;
-                gb.write(0xfe00 + i, gb.read(gb.dma.startAddr + i));
-                gb.dma.bytesTransferred += 1;
-            } else {
+            const i = gb.dma.bytesTransferred;
+            gb.oam[i] = gb.read(gb.dma.startAddr + i);
+            gb.dma.bytesTransferred += 1;
+            if (gb.dma.bytesTransferred >= 160) {
                 gb.dma.mode = .idle;
             }
         },

@@ -26,25 +26,39 @@ pub const Ppu = struct {
         }
     };
 
-    pub const Palette = .{
-        // A greyscale palette. Seems to be used often by emulators/later consoles.
-        .GREY = [4]Pixel{
-            .{ .r = 255, .g = 255, .b = 255 },
-            .{ .r = 127, .g = 127, .b = 127 },
-            .{ .r = 63, .g = 63, .b = 63 },
-            .{ .r = 0, .g = 0, .b = 0 },
-        },
-        // A green-ish palette. Closer in feel to original DMG graphics.
-        .GREEN = [4]Pixel{
-            .{ .r = 239, .g = 255, .b = 222 },
-            .{ .r = 173, .g = 215, .b = 148 },
-            .{ .r = 82, .g = 146, .b = 115 },
-            .{ .r = 24, .g = 52, .b = 66 },
-        },
+    pub const Palette = enum {
+        /// A greyscale palette. Seems to be used often by emulators/later consoles.
+        grey,
+        /// A green-ish palette. Closer in feel to original DMG graphics.
+        green,
+
+        pub fn data(self: @This()) [4]Pixel {
+            return switch (self) {
+                .grey => [4]Pixel{
+                    .{ .r = 255, .g = 255, .b = 255 },
+                    .{ .r = 127, .g = 127, .b = 127 },
+                    .{ .r = 63, .g = 63, .b = 63 },
+                    .{ .r = 0, .g = 0, .b = 0 },
+                },
+                .green => [4]Pixel{
+                    .{ .r = 239, .g = 255, .b = 222 },
+                    .{ .r = 173, .g = 215, .b = 148 },
+                    .{ .r = 82, .g = 146, .b = 115 },
+                    .{ .r = 24, .g = 52, .b = 66 },
+                },
+            };
+        }
+
+        pub fn toStr(self: @This()) []const u8 {
+            return switch (self) {
+                .grey => "grey",
+                .green => "green",
+            };
+        }
     };
 
     dots: usize,
-    palette: [4]Pixel,
+    palette: Palette,
     y: usize,
     x: usize,
     wy: u8,
@@ -53,7 +67,7 @@ pub const Ppu = struct {
     objAttrsLineBuf: [10]Ppu.ObjectAttribute,
     objAttrsLine: []Ppu.ObjectAttribute,
 
-    pub fn init(palette: [4]Pixel) Ppu {
+    pub fn init(palette: Palette) Ppu {
         return Ppu{
             .dots = 0,
             .palette = palette,
@@ -81,5 +95,6 @@ pub const Ppu = struct {
                 .vBlank => "vBlank",
             },
         });
+        try format(writer, "Cycles until next frame: {}\n", .{(70224 - ppu.dots) / 4});
     }
 };

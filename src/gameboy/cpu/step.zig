@@ -252,7 +252,7 @@ fn fetchOpcode(gb: *Gb, comptime mode: FetchMode) void {
     if (shouldDebugBreak(gb)) {
         gb.debug.stdOutMutex.lock();
         std.debug.print("\n", .{});
-        gb.printCurrentAndNextInstruction() catch {};
+        gb.printDebugTrace() catch {};
         std.debug.print("\n> ", .{});
         gb.debug.stdOutMutex.unlock();
 
@@ -930,14 +930,11 @@ fn stepReti(gb: *Gb) void {
 fn stepRetCond(gb: *Gb, comptime cond: Cond) void {
     switch (gb.current_instr_cycle) {
         0 => {
-            if (cond.check(gb)) {
-                gb.z = gb.read(gb.sp);
-                gb.sp +%= 1;
-            }
+            // CPU checks condition on this cycle.
         },
         1 => {
             if (cond.check(gb)) {
-                gb.w = gb.read(gb.sp);
+                gb.z = gb.read(gb.sp);
                 gb.sp +%= 1;
             } else {
                 fetchOpcode(gb, .normal);
@@ -945,6 +942,10 @@ fn stepRetCond(gb: *Gb, comptime cond: Cond) void {
             }
         },
         2 => {
+            gb.w = gb.read(gb.sp);
+            gb.sp +%= 1;
+        },
+        3 => {
             gb.pc = as16(gb.w, gb.z);
         },
         else => {

@@ -93,7 +93,7 @@ pub fn main() !void {
     // ---
 
     const rom = try std.fs.cwd().readFileAlloc(alloc, romFilepath, 1024 * 1024 * 1024);
-    var gb = try Gb.init(alloc, rom, Palette.GREEN);
+    var gb = try Gb.init(alloc, rom, Palette.green);
     defer gb.deinit(alloc);
 
     const debuggerThread = try std.Thread.spawn(.{}, runDebugger, .{&gb});
@@ -115,8 +115,8 @@ pub fn main() !void {
                 c.SDL_KEYUP => switch (event.key.keysym.sym) {
                     c.SDLK_a => gb.joypad.releaseButton(Button.start),
                     c.SDLK_s => gb.joypad.releaseButton(Button.select),
-                    c.SDLK_z => gb.joypad.releaseButton(Button.a),
-                    c.SDLK_x => gb.joypad.releaseButton(Button.b),
+                    c.SDLK_x => gb.joypad.releaseButton(Button.a),
+                    c.SDLK_z => gb.joypad.releaseButton(Button.b),
                     c.SDLK_RIGHT => gb.joypad.releaseButton(Button.right),
                     c.SDLK_LEFT => gb.joypad.releaseButton(Button.left),
                     c.SDLK_UP => gb.joypad.releaseButton(Button.up),
@@ -126,8 +126,8 @@ pub fn main() !void {
                 c.SDL_KEYDOWN => switch (event.key.keysym.sym) {
                     c.SDLK_a => gb.joypad.pressButton(Button.start),
                     c.SDLK_s => gb.joypad.pressButton(Button.select),
-                    c.SDLK_z => gb.joypad.pressButton(Button.a),
-                    c.SDLK_x => gb.joypad.pressButton(Button.b),
+                    c.SDLK_x => gb.joypad.pressButton(Button.a),
+                    c.SDLK_z => gb.joypad.pressButton(Button.b),
                     c.SDLK_RIGHT => gb.joypad.pressButton(Button.right),
                     c.SDLK_LEFT => gb.joypad.pressButton(Button.left),
                     c.SDLK_UP => gb.joypad.pressButton(Button.up),
@@ -174,7 +174,19 @@ pub fn main() !void {
 
         const actualFrameTimeNs = (try std.time.Instant.now()).since(start);
         gb.debug.frameTimeNs = actualFrameTimeNs;
-        std.time.sleep(FRAME_CYCLES * 1000 -| actualFrameTimeNs);
+        const delta_t = FRAME_CYCLES * 1000 -| actualFrameTimeNs;
+        if (delta_t > 100) {
+            std.time.sleep(delta_t);
+        }
         frames +%= 1;
+
+        {
+            const uncapped_fps = 1_000_000_000 / actualFrameTimeNs;
+            const fps = if (uncapped_fps > 60) 60 else uncapped_fps;
+            var buf: [32]u8 = undefined;
+            const title = try std.fmt.bufPrint(&buf, "gameboy (FPS: {})\x00", .{fps});
+            const title_cstr: [*:0]const u8 = title.ptr[0 .. title.len - 1 :0];
+            c.SDL_SetWindowTitle(window, title_cstr);
+        }
     }
 }

@@ -1,5 +1,6 @@
 const std = @import("std");
 const Breakpoint = @import("debug.zig").Debug.Breakpoint;
+const Ppu = @import("../ppu/ppu.zig").Ppu;
 const Button = @import("../joypad/joypad.zig").Joypad.Button;
 
 const DebugCmdTag = enum {
@@ -24,6 +25,8 @@ const DebugCmdTag = enum {
     viewExecutionTrace,
     joypadPress,
     joypadRelease,
+    ticks,
+    palette,
 };
 
 pub const DebugCmd = union(DebugCmdTag) {
@@ -53,6 +56,8 @@ pub const DebugCmd = union(DebugCmdTag) {
     viewExecutionTrace: void,
     joypadPress: Button,
     joypadRelease: Button,
+    ticks: struct { keep: bool },
+    palette: struct { new_palette: ?Ppu.Palette },
 
     pub fn parse(buf: []u8) ?DebugCmd {
         const bufTrimmed = std.mem.trim(u8, buf, " \t\r\n");
@@ -61,8 +66,48 @@ pub const DebugCmd = union(DebugCmdTag) {
         const command = p.pop() orelse return .trace;
         return switch (command) {
             'q' => .quit,
-            'p' => .pause,
-            't' => .trace,
+            'p' => blk: {
+                const next = p.pop() orelse break :blk .pause;
+
+                break :blk switch (next) {
+                    'a' => {
+                        _ = p.until(Parser.isNonWhitespace);
+
+                        const palette_name = p.toEnd() orelse break :blk .{ .palette = .{ .new_palette = null } };
+
+                        const palette: Ppu.Palette = parse_palette: {
+                            if (std.ascii.eqlIgnoreCase(palette_name, "grey")) {
+                                break :parse_palette .grey;
+                            } else if (std.ascii.eqlIgnoreCase(palette_name, "green")) {
+                                break :parse_palette .green;
+                            } else {
+                                break :blk null;
+                            }
+                        };
+
+                        break :blk .{ .palette = .{ .new_palette = palette } };
+                    },
+                    else => null,
+                };
+            },
+            't' => blk: {
+                const next = p.pop() orelse break :blk .trace;
+
+                break :blk switch (next) {
+                    'i' => {
+                        _ = p.until(Parser.isNonWhitespace);
+
+                        const arg = p.toEnd() orelse break :blk .{ .ticks = .{ .keep = false } };
+
+                        if (arg[0] == 'k') {
+                            break :blk .{ .ticks = .{ .keep = true } };
+                        } else {
+                            break :blk null;
+                        }
+                    },
+                    else => null,
+                };
+            },
             'r' => .resume_,
             'h' => .help,
             'b' => blk: {

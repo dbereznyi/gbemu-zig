@@ -9,6 +9,7 @@ const HELP_MESSAGE =
     "  general\n" ++
     "    (h)elp\n" ++
     "    (q)uit\n" ++
+    "    (ti)cks <optional: \"(k)eep\" to prevent counter from being reset>\n" ++
     "  execution\n" ++
     "    (p)ause execution, allowing for debugging\n" ++
     "    (t)race execution, following jumps and function calls\n" ++
@@ -48,7 +49,7 @@ pub fn executeCmd(cmd: DebugCmd, gb: *Gb) !void {
         },
         .pause => {
             if (!gb.debug.isPaused()) {
-                try gb.printCurrentAndNextInstruction();
+                try gb.printDebugTrace();
                 gb.debug.setPaused(true);
             }
         },
@@ -138,5 +139,20 @@ pub fn executeCmd(cmd: DebugCmd, gb: *Gb) !void {
         .viewExecutionTrace => try gb.debug.printExecutionTrace(writer, MAX_TRACE_LENGTH),
         .joypadPress => |button| gb.joypad.pressButton(button),
         .joypadRelease => |button| gb.joypad.releaseButton(button),
+        .ticks => |args| {
+            try format(writer, "M-cycles: {}\n", .{gb.cycles});
+            if (!args.keep) {
+                gb.cycles = 0;
+                try format(writer, "Cycle counter reset to 0.\n", .{});
+            }
+        },
+        .palette => |args| {
+            if (args.new_palette) |new_palette| {
+                gb.ppu.palette = new_palette;
+                try format(writer, "Palette set to: {s}\n", .{new_palette.toStr()});
+            } else {
+                try format(writer, "Current palette: {s}\n", .{gb.ppu.palette.toStr()});
+            }
+        },
     }
 }

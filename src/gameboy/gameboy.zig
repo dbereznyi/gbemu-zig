@@ -157,10 +157,11 @@ pub const Gb = struct {
     scanningOam: bool,
     isDrawing: bool,
     inVBlank: std.atomic.Value(bool),
-
     running: std.atomic.Value(bool),
 
-    pub fn init(alloc: std.mem.Allocator, rom: []const u8, palette: [4]Pixel) !Gb {
+    cycles: u64,
+
+    pub fn init(alloc: std.mem.Allocator, rom: []const u8, palette: Ppu.Palette) !Gb {
         const vram = try alloc.alloc(u8, 8 * 1024);
         for (vram, 0..) |_, i| {
             vram[i] = 0;
@@ -189,7 +190,7 @@ pub const Gb = struct {
 
         const screen: []Pixel = try alloc.alloc(Pixel, 160 * 144);
         for (screen) |*pixel| {
-            pixel.* = palette[0];
+            pixel.* = palette.data()[0];
         }
 
         return Gb{
@@ -231,6 +232,7 @@ pub const Gb = struct {
             .isDrawing = false,
             .inVBlank = std.atomic.Value(bool).init(false),
             .running = std.atomic.Value(bool).init(true),
+            .cycles = 0,
         };
     }
 
@@ -347,7 +349,7 @@ pub const Gb = struct {
                 if (!gb.isVramInUse() or gb.debug.isPaused()) {
                     gb.vram[addr - 0x8000] = val;
                 } else {
-                    gb.panic("Attempted to write to VRAM while in use (${x} -> {x})\n", .{ val, addr });
+                    std.log.warn("Attempted to write to VRAM while in use (${x} -> {x})\n", .{ val, addr });
                 }
             },
             // External RAM
@@ -449,9 +451,10 @@ pub const Gb = struct {
             gb.read(IoReg.IF),
             @as(u1, if (gb.ime) 1 else 0),
         });
+        try format(writer, "cycles: {}\n", .{gb.cycles});
     }
 
-    pub fn printCurrentAndNextInstruction(gb: *Gb) !void {
+    pub fn printDebugTrace(gb: *Gb) !void {
         const PRINT_INSTR_BYTES = false;
 
         try gb.debug.printExecutionTrace(std.io.getStdOut().writer(), 5);
