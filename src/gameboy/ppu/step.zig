@@ -50,13 +50,13 @@ pub fn stepPpu(gb: *Gb) void {
 
                 if (gb.isLcdOn()) {
                     gb.scanningOam = true;
-                    gb.ppu.objAttrsLine = readObjectAttributesForLine(
+                    gb.ppu.obj_attrs = readObjectAttributesForLine(
                         gb.ppu.y,
-                        &gb.ppu.objAttrsLineBuf,
+                        &gb.ppu.obj_attrs_buf,
                         gb,
                     );
                 } else {
-                    gb.ppu.objAttrsLine.len = 0;
+                    gb.ppu.obj_attrs.len = 0;
                 }
             } else if (gb.ppu.dots % LINE_DOTS == DRAWING_START - 4) {
                 gb.scanningOam = false;
@@ -84,7 +84,7 @@ pub fn stepPpu(gb: *Gb) void {
                         x,
                         gb.ppu.y,
                         gb,
-                        gb.ppu.objAttrsLine,
+                        gb.ppu.obj_attrs,
                         &gb.ppu.windowY,
                         gb.ppu.wy,
                     );
@@ -187,28 +187,26 @@ pub fn stepPpu(gb: *Gb) void {
     gb.ppu.dots = (gb.ppu.dots + 4) % VBLANK_END;
 }
 
-fn readObjectAttributesForLine(y: usize, objAttrsLineBuf: *[10]Ppu.ObjectAttribute, gb: *Gb) []Ppu.ObjectAttribute {
-    var objAttrs: [40]Ppu.ObjectAttribute = undefined;
-    var objAttrsIndex: usize = 0;
-    var oamIndex: usize = 0;
-    while (oamIndex < gb.oam.len) {
-        objAttrs[objAttrsIndex].y = gb.oam[oamIndex];
-        objAttrs[objAttrsIndex].x = gb.oam[oamIndex + 1];
-        objAttrs[objAttrsIndex].tileNumber = gb.oam[oamIndex + 2];
-        objAttrs[objAttrsIndex].flags = gb.oam[oamIndex + 3];
-        objAttrs[objAttrsIndex].oamIndex = oamIndex;
-
-        objAttrsIndex += 1;
-        oamIndex += 4;
+fn readObjectAttributesForLine(y: usize, selected_objs_buf: *[10]Ppu.ObjectAttribute, gb: *Gb) []Ppu.ObjectAttribute {
+    var obj_attrs: [40]Ppu.ObjectAttribute = undefined;
+    var obj_attrs_index: usize = 0;
+    var oam_index: usize = 0;
+    while (oam_index < gb.oam.len) : ({
+        oam_index += 4;
+        obj_attrs_index += 1;
+    }) {
+        obj_attrs[obj_attrs_index].y = gb.oam[oam_index];
+        obj_attrs[obj_attrs_index].x = gb.oam[oam_index + 1];
+        obj_attrs[obj_attrs_index].tileNumber = gb.oam[oam_index + 2];
+        obj_attrs[obj_attrs_index].flags = gb.oam[oam_index + 3];
+        obj_attrs[obj_attrs_index].oamIndex = oam_index;
     }
     std.debug.assert(gb.oam.len <= 160);
 
-    std.sort.block(Ppu.ObjectAttribute, &objAttrs, {}, Ppu.ObjectAttribute.isLessThan);
-
     const lcdc = gb.read(IoReg.LCDC);
 
-    var objAttrsLineLen: usize = 0;
-    for (objAttrs) |obj| {
+    var selected_objs_count: usize = 0;
+    for (obj_attrs) |obj| {
         const large_objects = lcdc & LcdcFlag.OBJ_SIZE_LARGE > 0;
         const yLowerBound = obj.y -| 16;
         const yUpperBound = if (large_objects) obj.y else obj.y -% 8;
@@ -218,26 +216,29 @@ fn readObjectAttributesForLine(y: usize, objAttrsLineBuf: *[10]Ppu.ObjectAttribu
         }
 
         if (y >= yLowerBound and y < yUpperBound) {
-            const i = objAttrsLineLen;
-            objAttrsLineBuf[i].y = obj.y;
-            objAttrsLineBuf[i].x = obj.x;
-            objAttrsLineBuf[i].tileNumber = obj.tileNumber;
-            objAttrsLineBuf[i].flags = obj.flags;
-            objAttrsLineBuf[i].oamIndex = obj.oamIndex;
-            objAttrsLineLen += 1;
-            if (objAttrsLineLen == 10) {
+            const i = selected_objs_count;
+            selected_objs_buf[i].y = obj.y;
+            selected_objs_buf[i].x = obj.x;
+            selected_objs_buf[i].tileNumber = obj.tileNumber;
+            selected_objs_buf[i].flags = obj.flags;
+            selected_objs_buf[i].oamIndex = obj.oamIndex;
+            selected_objs_count += 1;
+            if (selected_objs_count == 10) {
                 break;
             }
         }
     }
 
-    // TODO can probably skip this by just iterating over attributes in reverse when drawing
-    std.mem.reverse(Ppu.ObjectAttribute, objAttrsLineBuf[0..objAttrsLineLen]);
+    const selected_objs = selected_objs_buf[0..selected_objs_count];
+    std.sort.block(Ppu.ObjectAttribute, selected_objs, {}, Ppu.ObjectAttribute.isLessThan);
 
-    return objAttrsLineBuf[0..objAttrsLineLen];
+    // TODO can probably skip this by just iterating over attributes in reverse when drawing
+    std.mem.reverse(Ppu.ObjectAttribute, selected_objs);
+
+    return selected_objs;
 }
 
-fn colorIdAt(x: usize, y: usize, gb: *Gb, objAttrs: []const Ppu.ObjectAttribute, windowY: *usize, wy: u8) usize {
+fn colorIdAt(x: usize, y: usize, gb: *Gb, obj_attrs: []const Ppu.ObjectAttribute, windowY: *usize, wy: u8) usize {
     const lcdc = gb.read(IoReg.LCDC);
     if (lcdc & LcdcFlag.ON == 0) {
         return 0;
@@ -282,7 +283,7 @@ fn colorIdAt(x: usize, y: usize, gb: *Gb, objAttrs: []const Ppu.ObjectAttribute,
     }
 
     if (lcdc & LcdcFlag.OBJ_ENABLE > 0) {
-        for (objAttrs) |obj| {
+        for (obj_attrs) |obj| {
             const objXInRange = x + 8 >= obj.x and x < obj.x;
             if (!objXInRange) {
                 continue;

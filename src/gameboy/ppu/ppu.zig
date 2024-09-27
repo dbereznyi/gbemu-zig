@@ -64,8 +64,8 @@ pub const Ppu = struct {
     wy: u8,
     windowY: usize,
     mode: Ppu.Mode,
-    objAttrsLineBuf: [10]Ppu.ObjectAttribute,
-    objAttrsLine: []Ppu.ObjectAttribute,
+    obj_attrs_buf: [10]Ppu.ObjectAttribute,
+    obj_attrs: []Ppu.ObjectAttribute,
 
     pub fn init(palette: Palette) Ppu {
         return Ppu{
@@ -76,8 +76,8 @@ pub const Ppu = struct {
             .wy = 0,
             .windowY = 0,
             .mode = .oam,
-            .objAttrsLineBuf = undefined,
-            .objAttrsLine = undefined,
+            .obj_attrs_buf = undefined,
+            .obj_attrs = undefined,
         };
     }
 
