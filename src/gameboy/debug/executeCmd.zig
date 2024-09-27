@@ -10,6 +10,7 @@ const HELP_MESSAGE =
     "    (h)elp\n" ++
     "    (q)uit\n" ++
     "    (ti)cks <optional: \"(k)eep\" to prevent counter from being reset>\n" ++
+    "    (pa)lette <optional: name of palette to change to>\n" ++
     "  execution\n" ++
     "    (p)ause execution, allowing for debugging\n" ++
     "    (t)race execution, following jumps and function calls\n" ++

@@ -30,7 +30,14 @@ pub fn main() !void {
         std.process.exit(1);
     }
 
-    const romFilepath = args[1];
+    const rom_filepath = args[1];
+    const dirname = std.fs.path.dirname(rom_filepath) orelse "";
+    const save_data_filepath = try std.fmt.allocPrint(
+        alloc,
+        "{s}{c}{s}.sav",
+        .{ dirname, std.fs.path.sep, std.fs.path.stem(rom_filepath) },
+    );
+    defer alloc.free(save_data_filepath);
 
     if (c.SDL_Init(c.SDL_INIT_VIDEO) != 0) {
         c.SDL_Log("Unable to initialize SDL: %s", c.SDL_GetError());
@@ -92,8 +99,24 @@ pub fn main() !void {
 
     // ---
 
-    const rom = try std.fs.cwd().readFileAlloc(alloc, romFilepath, 1024 * 1024 * 1024);
-    var gb = try Gb.init(alloc, rom, Palette.green);
+    const rom = try std.fs.cwd().readFileAlloc(alloc, rom_filepath, 1024 * 1024 * 1024);
+    defer alloc.free(rom);
+
+    const save_data: ?[]u8 = read_save_data: {
+        std.debug.print("{s}\n{s}\n", .{ args[1], save_data_filepath });
+
+        const data = std.fs.cwd().readFileAlloc(alloc, save_data_filepath, 128 * 1024) catch |err| switch (err) {
+            error.FileNotFound => break :read_save_data null,
+            else => {
+                std.log.warn("Failed to read save data: {}\n", .{err});
+                break :read_save_data null;
+            },
+        };
+        break :read_save_data data;
+    };
+    defer if (save_data) |data| alloc.free(data) else {};
+
+    var gb = try Gb.init(alloc, rom, save_data, Palette.green);
     defer gb.deinit(alloc);
 
     const debuggerThread = try std.Thread.spawn(.{}, runDebugger, .{&gb});
@@ -189,4 +212,6 @@ pub fn main() !void {
             c.SDL_SetWindowTitle(window, title_cstr);
         }
     }
+
+    try gb.cart.persistRam(save_data_filepath);
 }

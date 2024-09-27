@@ -161,7 +161,12 @@ pub const Gb = struct {
 
     cycles: u64,
 
-    pub fn init(alloc: std.mem.Allocator, rom: []const u8, palette: Ppu.Palette) !Gb {
+    pub fn init(
+        alloc: std.mem.Allocator,
+        rom: []const u8,
+        save_data: ?[]const u8,
+        palette: Ppu.Palette,
+    ) !Gb {
         const vram = try alloc.alloc(u8, 8 * 1024);
         for (vram, 0..) |_, i| {
             vram[i] = 0;
@@ -221,7 +226,7 @@ pub const Gb = struct {
             .ioRegs = ioRegs,
             .hram = hram,
             .ie = 0,
-            .cart = try Cart.init(rom, alloc),
+            .cart = try Cart.init(rom, save_data, alloc),
             .screen = screen,
             .ppu = Ppu.init(palette),
             .joypad = Joypad.init(),

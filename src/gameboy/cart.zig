@@ -33,7 +33,7 @@ pub const Cart = struct {
 
     mbc1: Mbc1Registers,
 
-    pub fn init(rom: []const u8, alloc: std.mem.Allocator) !Cart {
+    pub fn init(rom: []const u8, save_data: ?[]const u8, alloc: std.mem.Allocator) !Cart {
         const cart_type = rom[0x0147];
         const cart_info = switch (cart_type) {
             0x00 => .{ Mapper.none, false, false },
@@ -77,7 +77,13 @@ pub const Cart = struct {
                 return error.BadRamSize;
             },
         };
-        const ram = try alloc.alloc(u8, ram_size);
+        var ram = try alloc.alloc(u8, ram_size);
+
+        if (save_data) |data| {
+            for (0..ram.len, 0..data.len) |ram_i, data_i| {
+                ram[ram_i] = data[data_i];
+            }
+        }
 
         return Cart{
             .rom = rom,
@@ -154,6 +160,16 @@ pub const Cart = struct {
             },
             else => std.debug.panic("TODO implement ROM read for {}\n", .{cart.mapper}),
         }
+    }
+
+    pub fn persistRam(cart: *const Cart, path: []const u8) !void {
+        if (!cart.has_battery) {
+            return;
+        }
+
+        const file = try std.fs.cwd().createFile(path, .{});
+        defer file.close();
+        try file.writeAll(cart.ram);
     }
 
     pub fn writeRom(cart: *Cart, addr: u16, val: u8) void {
