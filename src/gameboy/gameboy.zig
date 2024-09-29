@@ -141,7 +141,7 @@ pub const Gb = struct {
     vram: []u8,
     wram: []u8,
     oam: []u8,
-    ioRegs: []std.atomic.Value(u8),
+    io_regs: []u8,
     hram: []u8,
     ie: u8,
 
@@ -182,11 +182,11 @@ pub const Gb = struct {
             oam[i] = 0;
         }
 
-        var ioRegs = try alloc.alloc(std.atomic.Value(u8), 128);
-        for (ioRegs, 0..) |_, i| {
-            ioRegs[i] = std.atomic.Value(u8).init(0);
+        var io_regs = try alloc.alloc(u8, 128);
+        for (io_regs, 0..) |_, i| {
+            io_regs[i] = 0;
         }
-        ioRegs[IoReg.JOYP - 0xff00].store(0b1111_1111, .monotonic);
+        io_regs[IoReg.JOYP - 0xff00] = 0b1111_1111;
 
         const hram = try alloc.alloc(u8, 128);
         for (hram, 0..) |_, i| {
@@ -223,7 +223,7 @@ pub const Gb = struct {
             .vram = vram,
             .wram = wram,
             .oam = oam,
-            .ioRegs = ioRegs,
+            .io_regs = io_regs,
             .hram = hram,
             .ie = 0,
             .cart = try Cart.init(rom, save_data, alloc),
@@ -245,7 +245,7 @@ pub const Gb = struct {
         alloc.free(gb.vram);
         alloc.free(gb.wram);
         alloc.free(gb.oam);
-        alloc.free(gb.ioRegs);
+        alloc.free(gb.io_regs);
         alloc.free(gb.hram);
         alloc.free(gb.screen);
         gb.cart.deinit(alloc);
@@ -294,12 +294,12 @@ pub const Gb = struct {
     }
 
     pub fn isVramInUse(gb: *Gb) bool {
-        const lcdOn = gb.ioRegs[IoReg.LCDC - 0xff00].load(.monotonic) & LcdcFlag.ON > 0;
+        const lcdOn = gb.io_regs[IoReg.LCDC - 0xff00] & LcdcFlag.ON > 0;
         return lcdOn and gb.isDrawing;
     }
 
     pub fn isLcdOn(gb: *Gb) bool {
-        return gb.ioRegs[IoReg.LCDC - 0xff00].load(.monotonic) & LcdcFlag.ON > 0;
+        return gb.io_regs[IoReg.LCDC - 0xff00] & LcdcFlag.ON > 0;
     }
 
     pub fn read(gb: *Gb, addr: u16) u8 {
@@ -337,7 +337,7 @@ pub const Gb = struct {
             // Not useable
             0xfea0...0xfeff => gb.panic("Attempted to read from prohibited memory at ${x}\n", .{addr}),
             // I/O Registers
-            0xff00...0xff7f => gb.ioRegs[addr - 0xff00].load(.monotonic),
+            0xff00...0xff7f => gb.io_regs[addr - 0xff00],
             // HRAM
             0xff80...0xfffe => gb.hram[addr - 0xff80],
             // IE
@@ -380,9 +380,12 @@ pub const Gb = struct {
             0xfea0...0xfeff => gb.panic("Attempted to write to prohibited memory (${x} -> ${x})\n", .{ val, addr }),
             // I/O Registers
             0xff00...0xff7f => {
-                gb.ioRegs[addr - 0xff00].store(val, .monotonic);
+                gb.io_regs[addr - 0xff00] = val;
                 switch (addr) {
-                    IoReg.DIV => gb.ioRegs[addr - 0xff00].store(0, .monotonic),
+                    IoReg.DIV => {
+                        gb.io_regs[addr - 0xff00] = 0;
+                        gb.timer.system_counter = 0;
+                    },
                     IoReg.DMA => gb.dma.transferPending = true,
                     else => {},
                 }
@@ -399,36 +402,36 @@ pub const Gb = struct {
     }
 
     pub fn setStatMode(gb: *Gb, mode: u8) void {
-        _ = gb.ioRegs[IoReg.STAT - 0xff00].fetchAnd(StatFlag.MODE_CLEAR, .monotonic);
-        _ = gb.ioRegs[IoReg.STAT - 0xff00].fetchOr(mode, .monotonic);
+        gb.io_regs[IoReg.STAT - 0xff00] &= StatFlag.MODE_CLEAR;
+        gb.io_regs[IoReg.STAT - 0xff00] |= mode;
     }
 
     pub fn setStatLycIncident(gb: *Gb, isIncident: bool) void {
         if (isIncident) {
-            _ = gb.ioRegs[IoReg.STAT - 0xff00].fetchOr(StatFlag.LYC_INCIDENT_TRUE, .monotonic);
+            gb.io_regs[IoReg.STAT - 0xff00] |= StatFlag.LYC_INCIDENT_TRUE;
         } else {
-            _ = gb.ioRegs[IoReg.STAT - 0xff00].fetchAnd(StatFlag.LYC_INCIDENT_FALSE, .monotonic);
+            gb.io_regs[IoReg.STAT - 0xff00] &= StatFlag.LYC_INCIDENT_FALSE;
         }
     }
 
     pub fn requestInterrupt(gb: *Gb, interrupt: u8) void {
-        _ = gb.ioRegs[IoReg.IF - 0xff00].fetchOr(interrupt, .monotonic);
+        gb.io_regs[IoReg.IF - 0xff00] |= interrupt;
     }
 
     pub fn clearInterrupt(gb: *Gb, interrupt: u8) void {
-        _ = gb.ioRegs[IoReg.IF - 0xff00].fetchAnd(~interrupt, .monotonic);
+        gb.io_regs[IoReg.IF - 0xff00] &= ~interrupt;
     }
 
-    pub fn isInterruptEnabled(gb: *Gb, interrupt: u8) bool {
+    pub fn isInterruptEnabled(gb: *const Gb, interrupt: u8) bool {
         return gb.ie & interrupt > 0;
     }
 
-    pub fn isInterruptPending(gb: *Gb, interrupt: u8) bool {
-        return gb.ioRegs[IoReg.IF - 0xff00].load(.monotonic) & interrupt > 0;
+    pub fn isInterruptPending(gb: *const Gb, interrupt: u8) bool {
+        return gb.io_regs[IoReg.IF - 0xff00] & interrupt > 0;
     }
 
-    pub fn anyInterruptsPending(gb: *Gb) bool {
-        const if_ = gb.ioRegs[IoReg.IF - 0xff00].load(.monotonic);
+    pub fn anyInterruptsPending(gb: *const Gb) bool {
+        const if_ = gb.io_regs[IoReg.IF - 0xff00];
         return (gb.ie & if_ & 0x1f) != 0;
     }
 

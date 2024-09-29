@@ -80,6 +80,10 @@ pub const Cart = struct {
         var ram = try alloc.alloc(u8, ram_size);
 
         if (save_data) |data| {
+            if (data.len != ram.len) {
+                std.log.warn("save data size does not match RAM size\n", .{});
+            }
+
             for (0..ram.len, 0..data.len) |ram_i, data_i| {
                 ram[ram_i] = data[data_i];
             }

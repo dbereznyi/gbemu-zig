@@ -36,7 +36,7 @@ pub const Ppu = struct {
             return switch (self) {
                 .grey => [4]Pixel{
                     .{ .r = 255, .g = 255, .b = 255 },
-                    .{ .r = 127, .g = 127, .b = 127 },
+                    .{ .r = 176, .g = 176, .b = 176 },
                     .{ .r = 63, .g = 63, .b = 63 },
                     .{ .r = 0, .g = 0, .b = 0 },
                 },

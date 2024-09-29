@@ -244,7 +244,7 @@ fn colorIdAt(x: usize, y: usize, gb: *Gb, obj_attrs: []const Ppu.ObjectAttribute
         return 0;
     }
 
-    const obj_tile_data = gb.vram[0x0000..0x0fff];
+    const obj_tile_data = gb.vram[0x0000..0x1000];
     const bgTileData = if (lcdc & LcdcFlag.TILE_DATA > 0) gb.vram[0x0000..0x1000] else gb.vram[0x0800..0x1800];
     const bgTileMap = if (lcdc & LcdcFlag.BG_TILE_MAP > 0) gb.vram[0x1c00..0x2000] else gb.vram[0x1800..0x1c00];
     const winTileMap = if (lcdc & LcdcFlag.WIN_TILE_MAP > 0) gb.vram[0x1c00..0x2000] else gb.vram[0x1800..0x1c00];

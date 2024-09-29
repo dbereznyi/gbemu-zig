@@ -5,8 +5,8 @@ const IoReg = @import("../gameboy.zig").IoReg;
 const TacFlag = @import("../gameboy.zig").TacFlag;
 
 pub fn stepTimer(gb: *Gb) void {
-    const div = gb.read(IoReg.DIV);
-    gb.write(IoReg.DIV, div +% 8);
+    gb.io_regs[IoReg.DIV - 0xff00] = @truncate(gb.timer.system_counter >> 8);
+    gb.timer.system_counter +%= 1;
 
     const tac = gb.read(IoReg.TAC);
     if (tac & TacFlag.ENABLE > 0) {
