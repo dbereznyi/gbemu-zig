@@ -5,7 +5,7 @@ const Interrupt = @import("../gameboy.zig").Interrupt;
 const JoypFlag = @import("joypad.zig").Joypad.JoypFlag;
 
 pub fn stepJoypad(gb: *Gb) void {
-    const joyp = gb.read(IoReg.JOYP);
+    const joyp = gb.io_regs[IoReg.JOYP];
     const buttons = gb.joypad.readButtons();
     const dpad = gb.joypad.readDpad();
     var result: u4 = undefined;
@@ -18,13 +18,13 @@ pub fn stepJoypad(gb: *Gb) void {
     } else {
         result = 0xf;
     }
-    gb.write(IoReg.JOYP, ((joyp & 0b1111_0000) | result) | 0xc0);
+    gb.io_regs[IoReg.JOYP] = ((joyp & 0b1111_0000) | result) | 0xc0;
 
     switch (gb.joypad.mode) {
         .waitingForLowEdge => {
             std.debug.assert(gb.joypad.cyclesSinceLowEdgeTransition == 0);
 
-            const joypAfter = gb.read(IoReg.JOYP);
+            const joypAfter = gb.io_regs[IoReg.JOYP];
             const bit0 = joyp & 0b0000_0001 > 0 and joypAfter & 0b0000_0001 == 0;
             const bit1 = joyp & 0b0000_0010 > 0 and joypAfter & 0b0000_0010 == 0;
             const bit2 = joyp & 0b0000_0100 > 0 and joypAfter & 0b0000_0100 == 0;

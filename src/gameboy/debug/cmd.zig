@@ -71,6 +71,7 @@ pub const DebugCmd = union(DebugCmdTag) {
 
                 break :blk switch (next) {
                     'a' => {
+                        _ = p.until(Parser.isWhitespace);
                         _ = p.until(Parser.isNonWhitespace);
 
                         const palette_name = p.toEnd() orelse break :blk .{ .palette = .{ .new_palette = null } };
@@ -337,6 +338,10 @@ const Parser = struct {
             'A'...'F' => true,
             else => false,
         };
+    }
+
+    pub fn isWhitespace(val: u8) bool {
+        return std.ascii.isWhitespace(val);
     }
 
     pub fn isNonWhitespace(val: u8) bool {

@@ -6,7 +6,7 @@ pub fn stepDma(gb: *Gb) void {
         .idle => {
             if (gb.dma.transferPending) {
                 gb.dma.transferPending = false;
-                gb.dma.startAddr = @as(u16, @intCast(gb.read(IoReg.DMA))) << 8;
+                gb.dma.startAddr = @as(u16, @intCast(gb.io_regs[IoReg.DMA])) << 8;
                 gb.dma.bytesTransferred = 0;
                 gb.dma.mode = .transfer;
             }

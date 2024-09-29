@@ -12,25 +12,25 @@ const Joypad = @import("joypad/joypad.zig").Joypad;
 const Ppu = @import("ppu/ppu.zig").Ppu;
 
 pub const IoReg = .{
-    .JOYP = 0xff00,
-    .DIV = 0xff04,
-    .TIMA = 0xff05,
-    .TMA = 0xff06,
-    .TAC = 0xff07,
-    .IF = 0xff0f,
-    .LCDC = 0xff40,
-    .STAT = 0xff41,
-    .SCY = 0xff42,
-    .SCX = 0xff43,
-    .LY = 0xff44,
-    .LYC = 0xff45,
-    .DMA = 0xff46,
-    .BGP = 0xff47,
-    .OBP0 = 0xff48,
-    .OBP1 = 0xff49,
-    .WY = 0xff4a,
-    .WX = 0xff4b,
-    .IE = 0xffff,
+    .JOYP = 0x00,
+    .DIV = 0x04,
+    .TIMA = 0x05,
+    .TMA = 0x06,
+    .TAC = 0x07,
+    .IF = 0x0f,
+    .LCDC = 0x40,
+    .STAT = 0x41,
+    .SCY = 0x42,
+    .SCX = 0x43,
+    .LY = 0x44,
+    .LYC = 0x45,
+    .DMA = 0x46,
+    .BGP = 0x47,
+    .OBP0 = 0x48,
+    .OBP1 = 0x49,
+    .WY = 0x4a,
+    .WX = 0x4b,
+    .IE = 0xff,
 };
 
 pub const TacFlag = .{
@@ -186,7 +186,7 @@ pub const Gb = struct {
         for (io_regs, 0..) |_, i| {
             io_regs[i] = 0;
         }
-        io_regs[IoReg.JOYP - 0xff00] = 0b1111_1111;
+        io_regs[IoReg.JOYP] = 0xff;
 
         const hram = try alloc.alloc(u8, 128);
         for (hram, 0..) |_, i| {
@@ -294,12 +294,12 @@ pub const Gb = struct {
     }
 
     pub fn isVramInUse(gb: *Gb) bool {
-        const lcdOn = gb.io_regs[IoReg.LCDC - 0xff00] & LcdcFlag.ON > 0;
+        const lcdOn = gb.io_regs[IoReg.LCDC] & LcdcFlag.ON > 0;
         return lcdOn and gb.isDrawing;
     }
 
     pub fn isLcdOn(gb: *Gb) bool {
-        return gb.io_regs[IoReg.LCDC - 0xff00] & LcdcFlag.ON > 0;
+        return gb.io_regs[IoReg.LCDC] & LcdcFlag.ON > 0;
     }
 
     pub fn read(gb: *Gb, addr: u16) u8 {
@@ -354,7 +354,7 @@ pub const Gb = struct {
                 if (!gb.isVramInUse() or gb.debug.isPaused()) {
                     gb.vram[addr - 0x8000] = val;
                 } else {
-                    std.log.warn("Attempted to write to VRAM while in use (${x} -> {x})\n", .{ val, addr });
+                    //std.log.warn("Attempted to write to VRAM while in use (${x} -> {x})\n", .{ val, addr });
                 }
             },
             // External RAM
@@ -380,10 +380,11 @@ pub const Gb = struct {
             0xfea0...0xfeff => gb.panic("Attempted to write to prohibited memory (${x} -> ${x})\n", .{ val, addr }),
             // I/O Registers
             0xff00...0xff7f => {
-                gb.io_regs[addr - 0xff00] = val;
-                switch (addr) {
+                const reg = addr - 0xff00;
+                gb.io_regs[reg] = val;
+                switch (reg) {
                     IoReg.DIV => {
-                        gb.io_regs[addr - 0xff00] = 0;
+                        gb.io_regs[reg] = 0;
                         gb.timer.system_counter = 0;
                     },
                     IoReg.DMA => gb.dma.transferPending = true,
@@ -402,24 +403,24 @@ pub const Gb = struct {
     }
 
     pub fn setStatMode(gb: *Gb, mode: u8) void {
-        gb.io_regs[IoReg.STAT - 0xff00] &= StatFlag.MODE_CLEAR;
-        gb.io_regs[IoReg.STAT - 0xff00] |= mode;
+        gb.io_regs[IoReg.STAT] &= StatFlag.MODE_CLEAR;
+        gb.io_regs[IoReg.STAT] |= mode;
     }
 
     pub fn setStatLycIncident(gb: *Gb, isIncident: bool) void {
         if (isIncident) {
-            gb.io_regs[IoReg.STAT - 0xff00] |= StatFlag.LYC_INCIDENT_TRUE;
+            gb.io_regs[IoReg.STAT] |= StatFlag.LYC_INCIDENT_TRUE;
         } else {
-            gb.io_regs[IoReg.STAT - 0xff00] &= StatFlag.LYC_INCIDENT_FALSE;
+            gb.io_regs[IoReg.STAT] &= StatFlag.LYC_INCIDENT_FALSE;
         }
     }
 
     pub fn requestInterrupt(gb: *Gb, interrupt: u8) void {
-        gb.io_regs[IoReg.IF - 0xff00] |= interrupt;
+        gb.io_regs[IoReg.IF] |= interrupt;
     }
 
     pub fn clearInterrupt(gb: *Gb, interrupt: u8) void {
-        gb.io_regs[IoReg.IF - 0xff00] &= ~interrupt;
+        gb.io_regs[IoReg.IF] &= ~interrupt;
     }
 
     pub fn isInterruptEnabled(gb: *const Gb, interrupt: u8) bool {
@@ -427,11 +428,11 @@ pub const Gb = struct {
     }
 
     pub fn isInterruptPending(gb: *const Gb, interrupt: u8) bool {
-        return gb.io_regs[IoReg.IF - 0xff00] & interrupt > 0;
+        return gb.io_regs[IoReg.IF] & interrupt > 0;
     }
 
     pub fn anyInterruptsPending(gb: *const Gb) bool {
-        const if_ = gb.io_regs[IoReg.IF - 0xff00];
+        const if_ = gb.io_regs[IoReg.IF];
         return (gb.ie & if_ & 0x1f) != 0;
     }
 
@@ -450,13 +451,13 @@ pub const Gb = struct {
         try format(writer, "A: ${x:0>2} B: ${x:0>2} D: ${x:0>2} H: ${x:0>2}\n", .{ gb.a, gb.b, gb.d, gb.h });
         try format(writer, "F: ${x:0>2} C: ${x:0>2} E: ${x:0>2} L: ${x:0>2}\n", .{ gb.readFlags(), gb.c, gb.e, gb.l });
         try format(writer, "LY: ${x:0>2} LCDC: %{b:0>8} STAT: %{b:0>8}\n", .{
-            gb.read(IoReg.LY),
-            gb.read(IoReg.LCDC),
-            gb.read(IoReg.STAT),
+            gb.io_regs[IoReg.LY],
+            gb.io_regs[IoReg.LCDC],
+            gb.io_regs[IoReg.STAT],
         });
         try format(writer, "IE: %{b:0>8} IF: %{b:0>8} IME: {}\n", .{
-            gb.read(IoReg.IE),
-            gb.read(IoReg.IF),
+            gb.io_regs[IoReg.IE],
+            gb.io_regs[IoReg.IF],
             @as(u1, if (gb.ime) 1 else 0),
         });
         try format(writer, "cycles: {}\n", .{gb.cycles});

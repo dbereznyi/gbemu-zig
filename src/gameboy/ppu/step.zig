@@ -34,13 +34,12 @@ pub fn stepPpu(gb: *Gb) void {
             std.debug.assert(gb.ppu.dots % LINE_DOTS < DRAWING_START);
             std.debug.assert(gb.ppu.x == 0);
             std.debug.assert(gb.ppu.y < 144);
-            std.debug.assert(gb.read(IoReg.LY) < 144);
+            std.debug.assert(gb.io_regs[IoReg.LY] < 144);
             std.debug.assert(!gb.isDrawing);
 
             if (gb.ppu.dots % LINE_DOTS == 0) {
-                const ie = gb.read(IoReg.IE);
-                const stat = gb.read(IoReg.STAT);
-                const statInterruptsEnabled = ie & Interrupt.STAT > 0;
+                const stat = gb.io_regs[IoReg.STAT];
+                const statInterruptsEnabled = gb.ie & Interrupt.STAT > 0;
                 const intOnMode2 = stat & StatFlag.INT_MODE_2_ENABLE > 0;
                 if (statInterruptsEnabled and intOnMode2) {
                     gb.requestInterrupt(Interrupt.STAT);
@@ -67,12 +66,12 @@ pub fn stepPpu(gb: *Gb) void {
             std.debug.assert(gb.ppu.dots % LINE_DOTS >= DRAWING_START);
             std.debug.assert(gb.ppu.dots % LINE_DOTS < HBLANK_START);
             std.debug.assert(gb.ppu.y < 144);
-            std.debug.assert(gb.read(IoReg.LY) < 144);
+            std.debug.assert(gb.io_regs[IoReg.LY] < 144);
             std.debug.assert(!gb.scanningOam);
 
             if (gb.ppu.dots == DRAWING_START) {
                 gb.ppu.windowY = 0;
-                gb.ppu.wy = gb.read(IoReg.WY);
+                gb.ppu.wy = gb.io_regs[IoReg.WY];
             }
 
             if (gb.ppu.dots % LINE_DOTS == DRAWING_START) {
@@ -105,14 +104,13 @@ pub fn stepPpu(gb: *Gb) void {
             std.debug.assert(gb.ppu.dots < VBLANK_START);
             std.debug.assert(gb.ppu.x == 0);
             std.debug.assert(gb.ppu.y < 144);
-            std.debug.assert(gb.read(IoReg.LY) < 144);
+            std.debug.assert(gb.io_regs[IoReg.LY] < 144);
             std.debug.assert(!gb.scanningOam);
             std.debug.assert(!gb.isDrawing);
 
             if (gb.ppu.dots % LINE_DOTS == HBLANK_START) {
-                const ie = gb.read(IoReg.IE);
-                const stat = gb.read(IoReg.STAT);
-                const statInterruptsEnabled = ie & Interrupt.STAT > 0;
+                const stat = gb.io_regs[IoReg.STAT];
+                const statInterruptsEnabled = gb.ie & Interrupt.STAT > 0;
                 const intOnMode0 = stat & StatFlag.INT_MODE_0_ENABLE > 0;
 
                 gb.setStatMode(StatFlag.MODE_0);
@@ -122,14 +120,13 @@ pub fn stepPpu(gb: *Gb) void {
             } else if (gb.ppu.dots % LINE_DOTS == LINE_DOTS - 4) {
                 gb.ppu.y += 1;
 
-                const ie = gb.read(IoReg.IE);
-                const stat = gb.read(IoReg.STAT);
-                const statInterruptsEnabled = ie & Interrupt.STAT > 0;
+                const stat = gb.io_regs[IoReg.STAT];
+                const statInterruptsEnabled = gb.ie & Interrupt.STAT > 0;
                 const intOnLycIncident = stat & StatFlag.INT_LYC_INCIDENT_ENABLE > 0;
 
                 // TODO when is this actually supposed to trigger?
-                gb.write(IoReg.LY, @truncate(gb.ppu.y));
-                const lycIncident = gb.ppu.y == gb.read(IoReg.LYC);
+                gb.io_regs[IoReg.LY] = @truncate(gb.ppu.y);
+                const lycIncident = gb.ppu.y == gb.io_regs[IoReg.LYC];
                 gb.setStatLycIncident(lycIncident);
                 if (statInterruptsEnabled and intOnLycIncident and lycIncident) {
                     gb.requestInterrupt(Interrupt.STAT);
@@ -149,16 +146,15 @@ pub fn stepPpu(gb: *Gb) void {
             std.debug.assert(gb.ppu.dots < VBLANK_END);
             std.debug.assert(gb.ppu.y >= 144);
             std.debug.assert(gb.ppu.y < 154);
-            std.debug.assert(gb.read(IoReg.LY) >= 144);
-            std.debug.assert(gb.read(IoReg.LY) < 154);
+            std.debug.assert(gb.io_regs[IoReg.LY] >= 144);
+            std.debug.assert(gb.io_regs[IoReg.LY] < 154);
             std.debug.assert(!gb.scanningOam);
             std.debug.assert(!gb.isDrawing);
 
             if (gb.ppu.dots == VBLANK_START) {
-                const ie = gb.read(IoReg.IE);
-                const stat = gb.read(IoReg.STAT);
-                const vblankInterruptsEnabled = ie & Interrupt.VBLANK > 0;
-                const statInterruptsEnabled = ie & Interrupt.STAT > 0;
+                const stat = gb.io_regs[IoReg.STAT];
+                const vblankInterruptsEnabled = gb.ie & Interrupt.VBLANK > 0;
+                const statInterruptsEnabled = gb.ie & Interrupt.STAT > 0;
                 const intOnMode1 = stat & StatFlag.INT_MODE_1_ENABLE > 0;
 
                 gb.setStatMode(StatFlag.MODE_1);
@@ -173,7 +169,7 @@ pub fn stepPpu(gb: *Gb) void {
             if (gb.ppu.dots % LINE_DOTS == LINE_DOTS - 4) {
                 // TODO do LYC incident interrupts occur in VBLANK?
                 gb.ppu.y = (gb.ppu.y + 1) % 154;
-                gb.write(IoReg.LY, @truncate(gb.ppu.y));
+                gb.io_regs[IoReg.LY] = @truncate(gb.ppu.y);
             }
 
             if (gb.ppu.dots == VBLANK_END - 4) {
@@ -203,7 +199,7 @@ fn readObjectAttributesForLine(y: usize, selected_objs_buf: *[10]Ppu.ObjectAttri
     }
     std.debug.assert(gb.oam.len <= 160);
 
-    const lcdc = gb.read(IoReg.LCDC);
+    const lcdc = gb.io_regs[IoReg.LCDC];
 
     var selected_objs_count: usize = 0;
     for (obj_attrs) |obj| {
@@ -239,7 +235,7 @@ fn readObjectAttributesForLine(y: usize, selected_objs_buf: *[10]Ppu.ObjectAttri
 }
 
 fn colorIdAt(x: usize, y: usize, gb: *Gb, obj_attrs: []const Ppu.ObjectAttribute, windowY: *usize, wy: u8) usize {
-    const lcdc = gb.read(IoReg.LCDC);
+    const lcdc = gb.io_regs[IoReg.LCDC];
     if (lcdc & LcdcFlag.ON == 0) {
         return 0;
     }
@@ -249,12 +245,12 @@ fn colorIdAt(x: usize, y: usize, gb: *Gb, obj_attrs: []const Ppu.ObjectAttribute
     const bgTileMap = if (lcdc & LcdcFlag.BG_TILE_MAP > 0) gb.vram[0x1c00..0x2000] else gb.vram[0x1800..0x1c00];
     const winTileMap = if (lcdc & LcdcFlag.WIN_TILE_MAP > 0) gb.vram[0x1c00..0x2000] else gb.vram[0x1800..0x1c00];
 
-    const bgp = gb.read(IoReg.BGP);
-    const scx = gb.read(IoReg.SCX);
-    const scy = gb.read(IoReg.SCY);
-    const wx = gb.read(IoReg.WX);
-    const obp0 = gb.read(IoReg.OBP0);
-    const obp1 = gb.read(IoReg.OBP1);
+    const bgp = gb.io_regs[IoReg.BGP];
+    const scx = gb.io_regs[IoReg.SCX];
+    const scy = gb.io_regs[IoReg.SCY];
+    const wx = gb.io_regs[IoReg.WX];
+    const obp0 = gb.io_regs[IoReg.OBP0];
+    const obp1 = gb.io_regs[IoReg.OBP1];
 
     var colorId: usize = 0;
 
@@ -348,9 +344,8 @@ fn colorIdForBgWinAt(x: usize, y: usize, palette: u8, addrMode: TileDataAddressi
 }
 
 pub fn renderVramViewer(gb: *Gb, pixels: *[]Pixel) void {
-    //const lcdc = gb.read(IoReg.LCDC);
     const tile_data = gb.vram[0x0000..0x1800];
-    const palette = gb.read(IoReg.BGP);
+    const palette = gb.io_regs[IoReg.BGP];
 
     for (pixels.*, 0..) |*pixel, i| {
         const y = @divTrunc(i, 16 * 8);
