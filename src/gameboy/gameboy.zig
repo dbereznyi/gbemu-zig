@@ -436,6 +436,7 @@ pub const Gb = struct {
             // I/O Registers
             0xff00...0xff7f => {
                 const reg = addr - 0xff00;
+                gb.io_regs[reg] = val;
                 switch (reg) {
                     IoReg.DIV => {
                         gb.io_regs[reg] = 0;
@@ -463,9 +464,7 @@ pub const Gb = struct {
                     IoReg.NR51 => gb.apu.writeReg(ApuReg.NR51, val),
                     IoReg.NR52 => gb.apu.writeReg(ApuReg.NR52, val),
                     IoReg.DMA => gb.dma.transferPending = true,
-                    else => {
-                        gb.io_regs[reg] = val;
-                    },
+                    else => {},
                 }
             },
             // HRAM
