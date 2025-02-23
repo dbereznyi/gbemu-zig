@@ -1,0 +1,7 @@
+const Gb = @import("../gameboy.zig").Gb;
+const IoReg = @import("../gameboy.zig").IoReg;
+
+pub fn stepApu(gb: *Gb) void {
+    gb.apu.ch1.tick(gb.div_apu_occurred);
+    gb.div_apu_occurred = false;
+}

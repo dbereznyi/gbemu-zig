@@ -4,6 +4,7 @@ const stepPpu = @import("ppu/step.zig").stepPpu;
 const stepDma = @import("dma/step.zig").stepDma;
 const stepJoypad = @import("joypad/step.zig").stepJoypad;
 const stepTimer = @import("timer/step.zig").stepTimer;
+//const stepApu = @import("apu/step.zig").stepApu;
 const shouldDebugBreak = @import("debug/shouldDebugBreak.zig").shouldDebugBreak;
 const runDebugger = @import("debug/runDebugger.zig").runDebugger;
 const executeDebugCmd = @import("debug/executeCmd.zig").executeCmd;
@@ -24,6 +25,7 @@ pub fn stepGameboy(gb: *Gb, cycles: usize) !void {
         stepPpu(gb);
         stepDma(gb);
         stepTimer(gb);
+        //stepApu(gb);
 
         gb.cycles +%= 1;
     }

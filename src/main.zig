@@ -17,6 +17,86 @@ const CYCLES_UNTIL_VBLANK: usize = 16416;
 const VBLANK_CYCLES: usize = 1140;
 const FRAME_CYCLES: usize = CYCLES_UNTIL_VBLANK + VBLANK_CYCLES;
 
+const SAMPLE_RATE: u32 = 44100;
+const BUFFER_SIZE: u32 = 4096;
+const NUM_CHANNELS: u32 = 2;
+
+fn freq(hz: comptime_float) f32 {
+    return @as(f32, @floatFromInt(SAMPLE_RATE)) / hz;
+}
+
+const A4_FREQ: f32 = freq(440.0);
+const A5_FREQ: f32 = freq(880.0);
+
+const Oscillator = struct {
+    current_step: f32,
+    step_size: f32,
+    volume: f32,
+
+    pub fn init(rate: f32, volume: f32) Oscillator {
+        return .{
+            .current_step = 0.0,
+            .step_size = (2 * std.math.pi) / rate,
+            .volume = volume,
+        };
+    }
+
+    pub fn next(self: *Oscillator) f32 {
+        self.current_step += self.step_size;
+        return std.math.sin(self.current_step) * self.volume;
+    }
+};
+
+const Triangle = struct {
+    current_step: f32,
+    step_size: f32,
+    volume: f32,
+
+    const Self = @This();
+
+    pub fn init(rate: f32, volume: f32) Self {
+        return .{
+            .current_step = 0.0,
+            .step_size = 1 / rate,
+            .volume = volume,
+        };
+    }
+
+    pub fn next(self: *Self) f32 {
+        self.current_step += std.math.wrap(self.step_size, 1);
+        const frac = std.math.modf(self.current_step).fpart;
+        return frac - 0.5 * self.volume;
+    }
+};
+
+const Square = struct {
+    current_step: f32,
+    step_size: f32,
+    volume: f32,
+
+    const Self = @This();
+
+    pub fn init(rate: f32, volume: f32) Self {
+        return .{
+            .current_step = 0.0,
+            .step_size = 1 / rate,
+            .volume = volume,
+        };
+    }
+
+    pub fn next(self: *Self) f32 {
+        self.current_step += std.math.wrap(self.step_size, 1);
+        const frac = std.math.modf(self.current_step).fpart;
+        return std.math.sign(frac - 0.5) * self.volume;
+    }
+};
+
+const Audio = struct {
+    oscillator: Oscillator,
+    triangle: Triangle,
+    square: Square,
+};
+
 pub fn main() !void {
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena.deinit();
@@ -39,15 +119,51 @@ pub fn main() !void {
     );
     defer alloc.free(save_data_filepath);
 
-    if (c.SDL_Init(c.SDL_INIT_VIDEO) != 0) {
+    if (c.SDL_Init(c.SDL_INIT_VIDEO | c.SDL_INIT_AUDIO) != 0) {
         c.SDL_Log("Unable to initialize SDL: %s", c.SDL_GetError());
         return error.SDLInitializationFailed;
     }
     defer c.SDL_Quit();
 
+    // Audio
+
+    var audio_spec = c.SDL_AudioSpec{
+        .freq = SAMPLE_RATE,
+        .format = c.AUDIO_F32,
+        .channels = NUM_CHANNELS,
+        .samples = BUFFER_SIZE,
+        .size = undefined,
+        .silence = undefined,
+        .callback = audioCallback,
+        .userdata = undefined,
+    };
+
+    var audio = Audio{
+        .oscillator = Oscillator.init(A4_FREQ, 0.8),
+        .triangle = Triangle.init(freq(100), 0.8),
+        .square = Square.init(freq(50), 0.5),
+    };
+    audio_spec.userdata = @ptrCast(&audio);
+
+    const audio_device = c.SDL_OpenAudioDevice(null, 0, &audio_spec, null, 0);
+    if (audio_device < 0) {
+        c.SDL_Log("Unable to open audio device: %s", c.SDL_GetError());
+        return error.SDLInitializationFailed;
+    }
+    defer c.SDL_CloseAudioDevice(audio_device);
+
+    c.SDL_PauseAudioDevice(audio_device, 0);
+
     // Main window
 
-    const window = c.SDL_CreateWindow("gameboy", c.SDL_WINDOWPOS_UNDEFINED, c.SDL_WINDOWPOS_UNDEFINED, 160 * SCALE, 144 * SCALE, c.SDL_WINDOW_OPENGL) orelse {
+    const window = c.SDL_CreateWindow(
+        "gameboy",
+        c.SDL_WINDOWPOS_UNDEFINED,
+        c.SDL_WINDOWPOS_UNDEFINED,
+        160 * SCALE,
+        144 * SCALE,
+        c.SDL_WINDOW_OPENGL,
+    ) orelse {
         c.SDL_Log("Unable to create window: %s", c.SDL_GetError());
         return error.SDLInitializationFailed;
     };
@@ -59,7 +175,13 @@ pub fn main() !void {
     };
     defer c.SDL_DestroyRenderer(renderer);
 
-    const texture = c.SDL_CreateTexture(renderer, c.SDL_PIXELFORMAT_RGB24, c.SDL_TEXTUREACCESS_STREAMING, 160, 144) orelse {
+    const texture = c.SDL_CreateTexture(
+        renderer,
+        c.SDL_PIXELFORMAT_RGB24,
+        c.SDL_TEXTUREACCESS_STREAMING,
+        160,
+        144,
+    ) orelse {
         c.SDL_Log("Unable to create texture: %s", c.SDL_GetError());
         return error.SDLInitializationFailed;
     };
@@ -76,7 +198,14 @@ pub fn main() !void {
     const vram_window_x = main_window_x + (160 * SCALE);
     const vram_window_y = main_window_y;
 
-    const vram_window = c.SDL_CreateWindow("vram viewer", vram_window_x, vram_window_y, VRAM_WINDOW_WIDTH * SCALE, VRAM_WINDOW_HEIGHT * SCALE, c.SDL_WINDOW_OPENGL) orelse {
+    const vram_window = c.SDL_CreateWindow(
+        "vram viewer",
+        vram_window_x,
+        vram_window_y,
+        VRAM_WINDOW_WIDTH * SCALE,
+        VRAM_WINDOW_HEIGHT * SCALE,
+        c.SDL_WINDOW_OPENGL,
+    ) orelse {
         c.SDL_Log("Unable to create window: %s", c.SDL_GetError());
         return error.SDLInitializationFailed;
     };
@@ -88,13 +217,22 @@ pub fn main() !void {
     };
     defer c.SDL_DestroyRenderer(renderer);
 
-    const vram_texture = c.SDL_CreateTexture(vram_renderer, c.SDL_PIXELFORMAT_RGB24, c.SDL_TEXTUREACCESS_STREAMING, VRAM_WINDOW_WIDTH, VRAM_WINDOW_HEIGHT) orelse {
+    const vram_texture = c.SDL_CreateTexture(
+        vram_renderer,
+        c.SDL_PIXELFORMAT_RGB24,
+        c.SDL_TEXTUREACCESS_STREAMING,
+        VRAM_WINDOW_WIDTH,
+        VRAM_WINDOW_HEIGHT,
+    ) orelse {
         c.SDL_Log("Unable to create texture: %s", c.SDL_GetError());
         return error.SDLInitializationFailed;
     };
     defer c.SDL_DestroyTexture(texture);
 
-    var vram_pixels = try alloc.alloc(Pixel, VRAM_WINDOW_HEIGHT * VRAM_WINDOW_WIDTH);
+    var vram_pixels = try alloc.alloc(
+        Pixel,
+        VRAM_WINDOW_HEIGHT * VRAM_WINDOW_WIDTH,
+    );
     defer alloc.free(vram_pixels);
 
     // ---
@@ -128,7 +266,6 @@ pub fn main() !void {
         gb.debug.stackBase = 0xdfff;
     }
 
-    var frames: usize = 0;
     while (gb.isRunning()) {
         var event: c.SDL_Event = undefined;
         while (c.SDL_PollEvent(&event) != 0) {
@@ -187,19 +324,11 @@ pub fn main() !void {
         _ = c.SDL_RenderCopy(vram_renderer, vram_texture, null, null);
         c.SDL_RenderPresent(vram_renderer);
 
-        if (false and frames % 15 == 0) {
-            std.debug.print("actual **** frameTime: {} ns = {} micros = {} ms\n", .{ gb.debug.frameTimeNs, gb.debug.frameTimeNs / 1000, gb.debug.frameTimeNs / 1000 / 1000 });
-            const expected: u64 = FRAME_CYCLES * 1000;
-            std.debug.print("expected ** frameTime: {} ns = {} micros = {} ms\n", .{ expected, expected / 1000, expected / 1000 / 1000 });
-        }
-
         const actualFrameTimeNs = (try std.time.Instant.now()).since(start);
-        gb.debug.frameTimeNs = actualFrameTimeNs;
-        const delta_t = FRAME_CYCLES * 1000 -| actualFrameTimeNs;
-        if (delta_t > 100) {
-            std.time.sleep(delta_t);
+        const delay_ns = FRAME_CYCLES * 1000 -| actualFrameTimeNs;
+        if (delay_ns > 100) {
+            std.time.sleep(delay_ns);
         }
-        frames +%= 1;
 
         {
             const uncapped_fps = 1_000_000_000 / actualFrameTimeNs;
@@ -212,4 +341,20 @@ pub fn main() !void {
     }
 
     try gb.cart.persistRam(save_data_filepath);
+}
+
+fn audioCallback(userdata: ?*anyopaque, buffer_maybe: ?[*]u8, _: c_int) callconv(.C) void {
+    const audio = if (userdata) |ud| @as(*Audio, @alignCast(@ptrCast(ud))) else return;
+    const buffer = @as([*]f32, @alignCast(@ptrCast(buffer_maybe orelse return)));
+
+    @memset(buffer[0..@intCast(BUFFER_SIZE)], 0);
+
+    var i: u32 = 0;
+    while (i < BUFFER_SIZE * NUM_CHANNELS) : (i += NUM_CHANNELS) {
+        const val1 = audio.square.next();
+        //const val2 = audio.triangle.next();
+
+        buffer[i] = val1;
+        buffer[i + 1] = val1;
+    }
 }

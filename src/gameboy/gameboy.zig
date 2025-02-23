@@ -10,6 +10,8 @@ const Dma = @import("dma/dma.zig").Dma;
 const Cart = @import("cart.zig").Cart;
 const Joypad = @import("joypad/joypad.zig").Joypad;
 const Ppu = @import("ppu/ppu.zig").Ppu;
+const Apu = @import("apu/apu.zig").Apu;
+const ApuReg = @import("apu/apu.zig").ApuReg;
 
 pub const IoReg = .{
     .JOYP = 0x00,
@@ -18,6 +20,27 @@ pub const IoReg = .{
     .TMA = 0x06,
     .TAC = 0x07,
     .IF = 0x0f,
+    .NR10 = 0x10,
+    .NR11 = 0x11,
+    .NR12 = 0x12,
+    .NR13 = 0x13,
+    .NR14 = 0x14,
+    .NR21 = 0x16,
+    .NR22 = 0x17,
+    .NR23 = 0x18,
+    .NR24 = 0x19,
+    .NR30 = 0x1a,
+    .NR31 = 0x1b,
+    .NR32 = 0x1c,
+    .NR33 = 0x1d,
+    .NR34 = 0x1e,
+    .NR41 = 0x20,
+    .NR42 = 0x21,
+    .NR43 = 0x22,
+    .NR44 = 0x23,
+    .NR50 = 0x24,
+    .NR51 = 0x25,
+    .NR52 = 0x26,
     .LCDC = 0x40,
     .STAT = 0x41,
     .SCY = 0x42,
@@ -138,6 +161,8 @@ pub const Gb = struct {
     cycles_until_ei: u2,
     ime: bool,
 
+    div_apu_occurred: bool,
+
     vram: []u8,
     wram: []u8,
     oam: []u8,
@@ -147,6 +172,7 @@ pub const Gb = struct {
 
     cart: Cart,
     ppu: Ppu,
+    apu: Apu,
     joypad: Joypad,
     dma: Dma,
     timer: Timer,
@@ -220,6 +246,7 @@ pub const Gb = struct {
             .prefix_op = undefined,
             .cycles_until_ei = 0,
             .ime = false,
+            .div_apu_occurred = false,
             .vram = vram,
             .wram = wram,
             .oam = oam,
@@ -229,6 +256,7 @@ pub const Gb = struct {
             .cart = try Cart.init(rom, save_data, alloc),
             .screen = screen,
             .ppu = Ppu.init(palette),
+            .apu = Apu.init(),
             .joypad = Joypad.init(),
             .dma = Dma.init(),
             .timer = Timer.init(),
@@ -337,7 +365,33 @@ pub const Gb = struct {
             // Not useable
             0xfea0...0xfeff => gb.panic("Attempted to read from prohibited memory at ${x}\n", .{addr}),
             // I/O Registers
-            0xff00...0xff7f => gb.io_regs[addr - 0xff00],
+            0xff00...0xff7f => {
+                const reg = addr - 0xff00;
+                return switch (reg) {
+                    IoReg.NR10 => gb.apu.readReg(ApuReg.NR10),
+                    IoReg.NR11 => gb.apu.readReg(ApuReg.NR11),
+                    IoReg.NR12 => gb.apu.readReg(ApuReg.NR12),
+                    IoReg.NR13 => gb.apu.readReg(ApuReg.NR13),
+                    IoReg.NR14 => gb.apu.readReg(ApuReg.NR14),
+                    IoReg.NR21 => gb.apu.readReg(ApuReg.NR21),
+                    IoReg.NR22 => gb.apu.readReg(ApuReg.NR22),
+                    IoReg.NR23 => gb.apu.readReg(ApuReg.NR23),
+                    IoReg.NR24 => gb.apu.readReg(ApuReg.NR24),
+                    IoReg.NR30 => gb.apu.readReg(ApuReg.NR30),
+                    IoReg.NR31 => gb.apu.readReg(ApuReg.NR31),
+                    IoReg.NR32 => gb.apu.readReg(ApuReg.NR32),
+                    IoReg.NR33 => gb.apu.readReg(ApuReg.NR33),
+                    IoReg.NR34 => gb.apu.readReg(ApuReg.NR34),
+                    IoReg.NR41 => gb.apu.readReg(ApuReg.NR41),
+                    IoReg.NR42 => gb.apu.readReg(ApuReg.NR42),
+                    IoReg.NR43 => gb.apu.readReg(ApuReg.NR43),
+                    IoReg.NR44 => gb.apu.readReg(ApuReg.NR44),
+                    IoReg.NR50 => gb.apu.readReg(ApuReg.NR50),
+                    IoReg.NR51 => gb.apu.readReg(ApuReg.NR51),
+                    IoReg.NR52 => gb.apu.readReg(ApuReg.NR52),
+                    else => gb.io_regs[reg],
+                };
+            },
             // HRAM
             0xff80...0xfffe => gb.hram[addr - 0xff80],
             // IE
@@ -381,14 +435,36 @@ pub const Gb = struct {
             // I/O Registers
             0xff00...0xff7f => {
                 const reg = addr - 0xff00;
-                gb.io_regs[reg] = val;
                 switch (reg) {
                     IoReg.DIV => {
                         gb.io_regs[reg] = 0;
                         gb.timer.system_counter = 0;
                     },
+                    IoReg.NR10 => gb.apu.writeReg(ApuReg.NR10, val),
+                    IoReg.NR11 => gb.apu.writeReg(ApuReg.NR11, val),
+                    IoReg.NR12 => gb.apu.writeReg(ApuReg.NR12, val),
+                    IoReg.NR13 => gb.apu.writeReg(ApuReg.NR13, val),
+                    IoReg.NR14 => gb.apu.writeReg(ApuReg.NR14, val),
+                    IoReg.NR21 => gb.apu.writeReg(ApuReg.NR21, val),
+                    IoReg.NR22 => gb.apu.writeReg(ApuReg.NR22, val),
+                    IoReg.NR23 => gb.apu.writeReg(ApuReg.NR23, val),
+                    IoReg.NR24 => gb.apu.writeReg(ApuReg.NR24, val),
+                    IoReg.NR30 => gb.apu.writeReg(ApuReg.NR30, val),
+                    IoReg.NR31 => gb.apu.writeReg(ApuReg.NR31, val),
+                    IoReg.NR32 => gb.apu.writeReg(ApuReg.NR32, val),
+                    IoReg.NR33 => gb.apu.writeReg(ApuReg.NR33, val),
+                    IoReg.NR34 => gb.apu.writeReg(ApuReg.NR34, val),
+                    IoReg.NR41 => gb.apu.writeReg(ApuReg.NR41, val),
+                    IoReg.NR42 => gb.apu.writeReg(ApuReg.NR42, val),
+                    IoReg.NR43 => gb.apu.writeReg(ApuReg.NR43, val),
+                    IoReg.NR44 => gb.apu.writeReg(ApuReg.NR44, val),
+                    IoReg.NR50 => gb.apu.writeReg(ApuReg.NR50, val),
+                    IoReg.NR51 => gb.apu.writeReg(ApuReg.NR51, val),
+                    IoReg.NR52 => gb.apu.writeReg(ApuReg.NR52, val),
                     IoReg.DMA => gb.dma.transferPending = true,
-                    else => {},
+                    else => {
+                        gb.io_regs[reg] = val;
+                    },
                 }
             },
             // HRAM
@@ -438,9 +514,9 @@ pub const Gb = struct {
 
     pub fn panic(gb: *Gb, comptime msg: []const u8, args: anytype) noreturn {
         std.debug.print("\n", .{});
-        gb.debug.printExecutionTrace(std.io.getStdOut().writer(), Debug.MAX_TRACE_LENGTH) catch unreachable;
+        gb.debug.printExecutionTrace(std.io.getStdOut().writer(), Debug.MAX_TRACE_LENGTH) catch {};
         std.debug.print("\n", .{});
-        gb.printDebugState(std.io.getStdOut().writer()) catch unreachable;
+        gb.printDebugState(std.io.getStdOut().writer()) catch {};
         std.debug.print("\n", .{});
         std.debug.panic(msg, args);
     }

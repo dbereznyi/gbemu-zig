@@ -5,8 +5,14 @@ const IoReg = @import("../gameboy.zig").IoReg;
 const TacFlag = @import("../gameboy.zig").TacFlag;
 
 pub fn stepTimer(gb: *Gb) void {
+    const prev_div = gb.io_regs[IoReg.DIV];
     gb.io_regs[IoReg.DIV] = @truncate(gb.timer.system_counter >> 8);
     gb.timer.system_counter +%= 1;
+
+    // signal a DIV-APU event when bit 4 changes from 0 to 1
+    if (prev_div & 0b0001_0000 == 0 and gb.io_regs[IoReg.DIV] & 0b0001_0000 != 0) {
+        gb.div_apu_occurred = true;
+    }
 
     const tac = gb.io_regs[IoReg.TAC];
     if (tac & TacFlag.ENABLE > 0) {

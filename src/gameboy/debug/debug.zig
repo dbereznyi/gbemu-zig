@@ -23,8 +23,6 @@ pub const Debug = struct {
     stackBase: u16,
     executionTrace: BoundedStack(TraceLine, MAX_TRACE_LENGTH),
 
-    frameTimeNs: u64,
-
     lastCommand: ?DebugCmd,
     pendingCommand: ?DebugCmd,
     pendingResult: std.ArrayList(u8),
@@ -48,8 +46,6 @@ pub const Debug = struct {
             .breakpoints = breakpoints,
             .stackBase = 0xfffe,
             .executionTrace = executionTrace,
-
-            .frameTimeNs = 0,
 
             .lastCommand = null,
             .pendingCommand = null,
