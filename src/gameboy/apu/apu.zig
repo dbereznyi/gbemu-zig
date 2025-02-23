@@ -1,3 +1,10 @@
+const std = @import("std");
+const c = @cImport({
+    @cInclude("SDL2/SDL.h");
+});
+
+const NUM_SAMPLES = 4096;
+
 pub const ApuReg = enum {
     NR10,
     NR11,
@@ -22,35 +29,71 @@ pub const ApuReg = enum {
     NR52,
 };
 
+// Translates $0-$f into the range [-1.0, 1.0], negative slope ($0 => 1.0).
+fn toAnalog(value: u4) f32 {
+    return ((2.0 / 15.0) * (15.0 - @as(f32, @floatFromInt(value)))) - 1.0;
+}
+
 pub const Apu = struct {
     on: u1,
     ch1: Ch1,
 
+    audio_device: u32,
+    samples: []f32,
+    samples_ix: usize,
+
     // number of DIV_APU ticks until an event
     next_envelope_sweep_tick_in: u4,
     next_length_tick_in: u3,
-    next_freq_sweep_tick_in: u3,
+    next_period_sweep_tick_in: u3,
 
     const Self = @This();
 
-    pub fn init() Self {
+    pub fn init(alloc: std.mem.Allocator, audio_device: u32) !Self {
         return .{
             .on = 0,
             .ch1 = Ch1.init(),
+            .audio_device = audio_device,
+            .samples = try alloc.alloc(f32, NUM_SAMPLES * 2),
+            .samples_ix = 0,
             .next_envelope_sweep_tick_in = 8,
             .next_length_tick_in = 2,
-            .next_freq_sweep_tick_in = 4,
+            .next_period_sweep_tick_in = 4,
         };
+    }
+
+    pub fn mix(self: *Self) void {
+        const ch1_output = toAnalog(self.ch1.value) * @as(f32, @floatFromInt(self.ch1.volume));
+        const ch1_left = if (self.ch1.mix_left == 0) ch1_output else 0.0;
+        const ch1_right = if (self.ch1.mix_right == 0) ch1_output else 0.0;
+
+        const left = ch1_left;
+        const right = ch1_right;
+        self.samples[self.samples_ix] = left;
+        self.samples_ix += 1;
+        self.samples[self.samples_ix] = right;
+        self.samples_ix += 1;
+    }
+
+    pub fn queueSamplesWhenBufferIsFull(self: *Self) void {
+        if (self.samples_ix >= NUM_SAMPLES * 2) {
+            _ = c.SDL_QueueAudio(self.audio_device, @ptrCast(self.samples), NUM_SAMPLES * 2 * 4);
+            self.samples_ix = 0;
+        }
     }
 
     pub fn step(self: *Self, div_apu_occurred: bool) void {
         if (div_apu_occurred) {
             self.next_envelope_sweep_tick_in -= 1;
             self.next_length_tick_in -= 1;
-            self.next_freq_sweep_tick_in -= 1;
+            self.next_period_sweep_tick_in -= 1;
         }
 
-        self.ch1.step(self.next_envelope_sweep_tick_in == 0, self.next_length_tick_in == 0);
+        self.ch1.step(
+            self.next_period_sweep_tick_in == 0,
+            self.next_envelope_sweep_tick_in == 0,
+            self.next_length_tick_in == 0,
+        );
 
         if (self.next_envelope_sweep_tick_in == 0) {
             self.next_envelope_sweep_tick_in = 8;
@@ -58,8 +101,8 @@ pub const Apu = struct {
         if (self.next_length_tick_in == 0) {
             self.next_length_tick_in = 2;
         }
-        if (self.next_freq_sweep_tick_in == 0) {
-            self.next_freq_sweep_tick_in = 4;
+        if (self.next_period_sweep_tick_in == 0) {
+            self.next_period_sweep_tick_in = 4;
         }
     }
 
@@ -71,10 +114,26 @@ pub const Apu = struct {
                 const individual_step: u8 = self.ch1.sweep_individual_step;
                 return (pace << 4) | (dir << 3) | individual_step;
             },
-            .NR11 => return 0,
-            .NR12 => return 0,
-            .NR13 => return 0,
-            .NR14 => return 0,
+            .NR11 => {
+                const wave_duty: u8 = self.ch1.wave_duty;
+                const init_length_timer: u8 = self.ch1.init_length_timer;
+                return (wave_duty << 6) | init_length_timer;
+            },
+            .NR12 => {
+                const init_volume: u8 = self.ch1.init_volume;
+                const envelope_dir: u8 = self.ch1.envelope_dir;
+                const sweep_pace: u8 = self.ch1.sweep_pace;
+                return (init_volume << 4) | (envelope_dir << 3) | sweep_pace;
+            },
+            .NR13 => {
+                const period_low: u8 = @truncate(self.ch1.period_setting);
+                return period_low;
+            },
+            .NR14 => {
+                const length_enable: u8 = self.ch1.length_enable;
+                const period_high: u8 = @truncate(self.ch1.period_setting >> 8);
+                return (length_enable << 6) | period_high;
+            },
             .NR21 => return 0,
             .NR22 => return 0,
             .NR23 => return 0,
@@ -89,7 +148,11 @@ pub const Apu = struct {
             .NR43 => return 0,
             .NR44 => return 0,
             .NR50 => return 0,
-            .NR51 => return 0,
+            .NR51 => {
+                const ch1_right: u8 = self.ch1.mix_right;
+                const ch1_left: u8 = self.ch1.mix_left;
+                return (ch1_left << 4) | ch1_right;
+            },
             .NR52 => {
                 const apu_on: u8 = self.on;
                 const ch1_on: u8 = self.ch1.on;
@@ -110,10 +173,14 @@ pub const Apu = struct {
                 self.ch1.init_length_timer = @truncate(val & 0b0011_1111);
             },
             .NR12 => {
-                // TODO writes should be delayed until retrigger if the channel is already on
+                // TODO writes should not take effect until retrigger if the channel is already on
                 self.ch1.init_volume = @truncate((val & 0b1111_0000) >> 4);
                 self.ch1.envelope_dir = @truncate((val & 0b0000_1000) >> 3);
                 self.ch1.envelope_sweep_pace = @truncate(val & 0b0000_0111);
+                if (self.ch1.init_volume == 0 and self.ch1.envelope_dir == 0) {
+                    // DAC turned off, so turn the channel off as well
+                    self.ch1.on = 0;
+                }
             },
             .NR13 => {
                 const val_u11: u11 = val;
@@ -169,11 +236,13 @@ const WAVEFORMS = [4][16]u1{
 pub const Ch1 = struct {
     // Internal
     on: u1,
-    val: u4,
+    value: u4,
     volume: u4,
-    length_timer: u7,
+    length_timer: u6,
     envelope_timer: u3,
     period: u11,
+    mix_left: u1,
+    mix_right: u1,
 
     // NR10
     sweep_pace: u3,
@@ -204,11 +273,13 @@ pub const Ch1 = struct {
     pub fn init() Self {
         return .{
             .on = 0,
-            .val = 0,
+            .value = 0,
             .volume = 0,
             .length_timer = 0,
             .envelope_timer = 0,
             .period = 0,
+            .mix_left = 0,
+            .mix_right = 0,
             .sweep_pace = 0,
             .sweep_dir = 0,
             .sweep_individual_step = 0,
@@ -226,12 +297,41 @@ pub const Ch1 = struct {
         };
     }
 
-    pub fn step(self: *Self, envelope_tick: bool, length_tick: bool) void {
+    pub fn step(
+        self: *Self,
+        period_sweep_tick: bool,
+        envelope_sweep_tick: bool,
+        length_tick: bool,
+    ) void {
         if (self.on == 0) {
             return;
         }
 
-        if (self.envelope_sweep_pace != 0 and envelope_tick) {
+        if (self.sweep_enabled != 0 and period_sweep_tick) {
+            const new_freq = calcNewSweepFreq(
+                self.sweep_shadow,
+                self.sweep_dir,
+                self.sweep_individual_step,
+            );
+            if (new_freq > 0x7ff) {
+                self.on = 0;
+                return;
+            } else {
+                self.sweep_shadow = new_freq;
+                self.period = self.sweep_shadow;
+                const new_freq2 = calcNewSweepFreq(
+                    self.sweep_shadow,
+                    self.sweep_dir,
+                    self.sweep_individual_step,
+                );
+                if (new_freq2 > 0x7ff) {
+                    self.on = 0;
+                    return;
+                }
+            }
+        }
+
+        if (self.envelope_sweep_pace != 0 and envelope_sweep_tick) {
             self.envelope_timer += 1;
             if (self.envelope_timer == self.envelope_sweep_pace) {
                 self.envelope_timer = 0;
@@ -239,14 +339,22 @@ pub const Ch1 = struct {
             }
         }
 
-        if (self.length_enable and length_tick) {
-            self.length_timer += 1;
-            if (self.length_timer == 64) {
+        if (self.length_enable == 1 and length_tick) {
+            self.length_timer +%= 1;
+            if (self.length_timer == 0) {
                 self.on = 0;
+                return;
             }
         }
 
-        self.val = WAVEFORMS[self.wave_duty][self.duty_step];
+        self.period += 1;
+        if (self.period > 0x7ff) {
+            self.duty_step +%= 1;
+        } else {
+            self.period = self.period_setting;
+        }
+
+        self.value = WAVEFORMS[self.wave_duty][self.duty_step];
     }
 
     pub fn isDacEnabled(self: *const Self) bool {
@@ -255,8 +363,8 @@ pub const Ch1 = struct {
 
     pub fn trigger(self: *Self) void {
         self.on = 1;
-        if (self.length_timer == 64) {
-            self.length_timer = 0;
+        if (self.length_timer == 0) {
+            self.length_timer = self.init_length_timer;
         }
         self.envelope_timer = 0;
         self.period = self.period_setting;
@@ -266,13 +374,20 @@ pub const Ch1 = struct {
         self.sweep_timer = 0;
         self.sweep_enabled = if (self.sweep_pace != 0 or self.sweep_individual_step != 0) 1 else 0;
         if (self.sweep_individual_step != 0) {
-            self.performSweepFreqCalc();
+            const new_freq = calcNewSweepFreq(
+                self.sweep_shadow,
+                self.sweep_dir,
+                self.sweep_individual_step,
+            );
+            if (new_freq > 0x7ff) {
+                self.on = 0;
+            }
         }
     }
 
     pub fn clearRegisters(self: *Self) void {
         self.on = 0;
-        self.val = 0;
+        self.value = 0;
         self.volume = 0;
 
         self.sweep_pace = 0;
@@ -290,18 +405,8 @@ pub const Ch1 = struct {
         self.length_enable = 0;
     }
 
-    fn performSweepFreqCalc(self: *Self) void {
-        var temp = self.sweep_shadow >> self.sweep_individual_step;
-        if (self.sweep_direction == 1) {
-            temp = ~temp +% 1;
-        }
-        const new_freq = self.sweep_shadow + temp;
-
-        // overflow check
-        if (new_freq > 0x7ff) {
-            self.on = 0;
-        } else {
-            self.sweep_shadow = new_freq;
-        }
+    fn calcNewSweepFreq(shadow: u11, dir: u1, individual_step: u3) u11 {
+        const temp = shadow >> individual_step;
+        return if (dir == 0) shadow +| temp else shadow -| temp;
     }
 };

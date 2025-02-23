@@ -134,16 +134,17 @@ pub fn main() !void {
         .samples = BUFFER_SIZE,
         .size = undefined,
         .silence = undefined,
-        .callback = audioCallback,
+        //.callback = audioCallback,
+        .callback = null,
         .userdata = undefined,
     };
 
-    var audio = Audio{
-        .oscillator = Oscillator.init(A4_FREQ, 0.8),
-        .triangle = Triangle.init(freq(100), 0.8),
-        .square = Square.init(freq(50), 0.5),
-    };
-    audio_spec.userdata = @ptrCast(&audio);
+    //var audio = Audio{
+    //    .oscillator = Oscillator.init(A4_FREQ, 0.8),
+    //    .triangle = Triangle.init(freq(100), 0.8),
+    //    .square = Square.init(freq(50), 0.5),
+    //};
+    //audio_spec.userdata = @ptrCast(&audio);
 
     const audio_device = c.SDL_OpenAudioDevice(null, 0, &audio_spec, null, 0);
     if (audio_device < 0) {
@@ -252,7 +253,7 @@ pub fn main() !void {
     };
     defer if (save_data) |data| alloc.free(data);
 
-    var gb = try Gb.init(alloc, rom, save_data, Palette.green);
+    var gb = try Gb.init(alloc, rom, save_data, Palette.green, audio_device);
     defer gb.deinit(alloc);
 
     const debuggerThread = try std.Thread.spawn(.{}, runDebugger, .{&gb});

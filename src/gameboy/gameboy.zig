@@ -192,6 +192,7 @@ pub const Gb = struct {
         rom: []const u8,
         save_data: ?[]const u8,
         palette: Ppu.Palette,
+        audio_device: u32,
     ) !Gb {
         const vram = try alloc.alloc(u8, 8 * 1024);
         for (vram, 0..) |_, i| {
@@ -256,7 +257,7 @@ pub const Gb = struct {
             .cart = try Cart.init(rom, save_data, alloc),
             .screen = screen,
             .ppu = Ppu.init(palette),
-            .apu = Apu.init(),
+            .apu = try Apu.init(alloc, audio_device),
             .joypad = Joypad.init(),
             .dma = Dma.init(),
             .timer = Timer.init(),
