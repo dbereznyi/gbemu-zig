@@ -2,6 +2,7 @@ const std = @import("std");
 const c = @cImport({
     @cInclude("SDL2/SDL.h");
 });
+const format = std.fmt.format;
 
 const NUM_SAMPLES = 4096;
 
@@ -41,6 +42,7 @@ pub const Apu = struct {
     audio_device: u32,
     samples: []f32,
     samples_ix: usize,
+    samples_timer: u8,
 
     // number of DIV_APU ticks until an event
     next_envelope_sweep_tick_in: u4,
@@ -56,10 +58,20 @@ pub const Apu = struct {
             .audio_device = audio_device,
             .samples = try alloc.alloc(f32, NUM_SAMPLES * 2),
             .samples_ix = 0,
+            .samples_timer = 0,
             .next_envelope_sweep_tick_in = 8,
             .next_length_tick_in = 2,
             .next_period_sweep_tick_in = 4,
         };
+    }
+
+    pub fn printState(self: *const Self, writer: anytype) !void {
+        try format(writer, "APU is {s}\n", .{if (self.on == 1) "on" else "off"});
+        try format(writer, "samples_ix={}\n", .{self.samples_ix});
+        try format(writer, "Next envelope sweep tick in: {}\n", .{self.next_envelope_sweep_tick_in});
+        try format(writer, "Next length timer tick in: {}\n", .{self.next_length_tick_in});
+        try format(writer, "Next period sweep tick in: {}\n", .{self.next_period_sweep_tick_in});
+        try self.ch1.printState(writer);
     }
 
     pub fn mix(self: *Self) void {
@@ -69,15 +81,21 @@ pub const Apu = struct {
 
         const left = ch1_left;
         const right = ch1_right;
+
+        self.samples_timer += 1;
+        if (self.samples_timer < 24) {
+            return;
+        }
+        self.samples_timer = 0;
+
         self.samples[self.samples_ix] = left;
         self.samples_ix += 1;
         self.samples[self.samples_ix] = right;
         self.samples_ix += 1;
-    }
 
-    pub fn queueSamplesWhenBufferIsFull(self: *Self) void {
         if (self.samples_ix >= NUM_SAMPLES * 2) {
             _ = c.SDL_QueueAudio(self.audio_device, @ptrCast(self.samples), NUM_SAMPLES * 2 * 4);
+            c.SDL_PauseAudioDevice(self.audio_device, 0);
             self.samples_ix = 0;
         }
     }
@@ -190,6 +208,9 @@ pub const Apu = struct {
                 self.ch1.length_enable = @truncate((val & 0b0100_0000) >> 6);
                 const val_u11: u11 = val;
                 self.ch1.period_setting = (self.ch1.period_setting & 0b000_1111_1111) | (val_u11 << 8);
+                if (val & 0b1000_0000 > 0) {
+                    self.ch1.trigger();
+                }
             },
             .NR21 => {},
             .NR22 => {},
@@ -297,6 +318,56 @@ pub const Ch1 = struct {
         };
     }
 
+    pub fn printState(self: *const Self, writer: anytype) !void {
+        try format(writer, "CH1 is {s} and DAC is {s}\n", .{
+            if (self.on == 1) "on" else "off",
+            if (self.isDacOn()) "on" else "off",
+        });
+        try format(writer, "    Current value: {}\n", .{self.value});
+        try format(writer, "    Volume: {}\n", .{self.volume});
+        try format(writer, "    Pan: {s}\n", .{if (self.mix_left == 1 and self.mix_right == 1) "center" else if (self.mix_left == 1) "left" else "right"});
+        try format(writer, "    Duty cycle: {s}\n", .{
+            switch (self.wave_duty) {
+                0 => "12.5%",
+                1 => "25%",
+                2 => "50%",
+                3 => "75%",
+            },
+        });
+        try format(writer, "    Duty step: {}\n", .{self.duty_step});
+        try format(writer, "    Length timer: {s}", .{
+            if (self.length_enable == 0) "disabled\n" else "",
+        });
+        if (self.length_enable == 1) {
+            try format(writer, "set to {}; will expire in {} ticks\n", .{
+                self.init_length_timer,
+                0b11_1111 - self.length_timer,
+            });
+        }
+        try format(writer, "    Initial volume: {}\n", .{self.init_volume});
+        try format(writer, "    Envelope: {s}", .{
+            if (self.envelope_sweep_pace == 0) "disabled\n" else "",
+        });
+        if (self.envelope_sweep_pace != 0) {
+            try format(writer, "{s} every {} ticks\n", .{
+                if (self.envelope_dir == 1) "increasing" else "decreasing",
+                self.envelope_sweep_pace,
+            });
+        }
+        try format(writer, "    Period setting: ${x}\n", .{self.period_setting});
+        try format(writer, "    Current period value: ${x}\n", .{self.period});
+        try format(writer, "    Period sweep: {s}", .{
+            if (self.sweep_enabled == 0) "disabled\n" else "",
+        });
+        if (self.sweep_enabled == 1) {
+            try format(writer, "{s} every {} ticks with step {}\n", .{
+                if (self.sweep_dir == 1) "increasing" else "decreasing",
+                self.sweep_pace,
+                self.sweep_individual_step,
+            });
+        }
+    }
+
     pub fn step(
         self: *Self,
         period_sweep_tick: bool,
@@ -308,23 +379,25 @@ pub const Ch1 = struct {
         }
 
         if (self.sweep_enabled != 0 and period_sweep_tick) {
-            const new_freq = calcNewSweepFreq(
+            const result = calcNewSweepFreqWithOverflowCheck(
                 self.sweep_shadow,
                 self.sweep_dir,
                 self.sweep_individual_step,
             );
-            if (new_freq > 0x7ff) {
+            if (result[1] == 1) {
+                std.debug.print("freq overflow in step, turning off\n", .{});
                 self.on = 0;
                 return;
             } else {
-                self.sweep_shadow = new_freq;
+                self.sweep_shadow = result[0];
                 self.period = self.sweep_shadow;
-                const new_freq2 = calcNewSweepFreq(
+                const result2 = calcNewSweepFreqWithOverflowCheck(
                     self.sweep_shadow,
                     self.sweep_dir,
                     self.sweep_individual_step,
                 );
-                if (new_freq2 > 0x7ff) {
+                if (result2[1] == 1) {
+                    std.debug.print("freq overflow in step (check #2), turning off\n", .{});
                     self.on = 0;
                     return;
                 }
@@ -335,29 +408,35 @@ pub const Ch1 = struct {
             self.envelope_timer += 1;
             if (self.envelope_timer == self.envelope_sweep_pace) {
                 self.envelope_timer = 0;
-                self.volume -|= 1;
+                if (self.envelope_dir == 1) {
+                    self.volume +|= 1;
+                } else {
+                    self.volume -|= 1;
+                }
             }
         }
 
         if (self.length_enable == 1 and length_tick) {
             self.length_timer +%= 1;
             if (self.length_timer == 0) {
+                std.debug.print("length timer expired, turning off\n", .{});
                 self.on = 0;
                 return;
             }
         }
 
-        self.period += 1;
-        if (self.period > 0x7ff) {
+        const period_increment_result = @addWithOverflow(self.period, 1);
+        self.period = period_increment_result[0];
+        if (period_increment_result[1] == 1) {
             self.duty_step +%= 1;
-        } else {
             self.period = self.period_setting;
         }
 
-        self.value = WAVEFORMS[self.wave_duty][self.duty_step];
+        const new_value_u4: u4 = WAVEFORMS[self.wave_duty][self.duty_step];
+        self.value = new_value_u4 * 0xf;
     }
 
-    pub fn isDacEnabled(self: *const Self) bool {
+    pub fn isDacOn(self: *const Self) bool {
         return self.init_volume != 0 or self.envelope_dir != 0;
     }
 
@@ -374,12 +453,13 @@ pub const Ch1 = struct {
         self.sweep_timer = 0;
         self.sweep_enabled = if (self.sweep_pace != 0 or self.sweep_individual_step != 0) 1 else 0;
         if (self.sweep_individual_step != 0) {
-            const new_freq = calcNewSweepFreq(
+            const result = calcNewSweepFreqWithOverflowCheck(
                 self.sweep_shadow,
                 self.sweep_dir,
                 self.sweep_individual_step,
             );
-            if (new_freq > 0x7ff) {
+            if (result[1] == 1) {
+                std.debug.print("freq overflow in trigger, turning off\n", .{});
                 self.on = 0;
             }
         }
@@ -405,8 +485,8 @@ pub const Ch1 = struct {
         self.length_enable = 0;
     }
 
-    fn calcNewSweepFreq(shadow: u11, dir: u1, individual_step: u3) u11 {
+    fn calcNewSweepFreqWithOverflowCheck(shadow: u11, dir: u1, individual_step: u3) struct { u11, u1 } {
         const temp = shadow >> individual_step;
-        return if (dir == 0) shadow +| temp else shadow -| temp;
+        return if (dir == 0) @addWithOverflow(shadow, temp) else @subWithOverflow(shadow, temp);
     }
 };

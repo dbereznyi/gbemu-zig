@@ -22,6 +22,7 @@ const DebugCmdTag = enum {
     viewJoypad,
     viewTimer,
     viewCart,
+    viewApu,
     viewExecutionTrace,
     joypadPress,
     joypadRelease,
@@ -53,6 +54,7 @@ pub const DebugCmd = union(DebugCmdTag) {
     viewJoypad: void,
     viewTimer: void,
     viewCart: void,
+    viewApu: void,
     viewExecutionTrace: void,
     joypadPress: Button,
     joypadRelease: Button,
@@ -160,6 +162,7 @@ pub const DebugCmd = union(DebugCmdTag) {
                     'j' => .viewJoypad,
                     't' => .viewTimer,
                     'c' => .viewCart,
+                    'a' => .viewApu,
                     'e' => .viewExecutionTrace,
                     else => null,
                 };

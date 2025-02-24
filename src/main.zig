@@ -153,8 +153,6 @@ pub fn main() !void {
     }
     defer c.SDL_CloseAudioDevice(audio_device);
 
-    c.SDL_PauseAudioDevice(audio_device, 0);
-
     // Main window
 
     const window = c.SDL_CreateWindow(

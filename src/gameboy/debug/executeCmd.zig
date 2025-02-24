@@ -30,6 +30,7 @@ const HELP_MESSAGE =
     "    (v)iew (j)oypad\n" ++
     "    (v)iew (t)imer\n" ++
     "    (v)iew (c)artridge\n" ++
+    "    (v)iew (a)pu\n" ++
     "    (v)iew (e)xecution trace\n" ++
     "  simulating joypad button presses/releases\n" ++
     "    (j)oypad (p)ress <button to press: a,b,st,se,u,l,r,d>\n" ++
@@ -137,6 +138,7 @@ pub fn executeCmd(cmd: DebugCmd, gb: *Gb) !void {
         .viewJoypad => try gb.joypad.printState(writer),
         .viewTimer => try gb.timer.printState(writer),
         .viewCart => try gb.cart.printState(writer),
+        .viewApu => try gb.apu.printState(writer),
         .viewExecutionTrace => try gb.debug.printExecutionTrace(writer, MAX_TRACE_LENGTH),
         .joypadPress => |button| gb.joypad.pressButton(button),
         .joypadRelease => |button| gb.joypad.releaseButton(button),
