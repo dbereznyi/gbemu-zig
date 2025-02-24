@@ -4,7 +4,7 @@ const c = @cImport({
 });
 const format = std.fmt.format;
 
-const NUM_SAMPLES = 4096;
+const NUM_SAMPLES = 2048;
 // APU is clocked at 1048576 Hz, but audio device expects samples at 44100 Hz.
 // Therefore, we divide the clockrate by 24 to get roughly 44100 Hz.
 const SAMPLES_CLOCK_DIVIDER = 24;
@@ -378,7 +378,7 @@ pub const Ch1 = struct {
     }
 
     pub fn getOutput(self: *const Self) ChannelOutput {
-        const output = if (self.on == 1) toAnalog(self.value) * @as(f32, @floatFromInt(self.volume)) else 0.0;
+        const output = if (self.on == 1) toAnalog(self.value) else 0.0;
         return .{
             .left = if (self.mix_left == 0) output else 0.0,
             .right = if (self.mix_right == 0) output else 0.0,
@@ -450,7 +450,7 @@ pub const Ch1 = struct {
         }
 
         const new_value_u4: u4 = WAVEFORMS[self.wave_duty][self.duty_step];
-        self.value = new_value_u4 * 0xf;
+        self.value = if (new_value_u4 == 0) 0 else new_value_u4 +| self.volume;
     }
 
     pub fn isDacOn(self: *const Self) bool {
@@ -608,7 +608,7 @@ pub const Ch2 = struct {
     }
 
     pub fn getOutput(self: *const Self) ChannelOutput {
-        const output = if (self.on == 1) toAnalog(self.value) * @as(f32, @floatFromInt(self.volume)) else 0.0;
+        const output = if (self.on == 1) toAnalog(self.value) else 0.0;
         return .{
             .left = if (self.mix_left == 0) output else 0.0,
             .right = if (self.mix_right == 0) output else 0.0,
@@ -653,7 +653,7 @@ pub const Ch2 = struct {
         }
 
         const new_value_u4: u4 = WAVEFORMS[self.wave_duty][self.duty_step];
-        self.value = new_value_u4 * 0xf;
+        self.value = if (new_value_u4 == 0) 0 else new_value_u4 +| self.volume;
     }
 
     pub fn isDacOn(self: *const Self) bool {
