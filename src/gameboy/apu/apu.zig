@@ -7,7 +7,7 @@ const format = std.fmt.format;
 const NUM_SAMPLES = 2048;
 // APU is clocked at 1048576 Hz, but audio device expects samples at 44100 Hz.
 // Therefore, we divide the clockrate by 24 to get roughly 44100 Hz.
-const SAMPLES_CLOCK_DIVIDER = 24;
+const SAMPLES_CLOCK_DIVIDER = 23;
 
 pub const ApuReg = enum {
     NR10,
@@ -40,10 +40,13 @@ fn toAnalog(value: u4) f32 {
 
 pub const Apu = struct {
     on: u1,
+    volume_left: u3,
+    volume_right: u3,
 
     ch1: Ch1,
     ch2: Ch2,
     ch3: Ch3,
+    ch4: Ch4,
 
     audio_device: u32,
     samples: []f32,
@@ -60,9 +63,12 @@ pub const Apu = struct {
     pub fn init(alloc: std.mem.Allocator, audio_device: u32) !Self {
         return .{
             .on = 0,
+            .volume_left = 0,
+            .volume_right = 0,
             .ch1 = Ch1.init(),
             .ch2 = Ch2.init(),
             .ch3 = Ch3.init(),
+            .ch4 = Ch4.init(),
             .audio_device = audio_device,
             .samples = try alloc.alloc(f32, NUM_SAMPLES * 2),
             .samples_ix = 0,
@@ -82,15 +88,17 @@ pub const Apu = struct {
         try self.ch1.printState(writer);
         try self.ch2.printState(writer);
         try self.ch3.printState(writer);
+        try self.ch4.printState(writer);
     }
 
     pub fn mix(self: *Self) void {
         const ch1_output = self.ch1.getOutput();
         const ch2_output = self.ch2.getOutput();
         const ch3_output = self.ch3.getOutput();
+        const ch4_output = self.ch3.getOutput();
 
-        const left = ch1_output.left + ch2_output.left + ch3_output.left;
-        const right = ch1_output.right + ch2_output.right + ch3_output.right;
+        const left = ch1_output.left + ch2_output.left + ch3_output.left + ch4_output.left;
+        const right = ch1_output.right + ch2_output.right + ch3_output.right + ch4_output.right;
 
         self.samples_timer += 1;
         if (self.samples_timer < SAMPLES_CLOCK_DIVIDER) {
@@ -98,6 +106,7 @@ pub const Apu = struct {
         }
         self.samples_timer = 0;
 
+        // TODO handle master volume
         self.samples[self.samples_ix] = left;
         self.samples_ix += 1;
         self.samples[self.samples_ix] = right;
@@ -127,6 +136,10 @@ pub const Apu = struct {
             self.next_length_tick_in == 0,
         );
         self.ch3.step(
+            self.next_length_tick_in == 0,
+        );
+        self.ch4.step(
+            self.next_envelope_sweep_tick_in == 0,
             self.next_length_tick_in == 0,
         );
 
@@ -198,12 +211,29 @@ pub const Apu = struct {
                 return length_enable << 6;
             },
             // Channel 4
-            .NR41 => return 0,
-            .NR42 => return 0,
-            .NR43 => return 0,
-            .NR44 => return 0,
+            .NR41 => return 0xff,
+            .NR42 => {
+                const init_volume: u8 = self.ch4.init_volume;
+                const envelope_dir: u8 = self.ch4.envelope_dir;
+                const sweep_pace: u8 = self.ch4.envelope_sweep_pace;
+                return (init_volume << 4) | (envelope_dir << 3) | sweep_pace;
+            },
+            .NR43 => {
+                const clock_shift: u8 = self.ch4.clock_shift;
+                const lfsr_width: u8 = self.ch4.lfsr_width;
+                const clock_divider: u8 = self.ch4.clock_divider;
+                return (clock_shift << 4) | (lfsr_width << 3) | clock_divider;
+            },
+            .NR44 => {
+                const length_enable: u8 = self.ch4.length_enable;
+                return length_enable << 6;
+            },
             // Global
-            .NR50 => return 0,
+            .NR50 => {
+                const volume_left: u8 = self.volume_left;
+                const volume_right: u8 = self.volume_right;
+                return (volume_left << 4) | volume_right;
+            },
             .NR51 => {
                 const ch1_right: u8 = self.ch1.mix_right;
                 const ch1_left: u8 = self.ch1.mix_left;
@@ -305,22 +335,46 @@ pub const Apu = struct {
                 }
             },
             // Channel 4
-            .NR41 => {},
-            .NR42 => {},
-            .NR43 => {},
-            .NR44 => {},
+            .NR41 => {
+                self.ch4.init_length_timer = @truncate(val);
+            },
+            .NR42 => {
+                // TODO writes should not take effect until retrigger if the channel is already on
+                self.ch4.init_volume = @truncate((val & 0b1111_0000) >> 4);
+                self.ch4.envelope_dir = @truncate((val & 0b0000_1000) >> 3);
+                self.ch4.envelope_sweep_pace = @truncate(val & 0b0000_0111);
+                if (self.ch4.init_volume == 0 and self.ch4.envelope_dir == 0) {
+                    // DAC turned off, so turn the channel off as well
+                    self.ch4.on = 0;
+                }
+            },
+            .NR43 => {
+                self.ch4.clock_shift = @truncate(val >> 4);
+                self.ch4.lfsr_width = @truncate(val >> 3);
+                self.ch4.clock_divider = @truncate(val);
+            },
+            .NR44 => {
+                self.ch4.length_enable = @truncate((val & 0b0100_0000) >> 6);
+
+                if (val & 0b1000_0000 > 0) {
+                    self.ch4.trigger();
+                }
+            },
             // Global
-            .NR50 => {},
+            .NR50 => {
+                self.volume_left = @truncate(val >> 4);
+                self.volume_right = @truncate(val);
+            },
             .NR51 => {
                 self.ch1.mix_left = @truncate((val & 0b0001_0000) >> 4);
                 self.ch2.mix_left = @truncate((val & 0b0010_0000) >> 5);
                 self.ch3.mix_left = @truncate((val & 0b0100_0000) >> 6);
-                //self.ch4.mix_left = @truncate((val & 0b1000_0000) >> 7);
+                self.ch4.mix_left = @truncate((val & 0b1000_0000) >> 7);
 
                 self.ch1.mix_right = @truncate((val & 0b0000_0001) >> 0);
                 self.ch2.mix_right = @truncate((val & 0b0000_0010) >> 1);
                 self.ch3.mix_right = @truncate((val & 0b0000_0100) >> 2);
-                //self.ch4.mix_right = @truncate((val & 0b0000_1000) >> 3);
+                self.ch4.mix_right = @truncate((val & 0b0000_1000) >> 3);
             },
             .NR52 => {
                 if (val & 0b1000_0000 == 0) {
@@ -363,7 +417,7 @@ pub const Apu = struct {
         self.ch1.clearRegisters();
         self.ch2.clearRegisters();
         self.ch3.clearRegisters();
-        //self.ch4.clearRegisters();
+        self.ch4.clearRegisters();
     }
 
     fn turnOn(self: *Self) void {
@@ -383,7 +437,7 @@ const WAVEFORMS = [4][8]u1{
     [_]u1{ 1, 0, 0, 0, 0, 0, 0, 1 },
 };
 
-pub const Ch1 = struct {
+const Ch1 = struct {
     // Internal
     on: u1,
     current_sample: u4,
@@ -626,7 +680,7 @@ pub const Ch1 = struct {
     }
 };
 
-pub const Ch2 = struct {
+const Ch2 = struct {
     // Internal
     on: u1,
     current_sample: u4,
@@ -683,11 +737,7 @@ pub const Ch2 = struct {
         };
     }
 
-    pub fn step(
-        self: *Self,
-        envelope_sweep_tick: bool,
-        length_tick: bool,
-    ) void {
+    pub fn step(self: *Self, envelope_sweep_tick: bool, length_tick: bool) void {
         if (self.on == 0) {
             return;
         }
@@ -793,7 +843,7 @@ pub const Ch2 = struct {
     }
 };
 
-pub const Ch3 = struct {
+const Ch3 = struct {
     // Internal
     on: u1,
     current_sample: u4,
@@ -926,5 +976,168 @@ pub const Ch3 = struct {
         }
         try format(writer, "    Period setting: ${x}\n", .{self.period_setting});
         try format(writer, "    Current period value: ${x}\n", .{self.period});
+    }
+};
+
+const Ch4 = struct {
+    // Internal
+    on: u1,
+    current_sample: u4,
+    volume: u4,
+    envelope_timer: u3,
+    length_timer: u8,
+    lfsr: u16,
+    lfsr_timer: u32,
+
+    mix_left: u1,
+    mix_right: u1,
+
+    // NR41
+    init_length_timer: u8,
+
+    // NR42
+    init_volume: u4,
+    envelope_dir: u1,
+    envelope_sweep_pace: u3,
+
+    // NR43
+    clock_shift: u4,
+    lfsr_width: u1,
+    clock_divider: u3,
+
+    // NR44
+    length_enable: u1,
+
+    const Self = @This();
+
+    pub fn init() Self {
+        return .{
+            .on = 0,
+            .current_sample = 0,
+            .volume = 0,
+            .envelope_timer = 0,
+            .length_timer = 0,
+            .lfsr = 0,
+            .lfsr_timer = 0,
+            .mix_left = 0,
+            .mix_right = 0,
+            .init_length_timer = 0,
+            .init_volume = 0,
+            .envelope_dir = 0,
+            .envelope_sweep_pace = 0,
+            .clock_shift = 0,
+            .lfsr_width = 0,
+            .clock_divider = 0,
+            .length_enable = 0,
+        };
+    }
+
+    pub fn getOutput(self: *const Self) ChannelOutput {
+        const output = if (self.on == 1) toAnalog(self.current_sample) else 0.0;
+        return .{
+            .left = if (self.mix_left == 0) output else 0.0,
+            .right = if (self.mix_right == 0) output else 0.0,
+        };
+    }
+
+    pub fn step(self: *Self, envelope_sweep_tick: bool, length_tick: bool) void {
+        if (self.on == 0) {
+            return;
+        }
+
+        if (self.envelope_sweep_pace != 0 and envelope_sweep_tick) {
+            self.envelope_timer += 1;
+            if (self.envelope_timer == self.envelope_sweep_pace) {
+                self.envelope_timer = 0;
+                if (self.envelope_dir == 1) {
+                    self.volume +|= 1;
+                } else {
+                    self.volume -|= 1;
+                }
+            }
+        }
+
+        if (self.length_enable == 1 and length_tick) {
+            self.length_timer +%= 1;
+            if (self.length_timer == 0) {
+                std.debug.print("CH4: length timer expired, turning off\n", .{});
+                self.on = 0;
+                return;
+            }
+        }
+
+        self.lfsr_timer += 1;
+        const divider: u32 = self.clock_divider;
+        const lfsr_timer_max: u32 = if (divider > 0) 4 * divider * (@as(u32, 1) << self.clock_shift) else 2 * (@as(u32, 1) << self.clock_shift);
+        if (self.lfsr_timer >= lfsr_timer_max) {
+            self.lfsr_timer = 0;
+
+            const next_lfsr_bit = ~(self.lfsr & 0x0001) ^ ((self.lfsr & 0x0002) >> 1);
+            self.lfsr = (self.lfsr & 0x7fff) | (next_lfsr_bit << 15);
+            if (self.lfsr_width == 1) {
+                self.lfsr = (self.lfsr & 0xff7f) | (next_lfsr_bit << 7);
+            }
+            const bit_0 = self.lfsr & 0x0001;
+            self.lfsr >>= 1;
+            self.current_sample = if (bit_0 == 0) 0 else self.volume;
+        }
+    }
+
+    pub fn trigger(self: *Self) void {
+        self.on = 1;
+        if (self.length_timer == 0) {
+            self.length_timer = self.init_length_timer;
+        }
+        self.envelope_timer = 0;
+        self.volume = self.init_volume;
+        self.lfsr = 0;
+    }
+
+    pub fn clearRegisters(self: *Self) void {
+        self.on = 0;
+
+        self.init_length_timer = 0;
+        self.init_volume = 0;
+        self.envelope_dir = 0;
+        self.envelope_sweep_pace = 0;
+        self.clock_shift = 0;
+        self.lfsr_width = 0;
+        self.clock_divider = 0;
+        self.length_enable = 0;
+    }
+
+    fn isDacOn(self: *const Self) bool {
+        return self.init_volume != 0 or self.envelope_dir != 0;
+    }
+
+    pub fn printState(self: *const Self, writer: anytype) !void {
+        try format(writer, "CH4 is {s} and DAC is {s}\n", .{
+            if (self.on == 1) "on" else "off",
+            if (self.isDacOn()) "on" else "off",
+        });
+        try format(writer, "    Current sample: ${x}\n", .{self.current_sample});
+        try format(writer, "    Volume: {}\n", .{self.volume});
+        try format(writer, "    Pan: {s}\n", .{
+            if (self.mix_left == 1 and self.mix_right == 1) "center" else if (self.mix_left == 1) "left" else "right",
+        });
+        try format(writer, "    Length timer: {s}", .{
+            if (self.length_enable == 0) "disabled\n" else "",
+        });
+        if (self.length_enable == 1) {
+            try format(writer, "set to {}; will expire in {} ticks\n", .{
+                self.init_length_timer,
+                0b11_1111 - self.length_timer,
+            });
+        }
+        try format(writer, "    Frequency: {} Hz (divider: {}, shift: {})\n", .{
+            if (self.clock_divider > 0) 262144 / (self.clock_divider * (@as(u32, 1) << self.clock_shift)) else (262144 * 2) / (@as(u32, 1) << self.clock_shift),
+            self.clock_divider,
+            self.clock_shift,
+        });
+        try format(writer, "    LFSR: {b:0>16}\n", .{self.lfsr});
+        try format(writer, "    LFSR width: {}\n", .{if (self.lfsr_width == 1) @as(usize, 7) else 15});
+        const divider: u32 = self.clock_divider;
+        const lfsr_timer_max: u32 = if (divider > 0) 4 * divider * (@as(u32, 1) << self.clock_shift) else 2 * (@as(u32, 1) << self.clock_shift);
+        try format(writer, "    Next LFSR shift in {} ticks\n", .{lfsr_timer_max - self.lfsr_timer});
     }
 };
