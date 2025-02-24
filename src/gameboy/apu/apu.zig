@@ -306,11 +306,11 @@ const ChannelOutput = struct {
     right: f32,
 };
 
-const WAVEFORMS = [4][16]u1{
-    [_]u1{ 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 0 },
-    [_]u1{ 0, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1, 1, 1, 1, 1, 0 },
-    [_]u1{ 0, 1, 1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0 },
-    [_]u1{ 1, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 1 },
+const WAVEFORMS = [4][8]u1{
+    [_]u1{ 1, 1, 1, 1, 1, 1, 1, 0 },
+    [_]u1{ 0, 1, 1, 1, 1, 1, 1, 0 },
+    [_]u1{ 0, 1, 1, 1, 1, 0, 0, 0 },
+    [_]u1{ 1, 0, 0, 0, 0, 0, 0, 1 },
 };
 
 pub const Ch1 = struct {
@@ -337,7 +337,7 @@ pub const Ch1 = struct {
     wave_duty: u2,
     init_length_timer: u6,
     // NR11 (internal)
-    duty_step: u4,
+    duty_step: u3,
 
     // NR12
     init_volume: u4,
@@ -573,7 +573,7 @@ pub const Ch2 = struct {
     wave_duty: u2,
     init_length_timer: u6,
     // NR21 (internal)
-    duty_step: u4,
+    duty_step: u3,
 
     // NR22
     init_volume: u4,
