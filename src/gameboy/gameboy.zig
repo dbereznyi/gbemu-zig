@@ -367,8 +367,8 @@ pub const Gb = struct {
             0xfea0...0xfeff => gb.panic("Attempted to read from prohibited memory at ${x}\n", .{addr}),
             // I/O Registers
             0xff00...0xff7f => {
-                const reg = addr - 0xff00;
-                return switch (reg) {
+                const reg_ix = addr - 0xff00;
+                return switch (reg_ix) {
                     IoReg.NR10 => gb.apu.readReg(ApuReg.NR10),
                     IoReg.NR11 => gb.apu.readReg(ApuReg.NR11),
                     IoReg.NR12 => gb.apu.readReg(ApuReg.NR12),
@@ -390,7 +390,8 @@ pub const Gb = struct {
                     IoReg.NR50 => gb.apu.readReg(ApuReg.NR50),
                     IoReg.NR51 => gb.apu.readReg(ApuReg.NR51),
                     IoReg.NR52 => gb.apu.readReg(ApuReg.NR52),
-                    else => gb.io_regs[reg],
+                    0x30...0x3f => gb.apu.readWavRam(reg_ix),
+                    else => gb.io_regs[reg_ix],
                 };
             },
             // HRAM
@@ -435,11 +436,10 @@ pub const Gb = struct {
             0xfea0...0xfeff => gb.panic("Attempted to write to prohibited memory (${x} -> ${x})\n", .{ val, addr }),
             // I/O Registers
             0xff00...0xff7f => {
-                const reg = addr - 0xff00;
-                gb.io_regs[reg] = val;
-                switch (reg) {
+                const reg_ix = addr - 0xff00;
+                switch (reg_ix) {
                     IoReg.DIV => {
-                        gb.io_regs[reg] = 0;
+                        gb.io_regs[reg_ix] = 0;
                         gb.timer.system_counter = 0;
                     },
                     IoReg.NR10 => gb.apu.writeReg(ApuReg.NR10, val),
@@ -463,8 +463,14 @@ pub const Gb = struct {
                     IoReg.NR50 => gb.apu.writeReg(ApuReg.NR50, val),
                     IoReg.NR51 => gb.apu.writeReg(ApuReg.NR51, val),
                     IoReg.NR52 => gb.apu.writeReg(ApuReg.NR52, val),
-                    IoReg.DMA => gb.dma.transferPending = true,
-                    else => {},
+                    0x30...0x3f => gb.apu.writeWavRam(reg_ix - 0x30, val),
+                    IoReg.DMA => {
+                        gb.io_regs[reg_ix] = val;
+                        gb.dma.transferPending = true;
+                    },
+                    else => {
+                        gb.io_regs[reg_ix] = val;
+                    },
                 }
             },
             // HRAM

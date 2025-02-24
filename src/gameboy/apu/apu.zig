@@ -43,6 +43,7 @@ pub const Apu = struct {
 
     ch1: Ch1,
     ch2: Ch2,
+    ch3: Ch3,
 
     audio_device: u32,
     samples: []f32,
@@ -61,6 +62,7 @@ pub const Apu = struct {
             .on = 0,
             .ch1 = Ch1.init(),
             .ch2 = Ch2.init(),
+            .ch3 = Ch3.init(),
             .audio_device = audio_device,
             .samples = try alloc.alloc(f32, NUM_SAMPLES * 2),
             .samples_ix = 0,
@@ -79,14 +81,16 @@ pub const Apu = struct {
         try format(writer, "Next period sweep tick in: {}\n", .{self.next_period_sweep_tick_in});
         try self.ch1.printState(writer);
         try self.ch2.printState(writer);
+        try self.ch3.printState(writer);
     }
 
     pub fn mix(self: *Self) void {
         const ch1_output = self.ch1.getOutput();
         const ch2_output = self.ch2.getOutput();
+        const ch3_output = self.ch3.getOutput();
 
-        const left = ch1_output.left + ch2_output.left;
-        const right = ch1_output.right + ch2_output.right;
+        const left = ch1_output.left + ch2_output.left + ch3_output.left;
+        const right = ch1_output.right + ch2_output.right + ch3_output.right;
 
         self.samples_timer += 1;
         if (self.samples_timer < SAMPLES_CLOCK_DIVIDER) {
@@ -122,6 +126,9 @@ pub const Apu = struct {
             self.next_envelope_sweep_tick_in == 0,
             self.next_length_tick_in == 0,
         );
+        self.ch3.step(
+            self.next_length_tick_in == 0,
+        );
 
         if (self.next_envelope_sweep_tick_in == 0) {
             self.next_envelope_sweep_tick_in = 8;
@@ -145,8 +152,7 @@ pub const Apu = struct {
             },
             .NR11 => {
                 const wave_duty: u8 = self.ch1.wave_duty;
-                const init_length_timer: u8 = self.ch1.init_length_timer;
-                return (wave_duty << 6) | init_length_timer;
+                return wave_duty << 6;
             },
             .NR12 => {
                 const init_volume: u8 = self.ch1.init_volume;
@@ -154,14 +160,10 @@ pub const Apu = struct {
                 const sweep_pace: u8 = self.ch1.envelope_sweep_pace;
                 return (init_volume << 4) | (envelope_dir << 3) | sweep_pace;
             },
-            .NR13 => {
-                const period_low: u8 = @truncate(self.ch1.period_setting);
-                return period_low;
-            },
+            .NR13 => return 0xff,
             .NR14 => {
                 const length_enable: u8 = self.ch1.length_enable;
-                const period_high: u8 = @truncate(self.ch1.period_setting >> 8);
-                return (length_enable << 6) | period_high;
+                return length_enable << 6;
             },
             // Channel 2
             .NR21 => {
@@ -175,20 +177,27 @@ pub const Apu = struct {
                 const sweep_pace: u8 = self.ch2.envelope_sweep_pace;
                 return (init_volume << 4) | (envelope_dir << 3) | sweep_pace;
             },
-            .NR23 => {
-                const period_low: u8 = @truncate(self.ch2.period_setting);
-                return period_low;
-            },
+            .NR23 => return 0xff,
             .NR24 => {
                 const length_enable: u8 = self.ch2.length_enable;
-                const period_high: u8 = @truncate(self.ch2.period_setting >> 8);
-                return (length_enable << 6) | period_high;
+                return length_enable << 6;
             },
-            .NR30 => return 0,
-            .NR31 => return 0,
-            .NR32 => return 0,
-            .NR33 => return 0,
-            .NR34 => return 0,
+            // Channel 3
+            .NR30 => {
+                const dac_enable: u8 = self.ch3.dac_enable;
+                return dac_enable << 7;
+            },
+            .NR31 => return 0xff,
+            .NR32 => {
+                const output_level_setting: u8 = self.ch3.output_level_setting;
+                return output_level_setting << 5;
+            },
+            .NR33 => return 0xff,
+            .NR34 => {
+                const length_enable: u8 = self.ch3.length_enable;
+                return length_enable << 6;
+            },
+            // Channel 4
             .NR41 => return 0,
             .NR42 => return 0,
             .NR43 => return 0,
@@ -269,18 +278,50 @@ pub const Apu = struct {
                     self.ch2.trigger();
                 }
             },
-            .NR30 => {},
-            .NR31 => {},
-            .NR32 => {},
-            .NR33 => {},
-            .NR34 => {},
+            // Channel 3
+            .NR30 => {
+                self.ch3.dac_enable = @truncate(val >> 7);
+                if (self.ch3.dac_enable == 0) {
+                    // DAC turned off, so turn the channel off as well
+                    self.ch3.on = 0;
+                }
+            },
+            .NR31 => {
+                self.ch3.length_timer = val;
+            },
+            .NR32 => {
+                self.ch3.output_level_setting = @truncate(val >> 5);
+            },
+            .NR33 => {
+                const val_u11: u11 = val;
+                self.ch3.period_setting = (self.ch3.period_setting & 0b111_0000_0000) | val_u11;
+            },
+            .NR34 => {
+                self.ch3.length_enable = @truncate((val & 0b0100_0000) >> 6);
+                const val_u11: u11 = val;
+                self.ch3.period_setting = (self.ch3.period_setting & 0b000_1111_1111) | (val_u11 << 8);
+                if (val & 0b1000_0000 > 0) {
+                    self.ch3.trigger();
+                }
+            },
+            // Channel 4
             .NR41 => {},
             .NR42 => {},
             .NR43 => {},
             .NR44 => {},
             // Global
             .NR50 => {},
-            .NR51 => {},
+            .NR51 => {
+                self.ch1.mix_left = @truncate((val & 0b0001_0000) >> 4);
+                self.ch2.mix_left = @truncate((val & 0b0010_0000) >> 5);
+                self.ch3.mix_left = @truncate((val & 0b0100_0000) >> 6);
+                //self.ch4.mix_left = @truncate((val & 0b1000_0000) >> 7);
+
+                self.ch1.mix_right = @truncate((val & 0b0000_0001) >> 0);
+                self.ch2.mix_right = @truncate((val & 0b0000_0010) >> 1);
+                self.ch3.mix_right = @truncate((val & 0b0000_0100) >> 2);
+                //self.ch4.mix_right = @truncate((val & 0b0000_1000) >> 3);
+            },
             .NR52 => {
                 if (val & 0b1000_0000 == 0) {
                     self.turnOff();
@@ -291,9 +332,38 @@ pub const Apu = struct {
         }
     }
 
+    pub fn readWavRam(self: *const Self, ix: usize) u8 {
+        std.debug.assert(ix < 16);
+
+        if (self.ch3.on == 1) {
+            // TODO if this is the cycle that CH3 is accessing WAV RAM, allow the read
+            return 0xff;
+        }
+
+        const upper: u8 = self.ch3.wav_ram[ix];
+        const lower: u8 = self.ch3.wav_ram[ix + 1];
+        return (upper << 4) | lower;
+    }
+
+    pub fn writeWavRam(self: *Self, ix: usize, val: u8) void {
+        std.debug.assert(ix < 16);
+
+        if (self.ch3.on == 1) {
+            // TODO if this is the cycle that CH3 is accessing WAV RAM, allow the write
+            return;
+        }
+
+        self.ch3.wav_ram[ix] = @truncate(val >> 4);
+        self.ch3.wav_ram[ix + 1] = @truncate(val);
+    }
+
     fn turnOff(self: *Self) void {
         self.on = 0;
+
         self.ch1.clearRegisters();
+        self.ch2.clearRegisters();
+        self.ch3.clearRegisters();
+        //self.ch4.clearRegisters();
     }
 
     fn turnOn(self: *Self) void {
@@ -316,7 +386,7 @@ const WAVEFORMS = [4][8]u1{
 pub const Ch1 = struct {
     // Internal
     on: u1,
-    value: u4,
+    current_sample: u4,
     volume: u4,
     length_timer: u6,
     envelope_timer: u3,
@@ -353,7 +423,7 @@ pub const Ch1 = struct {
     pub fn init() Self {
         return .{
             .on = 0,
-            .value = 0,
+            .current_sample = 0,
             .volume = 0,
             .length_timer = 0,
             .envelope_timer = 0,
@@ -378,7 +448,7 @@ pub const Ch1 = struct {
     }
 
     pub fn getOutput(self: *const Self) ChannelOutput {
-        const output = if (self.on == 1) toAnalog(self.value) else 0.0;
+        const output = if (self.on == 1) toAnalog(self.current_sample) else 0.0;
         return .{
             .left = if (self.mix_left == 0) output else 0.0,
             .right = if (self.mix_right == 0) output else 0.0,
@@ -449,11 +519,11 @@ pub const Ch1 = struct {
             self.period = self.period_setting;
         }
 
-        const new_value_u4: u4 = WAVEFORMS[self.wave_duty][self.duty_step];
-        self.value = if (new_value_u4 == 0) 0 else new_value_u4 +| self.volume;
+        const sample_u4: u4 = WAVEFORMS[self.wave_duty][self.duty_step];
+        self.current_sample = if (sample_u4 == 0) 0 else sample_u4 +| self.volume;
     }
 
-    pub fn isDacOn(self: *const Self) bool {
+    fn isDacOn(self: *const Self) bool {
         return self.init_volume != 0 or self.envelope_dir != 0;
     }
 
@@ -484,8 +554,6 @@ pub const Ch1 = struct {
 
     pub fn clearRegisters(self: *Self) void {
         self.on = 0;
-        self.value = 0;
-        self.volume = 0;
 
         self.sweep_pace = 0;
         self.sweep_dir = 0;
@@ -512,7 +580,7 @@ pub const Ch1 = struct {
             if (self.on == 1) "on" else "off",
             if (self.isDacOn()) "on" else "off",
         });
-        try format(writer, "    Current sample: ${x}\n", .{self.value});
+        try format(writer, "    Current sample: ${x}\n", .{self.current_sample});
         try format(writer, "    Volume: {}\n", .{self.volume});
         try format(writer, "    Pan: {s}\n", .{if (self.mix_left == 1 and self.mix_right == 1) "center" else if (self.mix_left == 1) "left" else "right"});
         try format(writer, "    Duty cycle: {s}\n", .{
@@ -561,7 +629,7 @@ pub const Ch1 = struct {
 pub const Ch2 = struct {
     // Internal
     on: u1,
-    value: u4,
+    current_sample: u4,
     volume: u4,
     length_timer: u6,
     envelope_timer: u3,
@@ -589,7 +657,7 @@ pub const Ch2 = struct {
     pub fn init() Self {
         return .{
             .on = 0,
-            .value = 0,
+            .current_sample = 0,
             .volume = 0,
             .length_timer = 0,
             .envelope_timer = 0,
@@ -608,7 +676,7 @@ pub const Ch2 = struct {
     }
 
     pub fn getOutput(self: *const Self) ChannelOutput {
-        const output = if (self.on == 1) toAnalog(self.value) else 0.0;
+        const output = if (self.on == 1) toAnalog(self.current_sample) else 0.0;
         return .{
             .left = if (self.mix_left == 0) output else 0.0,
             .right = if (self.mix_right == 0) output else 0.0,
@@ -652,11 +720,11 @@ pub const Ch2 = struct {
             self.period = self.period_setting;
         }
 
-        const new_value_u4: u4 = WAVEFORMS[self.wave_duty][self.duty_step];
-        self.value = if (new_value_u4 == 0) 0 else new_value_u4 +| self.volume;
+        const sample_u4: u4 = WAVEFORMS[self.wave_duty][self.duty_step];
+        self.current_sample = if (sample_u4 == 0) 0 else sample_u4 +| self.volume;
     }
 
-    pub fn isDacOn(self: *const Self) bool {
+    fn isDacOn(self: *const Self) bool {
         return self.init_volume != 0 or self.envelope_dir != 0;
     }
 
@@ -672,8 +740,6 @@ pub const Ch2 = struct {
 
     pub fn clearRegisters(self: *Self) void {
         self.on = 0;
-        self.value = 0;
-        self.volume = 0;
 
         self.wave_duty = 0;
         self.init_length_timer = 0;
@@ -691,7 +757,7 @@ pub const Ch2 = struct {
             if (self.on == 1) "on" else "off",
             if (self.isDacOn()) "on" else "off",
         });
-        try format(writer, "    Current sample: ${x}\n", .{self.value});
+        try format(writer, "    Current sample: ${x}\n", .{self.current_sample});
         try format(writer, "    Volume: {}\n", .{self.volume});
         try format(writer, "    Pan: {s}\n", .{if (self.mix_left == 1 and self.mix_right == 1) "center" else if (self.mix_left == 1) "left" else "right"});
         try format(writer, "    Duty cycle: {s}\n", .{
@@ -720,6 +786,142 @@ pub const Ch2 = struct {
             try format(writer, "{s} every {} ticks\n", .{
                 if (self.envelope_dir == 1) "increasing" else "decreasing",
                 self.envelope_sweep_pace,
+            });
+        }
+        try format(writer, "    Period setting: ${x}\n", .{self.period_setting});
+        try format(writer, "    Current period value: ${x}\n", .{self.period});
+    }
+};
+
+pub const Ch3 = struct {
+    // Internal
+    on: u1,
+    current_sample: u4,
+    output_level: u2,
+    length_timer: u8,
+    period: u11,
+    wav_ram_ix: u5,
+    wav_ram: [32]u4,
+
+    mix_left: u1,
+    mix_right: u1,
+
+    // NR30
+    dac_enable: u1,
+
+    // NR31
+    init_length_timer: u8,
+
+    // NR32
+    output_level_setting: u2,
+
+    // NR33 + NR34
+    period_setting: u11,
+    length_enable: u1,
+
+    const Self = @This();
+
+    pub fn init() Self {
+        return .{
+            .on = 0,
+            .current_sample = 0,
+            .output_level = 0,
+            .length_timer = 0,
+            .period = 0,
+            .wav_ram_ix = 0,
+            .wav_ram = [_]u4{0} ** 32,
+            .mix_left = 0,
+            .mix_right = 0,
+            .dac_enable = 0,
+            .init_length_timer = 0,
+            .output_level_setting = 0,
+            .period_setting = 0,
+            .length_enable = 0,
+        };
+    }
+
+    pub fn getOutput(self: *const Self) ChannelOutput {
+        const output = if (self.on == 1) toAnalog(self.current_sample) else 0.0;
+        return .{
+            .left = if (self.mix_left == 0) output else 0.0,
+            .right = if (self.mix_right == 0) output else 0.0,
+        };
+    }
+
+    pub fn step(self: *Self, length_tick: bool) void {
+        if (self.on == 0) {
+            return;
+        }
+        if (self.length_enable == 1 and length_tick) {
+            self.length_timer +%= 1;
+            if (self.length_timer == 0) {
+                std.debug.print("CH3: length timer expired, turning off\n", .{});
+                self.on = 0;
+                return;
+            }
+        }
+
+        const period_increment_result = @addWithOverflow(self.period, 2);
+        self.period = period_increment_result[0];
+        if (period_increment_result[1] == 1) {
+            self.wav_ram_ix +%= 1;
+            self.period = self.period_setting;
+        }
+
+        const sample = self.wav_ram[self.wav_ram_ix];
+        self.current_sample = switch (self.output_level) {
+            0 => 0,
+            1 => sample,
+            2 => sample >> 1,
+            3 => sample >> 2,
+        };
+    }
+
+    pub fn trigger(self: *Self) void {
+        self.on = 1;
+        if (self.length_timer == 0) {
+            self.length_timer = self.init_length_timer;
+        }
+        self.period = self.period_setting;
+        self.output_level = self.output_level_setting;
+        self.wav_ram_ix = 0;
+    }
+
+    pub fn clearRegisters(self: *Self) void {
+        self.on = 0;
+
+        self.dac_enable = 0;
+        self.init_length_timer = 0;
+        self.output_level_setting = 0;
+        self.period_setting = 0;
+        self.length_enable = 0;
+    }
+
+    pub fn printState(self: *const Self, writer: anytype) !void {
+        try format(writer, "CH3 is {s} and DAC is {s}\n", .{
+            if (self.on == 1) "on" else "off",
+            if (self.dac_enable == 1) "on" else "off",
+        });
+        try format(writer, "    Current sample: ${x}\n", .{self.current_sample});
+        try format(writer, "    Volume: {s}\n", .{
+            switch (self.output_level_setting) {
+                0 => "0% (muted)",
+                1 => "100%",
+                2 => "50%",
+                3 => "25%",
+            },
+        });
+        try format(writer, "    Pan: {s}\n", .{
+            if (self.mix_left == 1 and self.mix_right == 1) "center" else if (self.mix_left == 1) "left" else "right",
+        });
+        try format(writer, "    WAV RAM index: {}\n", .{self.wav_ram_ix});
+        try format(writer, "    Length timer: {s}", .{
+            if (self.length_enable == 0) "disabled\n" else "",
+        });
+        if (self.length_enable == 1) {
+            try format(writer, "set to {}; will expire in {} ticks\n", .{
+                self.init_length_timer,
+                0b11_1111 - self.length_timer,
             });
         }
         try format(writer, "    Period setting: ${x}\n", .{self.period_setting});
