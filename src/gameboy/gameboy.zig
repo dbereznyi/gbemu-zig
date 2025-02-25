@@ -390,7 +390,7 @@ pub const Gb = struct {
                     IoReg.NR50 => gb.apu.readReg(ApuReg.NR50),
                     IoReg.NR51 => gb.apu.readReg(ApuReg.NR51),
                     IoReg.NR52 => gb.apu.readReg(ApuReg.NR52),
-                    0x30...0x3f => gb.apu.readWavRam(reg_ix),
+                    0x30...0x3f => gb.apu.readWavRam(reg_ix - 0x30),
                     else => gb.io_regs[reg_ix],
                 };
             },

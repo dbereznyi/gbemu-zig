@@ -4,7 +4,7 @@ const c = @cImport({
 });
 const format = std.fmt.format;
 
-const NUM_SAMPLES = 2048;
+const NUM_SAMPLES = 1024;
 // APU is clocked at 1048576 Hz, but audio device expects samples at 44100 Hz.
 // Therefore, we divide the clockrate by 24 to get roughly 44100 Hz.
 const SAMPLES_CLOCK_DIVIDER = 23;
@@ -394,8 +394,9 @@ pub const Apu = struct {
             return 0xff;
         }
 
-        const upper: u8 = self.ch3.wav_ram[ix];
-        const lower: u8 = self.ch3.wav_ram[ix + 1];
+        const wav_ram_ix = ix * 2;
+        const upper: u8 = self.ch3.wav_ram[wav_ram_ix];
+        const lower: u8 = self.ch3.wav_ram[wav_ram_ix + 1];
         return (upper << 4) | lower;
     }
 
@@ -407,8 +408,9 @@ pub const Apu = struct {
             return;
         }
 
-        self.ch3.wav_ram[ix] = @truncate(val >> 4);
-        self.ch3.wav_ram[ix + 1] = @truncate(val);
+        const wav_ram_ix = ix * 2;
+        self.ch3.wav_ram[wav_ram_ix] = @truncate(val >> 4);
+        self.ch3.wav_ram[wav_ram_ix + 1] = @truncate(val);
     }
 
     fn turnOff(self: *Self) void {
@@ -964,7 +966,12 @@ const Ch3 = struct {
         try format(writer, "    Pan: {s}\n", .{
             if (self.mix_left == 1 and self.mix_right == 1) "center" else if (self.mix_left == 1) "left" else "right",
         });
-        try format(writer, "    WAV RAM index: {}\n", .{self.wav_ram_ix});
+        try format(writer, "    Wave: ", .{});
+        for (0..16) |i| {
+            try format(writer, "{x:0>1}{x:0>1} ", .{ self.wav_ram[i * 2], self.wav_ram[i * 2 + 1] });
+        }
+        try format(writer, "\n", .{});
+        try format(writer, "    Current position: {}\n", .{self.wav_ram_ix});
         try format(writer, "    Length timer: {s}", .{
             if (self.length_enable == 0) "disabled\n" else "",
         });
