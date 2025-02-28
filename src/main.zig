@@ -18,8 +18,8 @@ const VBLANK_CYCLES: usize = 1140;
 const FRAME_CYCLES: usize = CYCLES_UNTIL_VBLANK + VBLANK_CYCLES;
 
 const SAMPLE_RATE: u32 = 44100;
-const BUFFER_SIZE: u32 = 4096;
 const NUM_CHANNELS: u32 = 2;
+const BUFFER_SIZE: u32 = 4096 * NUM_CHANNELS;
 
 fn freq(hz: comptime_float) f32 {
     return @as(f32, @floatFromInt(SAMPLE_RATE)) / hz;
@@ -135,6 +135,7 @@ pub fn main() !void {
         .size = undefined,
         .silence = undefined,
         //.callback = audioCallback,
+        //.userdata = @ptrCast(gb.apu.samples_front),
         .callback = null,
         .userdata = undefined,
     };
@@ -195,7 +196,7 @@ pub fn main() !void {
     var main_window_y: c_int = undefined;
     c.SDL_GetWindowPosition(window, &main_window_x, &main_window_y);
     const vram_window_x = main_window_x + (160 * SCALE);
-    const vram_window_y = main_window_y;
+    const vram_window_y = main_window_y + 10;
 
     const vram_window = c.SDL_CreateWindow(
         "vram viewer",
@@ -234,7 +235,7 @@ pub fn main() !void {
     );
     defer alloc.free(vram_pixels);
 
-    // ---
+    // GB init
 
     const rom = try std.fs.cwd().readFileAlloc(alloc, rom_filepath, 1024 * 1024 * 1024);
     defer alloc.free(rom);
@@ -254,10 +255,13 @@ pub fn main() !void {
     var gb = try Gb.init(alloc, rom, save_data, Palette.green, audio_device);
     defer gb.deinit(alloc);
 
+    // ---
+
     const debuggerThread = try std.Thread.spawn(.{}, runDebugger, .{&gb});
     debuggerThread.detach();
 
     _ = c.SDL_UpdateTexture(texture, null, @ptrCast(gb.screen), 160 * 3);
+    c.SDL_PauseAudioDevice(audio_device, 0);
 
     if (true) {
         //try gb.debug.breakpoints.append(.{ .bank = 3, .addr = 0x4000 });
@@ -343,17 +347,11 @@ pub fn main() !void {
 }
 
 fn audioCallback(userdata: ?*anyopaque, buffer_maybe: ?[*]u8, _: c_int) callconv(.C) void {
-    const audio = if (userdata) |ud| @as(*Audio, @alignCast(@ptrCast(ud))) else return;
+    const samples = if (userdata) |ud| @as([*]f32, @alignCast(@ptrCast(ud))) else return;
     const buffer = @as([*]f32, @alignCast(@ptrCast(buffer_maybe orelse return)));
 
     @memset(buffer[0..@intCast(BUFFER_SIZE)], 0);
-
-    var i: u32 = 0;
-    while (i < BUFFER_SIZE * NUM_CHANNELS) : (i += NUM_CHANNELS) {
-        const val1 = audio.square.next();
-        //const val2 = audio.triangle.next();
-
-        buffer[i] = val1;
-        buffer[i + 1] = val1;
-    }
+    //std.debug.print("AUDIO **** copying samples to buffer\n", .{});
+    @memcpy(buffer[0..@intCast(BUFFER_SIZE)], samples);
+    //std.debug.print("AUDIO **** copying samples to buffer DONE\n", .{});
 }

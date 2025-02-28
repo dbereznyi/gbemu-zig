@@ -11,20 +11,25 @@ const executeDebugCmd = @import("debug/executeCmd.zig").executeCmd;
 
 pub fn stepGameboy(gb: *Gb, cycles: usize) !void {
     try processDebugCommand(gb);
-    for (0..cycles) |_| {
+    for (0..cycles * 2) |current_cycle| {
         if (gb.debug.isPaused()) {
             return;
         }
-        if (gb.cycles_until_ei == 1) {
-            gb.ime = true;
-        }
-        gb.cycles_until_ei -|= 1;
 
-        stepCpu(gb);
-        stepJoypad(gb);
-        stepPpu(gb);
-        stepDma(gb);
-        stepTimer(gb);
+        // 1 MiHz
+        if (current_cycle % 2 == 0) {
+            if (gb.cycles_until_ei == 1) {
+                gb.ime = true;
+            }
+            gb.cycles_until_ei -|= 1;
+
+            stepCpu(gb);
+            stepJoypad(gb);
+            stepPpu(gb);
+            stepDma(gb);
+            stepTimer(gb);
+        }
+
         stepApu(gb);
 
         gb.cycles +%= 1;
