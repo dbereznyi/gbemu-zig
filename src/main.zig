@@ -17,85 +17,9 @@ const CYCLES_UNTIL_VBLANK: usize = 16416;
 const VBLANK_CYCLES: usize = 1140;
 const FRAME_CYCLES: usize = CYCLES_UNTIL_VBLANK + VBLANK_CYCLES;
 
-const SAMPLE_RATE: u32 = 44100;
+const SAMPLE_RATE: u32 = 48000;
 const NUM_CHANNELS: u32 = 2;
-const BUFFER_SIZE: u32 = 4096 * NUM_CHANNELS;
-
-fn freq(hz: comptime_float) f32 {
-    return @as(f32, @floatFromInt(SAMPLE_RATE)) / hz;
-}
-
-const A4_FREQ: f32 = freq(440.0);
-const A5_FREQ: f32 = freq(880.0);
-
-const Oscillator = struct {
-    current_step: f32,
-    step_size: f32,
-    volume: f32,
-
-    pub fn init(rate: f32, volume: f32) Oscillator {
-        return .{
-            .current_step = 0.0,
-            .step_size = (2 * std.math.pi) / rate,
-            .volume = volume,
-        };
-    }
-
-    pub fn next(self: *Oscillator) f32 {
-        self.current_step += self.step_size;
-        return std.math.sin(self.current_step) * self.volume;
-    }
-};
-
-const Triangle = struct {
-    current_step: f32,
-    step_size: f32,
-    volume: f32,
-
-    const Self = @This();
-
-    pub fn init(rate: f32, volume: f32) Self {
-        return .{
-            .current_step = 0.0,
-            .step_size = 1 / rate,
-            .volume = volume,
-        };
-    }
-
-    pub fn next(self: *Self) f32 {
-        self.current_step += std.math.wrap(self.step_size, 1);
-        const frac = std.math.modf(self.current_step).fpart;
-        return frac - 0.5 * self.volume;
-    }
-};
-
-const Square = struct {
-    current_step: f32,
-    step_size: f32,
-    volume: f32,
-
-    const Self = @This();
-
-    pub fn init(rate: f32, volume: f32) Self {
-        return .{
-            .current_step = 0.0,
-            .step_size = 1 / rate,
-            .volume = volume,
-        };
-    }
-
-    pub fn next(self: *Self) f32 {
-        self.current_step += std.math.wrap(self.step_size, 1);
-        const frac = std.math.modf(self.current_step).fpart;
-        return std.math.sign(frac - 0.5) * self.volume;
-    }
-};
-
-const Audio = struct {
-    oscillator: Oscillator,
-    triangle: Triangle,
-    square: Square,
-};
+const BUFFER_SIZE: u32 = 512;
 
 pub fn main() !void {
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
@@ -134,18 +58,9 @@ pub fn main() !void {
         .samples = BUFFER_SIZE,
         .size = undefined,
         .silence = undefined,
-        //.callback = audioCallback,
-        //.userdata = @ptrCast(gb.apu.samples_front),
         .callback = null,
         .userdata = undefined,
     };
-
-    //var audio = Audio{
-    //    .oscillator = Oscillator.init(A4_FREQ, 0.8),
-    //    .triangle = Triangle.init(freq(100), 0.8),
-    //    .square = Square.init(freq(50), 0.5),
-    //};
-    //audio_spec.userdata = @ptrCast(&audio);
 
     const audio_device = c.SDL_OpenAudioDevice(null, 0, &audio_spec, null, 0);
     if (audio_device < 0) {
@@ -153,6 +68,19 @@ pub fn main() !void {
         return error.SDLInitializationFailed;
     }
     defer c.SDL_CloseAudioDevice(audio_device);
+
+    c.SDL_PauseAudioDevice(audio_device, 0);
+
+    const num_audio_devices = c.SDL_GetNumAudioDevices(0);
+    for (0..@intCast(num_audio_devices)) |i| {
+        const name = c.SDL_GetAudioDeviceName(@intCast(i), 0);
+        if (name == null) {
+            continue;
+        }
+        std.debug.print("{s}\n", .{std.mem.span(name)});
+    }
+
+    std.debug.print("audio device ID: {}\n", .{audio_device});
 
     // Main window
 
@@ -196,7 +124,7 @@ pub fn main() !void {
     var main_window_y: c_int = undefined;
     c.SDL_GetWindowPosition(window, &main_window_x, &main_window_y);
     const vram_window_x = main_window_x + (160 * SCALE);
-    const vram_window_y = main_window_y + 10;
+    const vram_window_y = main_window_y - 28;
 
     const vram_window = c.SDL_CreateWindow(
         "vram viewer",
@@ -261,7 +189,6 @@ pub fn main() !void {
     debuggerThread.detach();
 
     _ = c.SDL_UpdateTexture(texture, null, @ptrCast(gb.screen), 160 * 3);
-    c.SDL_PauseAudioDevice(audio_device, 0);
 
     if (true) {
         //try gb.debug.breakpoints.append(.{ .bank = 3, .addr = 0x4000 });
@@ -344,14 +271,4 @@ pub fn main() !void {
     }
 
     try gb.cart.persistRam(save_data_filepath);
-}
-
-fn audioCallback(userdata: ?*anyopaque, buffer_maybe: ?[*]u8, _: c_int) callconv(.C) void {
-    const samples = if (userdata) |ud| @as([*]f32, @alignCast(@ptrCast(ud))) else return;
-    const buffer = @as([*]f32, @alignCast(@ptrCast(buffer_maybe orelse return)));
-
-    @memset(buffer[0..@intCast(BUFFER_SIZE)], 0);
-    //std.debug.print("AUDIO **** copying samples to buffer\n", .{});
-    @memcpy(buffer[0..@intCast(BUFFER_SIZE)], samples);
-    //std.debug.print("AUDIO **** copying samples to buffer DONE\n", .{});
 }
