@@ -118,6 +118,7 @@ pub const Apu = struct {
     ch4_clock_divider: u3,
 
     audio_device: u32,
+    ch_samples: [4][]Sample,
     samples: []Sample,
     samples_ix: usize,
     samples_timer: u8,
@@ -172,6 +173,7 @@ pub const Apu = struct {
             .ch4_lfsr_width = 0,
             .ch4_clock_divider = 0,
             .audio_device = audio_device,
+            .ch_samples = [_][]Sample{try alloc.alloc(Sample, NUM_SAMPLES)} ** 4,
             .samples = try alloc.alloc(Sample, NUM_SAMPLES),
             .samples_ix = 0,
             .samples_timer = 0,
@@ -188,19 +190,6 @@ pub const Apu = struct {
         } else {
             return self.init_volume[ch_ix] != 0 or self.envelope_dir[ch_ix] != 0;
         }
-    }
-
-    fn getSample(self: *const Self, ch_ix: usize) Sample {
-        if (self.ch_on[ch_ix] == 0) {
-            return .{ .left = 0, .right = 0 };
-        }
-
-        const val = toAnalog(self.current_sample[ch_ix]);
-
-        return .{
-            .left = if (self.output_left[ch_ix] == 1) val else 0.0,
-            .right = if (self.output_right[ch_ix] == 1) val else 0.0,
-        };
     }
 
     fn triggerChannel(self: *Self, ch_ix: usize) void {
@@ -238,6 +227,29 @@ pub const Apu = struct {
         }
     }
 
+    fn getSample(self: *const Self, ch_ix: usize) Sample {
+        if (self.ch_on[ch_ix] == 0) {
+            return .{ .left = 0, .right = 0 };
+        }
+
+        const val = toAnalog(self.current_sample[ch_ix]);
+
+        return .{
+            .left = if (self.output_left[ch_ix] == 1) val else 0.0,
+            .right = if (self.output_right[ch_ix] == 1) val else 0.0,
+        };
+    }
+
+    fn sampleChannel(self: *Self, ch_ix: usize) void {
+        const sample = self.getSample(ch_ix);
+
+        const prev = if (self.samples_ix > 0) self.ch_samples[ch_ix][self.samples_ix - 1] else Sample{ .left = 0, .right = 0 };
+
+        std.debug.print("{} - {} = {:0>.4}\n", .{ sample.left, prev.left, sample.left - prev.left });
+
+        self.ch_samples[ch_ix][self.samples_ix] = sample.subtract(prev);
+    }
+
     pub fn mix(self: *Self) void {
         self.samples_timer += 1;
         if (self.samples_timer < SAMPLES_CLOCK_DIVIDER) {
@@ -245,14 +257,20 @@ pub const Apu = struct {
         }
         self.samples_timer = 0;
 
-        var s = Sample{ .left = 0, .right = 0 };
         for (0..1) |ch_ix| {
-            s = s.add(self.getSample(ch_ix));
+            self.sampleChannel(ch_ix);
         }
-        self.samples[self.samples_ix] = s;
         self.samples_ix += 1;
 
         if (self.samples_ix >= NUM_SAMPLES) {
+            var sample = Sample{ .left = 0, .right = 0 };
+            for (0..NUM_SAMPLES) |i| {
+                for (0..1) |ch_ix| {
+                    sample = sample.add(self.ch_samples[ch_ix][i]);
+                }
+                self.samples[i] = sample;
+            }
+
             const queue_result = c.SDL_QueueAudio(
                 self.audio_device,
                 @ptrCast(self.samples),
@@ -771,7 +789,7 @@ pub const Apu = struct {
         try format(writer, "samples_ix={}\n", .{self.samples_ix});
         try format(writer, "Samples: ", .{});
         for (0..self.samples_ix) |i| {
-            try format(writer, "{},{} ", .{ self.samples[i].left, self.samples[i].right });
+            try format(writer, "{},{} ", .{ self.ch_samples[0][i].left, self.ch_samples[0][i].right });
         }
         try format(writer, "\n", .{});
     }
