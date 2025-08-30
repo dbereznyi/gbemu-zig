@@ -77,10 +77,7 @@ pub fn main() !void {
         if (name == null) {
             continue;
         }
-        std.debug.print("{s}\n", .{std.mem.span(name)});
     }
-
-    std.debug.print("audio device ID: {}\n", .{audio_device});
 
     // Main window
 

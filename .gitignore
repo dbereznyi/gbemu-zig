@@ -8,3 +8,6 @@ zig-out/
 /docgen_tmp/
 
 roms/**/*.o
+
+# APU output files (used for debugging)
+apu_*.dat

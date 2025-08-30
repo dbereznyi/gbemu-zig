@@ -44,7 +44,11 @@ const WAVEFORMS = [4][8]u1{
     [_]u1{ 1, 0, 0, 0, 0, 0, 0, 1 },
 };
 
-fn calcNewSweepFreqWithOverflowCheck(shadow: u11, dir: u1, individual_step: u3) struct { u11, u1 } {
+fn calcNewSweepFreqWithOverflowCheck(
+    shadow: u11, 
+    dir: u1, 
+    individual_step: u3
+) struct { u11, u1 } {
     const temp = shadow >> individual_step;
     return if (dir == 0) @addWithOverflow(shadow, temp) else @subWithOverflow(shadow, temp);
 }
@@ -127,12 +131,24 @@ pub const Apu = struct {
     next_lfsr_tick_in: u4,
     is_1mhz_tick: bool,
 
-    file: std.fs.File,
+    files: [4]std.fs.File,
 
     const Self = @This();
 
     pub fn init(alloc: std.mem.Allocator, audio_device: u32) !Self {
-        const file = try std.fs.cwd().createFile("apu.dat", .{});
+        const files = [_]std.fs.File{ 
+            try std.fs.cwd().createFile("apu_1.dat", .{}),
+            try std.fs.cwd().createFile("apu_2.dat", .{}),
+            try std.fs.cwd().createFile("apu_3.dat", .{}),
+            try std.fs.cwd().createFile("apu_4.dat", .{}),
+        };
+
+        const ch_samples = [_][]Sample{
+            try alloc.alloc(Sample, NUM_SAMPLES),
+            try alloc.alloc(Sample, NUM_SAMPLES),
+            try alloc.alloc(Sample, NUM_SAMPLES),
+            try alloc.alloc(Sample, NUM_SAMPLES),
+        };
 
         return .{
             .on = 0,
@@ -173,14 +189,14 @@ pub const Apu = struct {
             .ch4_lfsr_width = 0,
             .ch4_clock_divider = 0,
             .audio_device = audio_device,
-            .ch_samples = [_][]Sample{try alloc.alloc(Sample, NUM_SAMPLES)} ** 4,
+            .ch_samples = ch_samples,
             .samples = try alloc.alloc(Sample, NUM_SAMPLES),
             .samples_ix = 0,
             .samples_timer = 0,
             .div_apu_counter = 0,
             .next_lfsr_tick_in = 8,
             .is_1mhz_tick = false,
-            .file = file,
+            .files = files,
         };
     }
 
@@ -234,20 +250,15 @@ pub const Apu = struct {
 
         const val = toAnalog(self.current_sample[ch_ix]);
 
+        //std.debug.print("{} => {}\n", .{self.current_sample[ch_ix], val});
+        
+        const vol_left = @as(f32, @floatFromInt(self.volume_left)) / @as(f32, @floatFromInt(0b1111));
+        const vol_right = @as(f32, @floatFromInt(self.volume_right)) / @as(f32, @floatFromInt(0b1111));
+
         return .{
-            .left = if (self.output_left[ch_ix] == 1) val else 0.0,
-            .right = if (self.output_right[ch_ix] == 1) val else 0.0,
+            .left = if (self.output_left[ch_ix] == 1) val * vol_left else 0.0,
+            .right = if (self.output_right[ch_ix] == 1) val * vol_right else 0.0,
         };
-    }
-
-    fn sampleChannel(self: *Self, ch_ix: usize) void {
-        const sample = self.getSample(ch_ix);
-
-        const prev = if (self.samples_ix > 0) self.ch_samples[ch_ix][self.samples_ix - 1] else Sample{ .left = 0, .right = 0 };
-
-        std.debug.print("{} - {} = {:0>.4}\n", .{ sample.left, prev.left, sample.left - prev.left });
-
-        self.ch_samples[ch_ix][self.samples_ix] = sample.subtract(prev);
     }
 
     pub fn mix(self: *Self) void {
@@ -257,15 +268,15 @@ pub const Apu = struct {
         }
         self.samples_timer = 0;
 
-        for (0..1) |ch_ix| {
-            self.sampleChannel(ch_ix);
+        for (0..4) |ch_ix| {
+            self.ch_samples[ch_ix][self.samples_ix] = self.getSample(ch_ix);
         }
         self.samples_ix += 1;
 
         if (self.samples_ix >= NUM_SAMPLES) {
-            var sample = Sample{ .left = 0, .right = 0 };
             for (0..NUM_SAMPLES) |i| {
-                for (0..1) |ch_ix| {
+                var sample = Sample{ .left = 0, .right = 0 };
+                for (0..4) |ch_ix| {
                     sample = sample.add(self.ch_samples[ch_ix][i]);
                 }
                 self.samples[i] = sample;
@@ -282,8 +293,16 @@ pub const Apu = struct {
                     .{c.SDL_GetError()},
                 );
             }
+            
+            if (true) {
+                for (0..4) |i| {
+                    _ = self.files[i].write(
+                        std.mem.sliceAsBytes(self.ch_samples[i][0..self.samples_ix])
+                    ) catch @panic("failed to write to file");
+                }
+            }
 
-            _ = self.file.write(std.mem.sliceAsBytes(self.samples[0..self.samples_ix])) catch @panic("failed to write to file");
+            //_ = self.file.write(std.mem.sliceAsBytes(self.samples[0..self.samples_ix])) catch @panic("failed to write to file");
 
             self.samples_ix = 0;
         }
@@ -337,8 +356,9 @@ pub const Apu = struct {
         for (0..4) |ch_ix| {
             if (self.length_enable[ch_ix] == 1 and tick_256hz) {
                 const add_result = @addWithOverflow(self.length_timer[ch_ix], 1);
+                self.length_timer[ch_ix] = add_result[0];
                 if (add_result[1] == 1) {
-                    std.debug.print("CH{}: length timer expired, turning off\n", .{ch_ix});
+                    //std.debug.print("CH{}: length timer expired, turning off\n", .{ch_ix});
                     self.ch_on[ch_ix] = 0;
                 }
             }
@@ -366,7 +386,7 @@ pub const Apu = struct {
                     self.period[ch_ix] = self.period_setting[ch_ix];
                     self.duty_step[ch_ix] +%= 1;
                 }
-                self.current_sample[ch_ix] = WAVEFORMS[self.wave_duty[ch_ix]][self.duty_step[ch_ix]] +| self.ch_volume[ch_ix];
+                self.current_sample[ch_ix] = WAVEFORMS[self.wave_duty[ch_ix]][self.duty_step[ch_ix]] * self.ch_volume[ch_ix];
             }
         }
 
@@ -638,10 +658,8 @@ pub const Apu = struct {
             },
             .NR52 => {
                 if (val & 0b1000_0000 == 0) {
-                    std.debug.print("APU turning off\n", .{});
                     self.turnOff();
                 } else {
-                    std.debug.print("APU turning on\n", .{});
                     self.turnOn();
                 }
             },
@@ -700,7 +718,7 @@ pub const Apu = struct {
             try format(writer, "    Pan: L={} R={} ~ {s}\n", .{
                 self.output_left[ch_ix],
                 self.output_right[ch_ix],
-                if (self.output_left[ch_ix] == 1 and self.output_right[ch_ix] == 1) "center" else if (self.output_left[ch_ix] == 1) "left" else "right",
+                if (self.output_left[ch_ix] == 1 and self.output_right[ch_ix] == 1) "center" else if (self.output_left[ch_ix] == 1) "left" else if (self.output_right[ch_ix] == 1) "right" else "muted",
             });
 
             if (ch_ix == CH3) {
@@ -786,11 +804,12 @@ pub const Apu = struct {
             }
         }
 
-        try format(writer, "samples_ix={}\n", .{self.samples_ix});
-        try format(writer, "Samples: ", .{});
-        for (0..self.samples_ix) |i| {
-            try format(writer, "{},{} ", .{ self.ch_samples[0][i].left, self.ch_samples[0][i].right });
-        }
-        try format(writer, "\n", .{});
+        // try format(writer, "samples_ix={}\n", .{self.samples_ix});
+        // try format(writer, "Samples: ", .{});
+        // for (0..self.samples_ix) |i| {
+        //     //try format(writer, "{},{} ", .{ self.samples[i].left, self.samples[i].right });
+        //     try format(writer, "{} ", .{ self.samples[i].left });
+        // }
+        // try format(writer, "\n", .{});
     }
 };
