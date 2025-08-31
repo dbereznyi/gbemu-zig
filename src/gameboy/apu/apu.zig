@@ -252,8 +252,8 @@ pub const Apu = struct {
 
         //std.debug.print("{} => {}\n", .{self.current_sample[ch_ix], val});
         
-        const vol_left = @as(f32, @floatFromInt(self.volume_left)) / @as(f32, @floatFromInt(0b1111));
-        const vol_right = @as(f32, @floatFromInt(self.volume_right)) / @as(f32, @floatFromInt(0b1111));
+        const vol_left = @as(f32, @floatFromInt(self.volume_left)) / @as(f32, @floatFromInt(0b111111));
+        const vol_right = @as(f32, @floatFromInt(self.volume_right)) / @as(f32, @floatFromInt(0b111111));
 
         return .{
             .left = if (self.output_left[ch_ix] == 1) val * vol_left else 0.0,
@@ -320,10 +320,8 @@ pub const Apu = struct {
         }
         defer self.is_1mhz_tick = !self.is_1mhz_tick;
         defer {
-            self.next_lfsr_tick_in -= 1;
-            if (self.next_lfsr_tick_in == 0) {
-                self.next_lfsr_tick_in = 8;
-            }
+            // TODO there is a bug where this underflows somehow.
+            self.next_lfsr_tick_in -|= 1;
         }
 
         // CH1 period sweep
@@ -334,7 +332,7 @@ pub const Apu = struct {
                 self.ch1_period_sweep_individual_step,
             );
             if (result[1] == 1) {
-                std.debug.print("freq overflow in step, turning off\n", .{});
+                //std.debug.print("freq overflow in step, turning off\n", .{});
                 self.ch_on[CH1] = 0;
                 return;
             } else {
@@ -409,9 +407,13 @@ pub const Apu = struct {
 
         // Noise channel
         if (self.next_lfsr_tick_in == 0) {
+            self.next_lfsr_tick_in = 8;
+
             self.ch4_lfsr_timer += 1;
             const divider: u32 = self.ch4_clock_divider;
-            const lfsr_timer_max: u32 = if (divider > 0) divider * (@as(u32, 1) << self.ch4_clock_shift) else (@as(u32, 1) << (self.ch4_clock_shift - 1));
+            const lfsr_timer_max: u32 =
+                if (divider > 0) divider * (@as(u32, 1) << self.ch4_clock_shift)
+                else (@as(u32, 1) << (self.ch4_clock_shift -| 1));
             if (self.ch4_lfsr_timer >= lfsr_timer_max) {
                 self.ch4_lfsr_timer = 0;
 
