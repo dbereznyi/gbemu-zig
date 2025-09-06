@@ -8,6 +8,56 @@ const NUM_SAMPLES = 512;
 
 const SAMPLES_CLOCK_DIVIDER: usize = @round(2097152.0 / 48000.0);
 
+const BL_PHASES: usize = 64;
+const BL_STEP_WIDTH: usize = 32;
+const LOW_PASS: f32 = 0.999;
+const HIGH_PASS: f32 = 0.990;
+
+fn initBandLimitedSteps(alloc: std.mem.Allocator) !*[BL_PHASES][BL_STEP_WIDTH]f32 {
+    const master = try alloc.alloc(f32, BL_PHASES * BL_STEP_WIDTH);
+    @memset(master, 0.5);
+
+    {
+        var gain: f32 = 0.5 / 0.777;
+        const sine_size: f32 = 256 * BL_PHASES + 2;
+        const max_harmonic = sine_size / 2 / BL_PHASES;
+
+        var h: f32 = 1.0;
+        while (h <= max_harmonic) : (h += 2.0) {
+            const amplitude = gain / h;
+            const to_angle = std.math.tau / sine_size * h;
+            for (0..master.len) |i| {
+                const i_f32: f32 = @floatFromInt(i);
+                const denom: f32 = @as(f32, @floatFromInt(master.len)) / 2;
+                const val = std.math.sin(
+                    (i_f32 - denom) * to_angle
+                ) * amplitude;
+                master[i] += val;
+            }
+            gain *= LOW_PASS;
+        }
+    }
+
+    const steps = try alloc.create([BL_PHASES][BL_STEP_WIDTH]f32);
+
+    for (0..BL_PHASES) |phase| {
+        var err: f32 = 1.0;
+        var prev: f32 = 0.0;
+        for (0..BL_STEP_WIDTH) |i| {
+            const cur = master[i * BL_PHASES + (BL_PHASES - 1 - phase)];
+            const delta = cur - prev;
+            err = err - delta;
+            prev = cur;
+            steps[phase][i] = delta;
+        }
+
+        steps[phase][BL_STEP_WIDTH / 2 - 1] += err * 0.5;
+        steps[phase][BL_STEP_WIDTH / 2] += err * 0.5;
+    }
+
+    return steps;
+}
+
 pub const ApuReg = enum {
     NR10,
     NR11,
@@ -62,6 +112,13 @@ const Sample = packed struct {
     left: f32,
     right: f32,
 
+    pub fn init(left: f32, right: f32) Sample {
+        return .{
+            .left = left,
+            .right = right,
+        };
+    }
+
     pub fn add(self: Sample, other: Sample) Sample {
         return .{
             .left = self.left + other.left,
@@ -75,6 +132,17 @@ const Sample = packed struct {
             .right = self.right - other.right,
         };
     }
+
+    pub fn equals(self: Sample, other: Sample) bool {
+        return self.left == other.left and self.right == other.right;
+    }
+};
+
+const BandLimited = struct {
+    buffer: [BL_STEP_WIDTH]Sample,
+    buffer_ix: usize,
+    output: Sample,
+    input: Sample,
 };
 
 pub const Apu = struct {
@@ -122,7 +190,9 @@ pub const Apu = struct {
     ch4_clock_divider: u3,
 
     audio_device: u32,
+    band_limited_steps: *[BL_PHASES][BL_STEP_WIDTH]f32,
     ch_samples: [4][]Sample,
+    band_limited: [4]BandLimited,
     samples: []Sample,
     samples_ix: usize,
     samples_timer: u8,
@@ -136,11 +206,12 @@ pub const Apu = struct {
     const Self = @This();
 
     pub fn init(alloc: std.mem.Allocator, audio_device: u32) !Self {
+        const dir = std.fs.cwd();
         const files = [_]std.fs.File{ 
-            try std.fs.cwd().createFile("apu_1.dat", .{}),
-            try std.fs.cwd().createFile("apu_2.dat", .{}),
-            try std.fs.cwd().createFile("apu_3.dat", .{}),
-            try std.fs.cwd().createFile("apu_4.dat", .{}),
+            try dir.createFile("apu_1.dat", .{}),
+            try dir.createFile("apu_2.dat", .{}),
+            try dir.createFile("apu_3.dat", .{}),
+            try dir.createFile("apu_4.dat", .{}),
         };
 
         const ch_samples = [_][]Sample{
@@ -149,7 +220,7 @@ pub const Apu = struct {
             try alloc.alloc(Sample, NUM_SAMPLES),
             try alloc.alloc(Sample, NUM_SAMPLES),
         };
-
+        
         return .{
             .on = 0,
             .volume_left = 0,
@@ -189,6 +260,14 @@ pub const Apu = struct {
             .ch4_lfsr_width = 0,
             .ch4_clock_divider = 0,
             .audio_device = audio_device,
+            .band_limited_steps = try initBandLimitedSteps(alloc),
+            .band_limited = 
+                [_]BandLimited{.{ 
+                    .buffer = [_]Sample{Sample.init(0, 0)} ** BL_STEP_WIDTH,
+                    .buffer_ix = 0,
+                    .output = Sample.init(0, 0),
+                    .input = Sample.init(0, 0),
+                }} ** 4,
             .ch_samples = ch_samples,
             .samples = try alloc.alloc(Sample, NUM_SAMPLES),
             .samples_ix = 0,
@@ -243,45 +322,63 @@ pub const Apu = struct {
         }
     }
 
-    fn getSample(self: *const Self, ch_ix: usize) Sample {
-        if (self.ch_on[ch_ix] == 0) {
-            return .{ .left = 0, .right = 0 };
+    fn updateSample(self: *Self, ch_ix: usize, val: u4, phase: usize) void {
+        const val_f32 = toAnalog(val);
+        const input = Sample{ 
+            .left = if (self.output_left[ch_ix] == 1) val_f32 else 0, 
+            .right = if (self.output_right[ch_ix] == 1) val_f32 else 0,
+        };
+        const bl: *BandLimited = &self.band_limited[ch_ix]; 
+        if (input.equals(bl.input)) {
+            return;
         }
 
-        const val = toAnalog(self.current_sample[ch_ix]);
+        const delta = input.subtract(bl.input);
+        bl.input = input;
 
-        //std.debug.print("{} => {}\n", .{self.current_sample[ch_ix], val});
-        
+        for (0..BL_STEP_WIDTH) |i| {
+            const offset = (bl.buffer_ix + i) % bl.buffer.len;
+            const step_val = self.band_limited_steps[phase][i];
+            self.band_limited[ch_ix].buffer[offset].left += delta.left * step_val;
+            self.band_limited[ch_ix].buffer[offset].right += delta.right * step_val;
+        }
+    }
+
+    fn readSample(self: *Self, ch_ix: usize) Sample {
+        const bl: *BandLimited = &self.band_limited[ch_ix]; 
+        bl.output.left += bl.buffer[bl.buffer_ix].left * HIGH_PASS;
+        bl.output.right += bl.buffer[bl.buffer_ix].right * HIGH_PASS;
+
+        bl.buffer[bl.buffer_ix].left = 0;
+        bl.buffer[bl.buffer_ix].right = 0;
+        bl.buffer_ix = (bl.buffer_ix + 1) % bl.buffer.len;
+
         const vol_left = @as(f32, @floatFromInt(self.volume_left)) / @as(f32, @floatFromInt(0b111111));
         const vol_right = @as(f32, @floatFromInt(self.volume_right)) / @as(f32, @floatFromInt(0b111111));
 
         return .{
-            .left = if (self.output_left[ch_ix] == 1) val * vol_left else 0.0,
-            .right = if (self.output_right[ch_ix] == 1) val * vol_right else 0.0,
+            .left = bl.output.left * vol_left,
+            .right = bl.output.right * vol_right,
         };
     }
 
-    pub fn mix(self: *Self) void {
+    pub fn render(self: *Self) void {
         self.samples_timer += 1;
         if (self.samples_timer < SAMPLES_CLOCK_DIVIDER) {
             return;
         }
         self.samples_timer = 0;
 
+        var output = Sample.init(0, 0);
         for (0..4) |ch_ix| {
-            self.ch_samples[ch_ix][self.samples_ix] = self.getSample(ch_ix);
+            const ch_output = self.readSample(ch_ix);
+            self.ch_samples[ch_ix][self.samples_ix] = ch_output;
+            output = output.add(ch_output);
         }
+        self.samples[self.samples_ix] = output;
         self.samples_ix += 1;
 
         if (self.samples_ix >= NUM_SAMPLES) {
-            for (0..NUM_SAMPLES) |i| {
-                var sample = Sample{ .left = 0, .right = 0 };
-                for (0..4) |ch_ix| {
-                    sample = sample.add(self.ch_samples[ch_ix][i]);
-                }
-                self.samples[i] = sample;
-            }
-
             const queue_result = c.SDL_QueueAudio(
                 self.audio_device,
                 @ptrCast(self.samples),
@@ -301,8 +398,6 @@ pub const Apu = struct {
                     ) catch @panic("failed to write to file");
                 }
             }
-
-            //_ = self.file.write(std.mem.sliceAsBytes(self.samples[0..self.samples_ix])) catch @panic("failed to write to file");
 
             self.samples_ix = 0;
         }
@@ -344,7 +439,7 @@ pub const Apu = struct {
                     self.ch1_period_sweep_individual_step,
                 );
                 if (result2[1] == 1) {
-                    std.debug.print("freq overflow in step (check #2), turning off\n", .{});
+                    //std.debug.print("freq overflow in step (check #2), turning off\n", .{});
                     self.ch_on[CH1] = 0;
                     return;
                 }
@@ -384,7 +479,8 @@ pub const Apu = struct {
                     self.period[ch_ix] = self.period_setting[ch_ix];
                     self.duty_step[ch_ix] +%= 1;
                 }
-                self.current_sample[ch_ix] = WAVEFORMS[self.wave_duty[ch_ix]][self.duty_step[ch_ix]] * self.ch_volume[ch_ix];
+                const val = WAVEFORMS[self.wave_duty[ch_ix]][self.duty_step[ch_ix]] * self.ch_volume[ch_ix];
+                self.updateSample(ch_ix, val, 0);
             }
         }
 
@@ -396,13 +492,14 @@ pub const Apu = struct {
                 self.period[CH3] = self.period_setting[CH3];
                 self.ch3_wav_ram_ix +%= 1;
             }
-            const val = self.ch3_wav_ram[self.ch3_wav_ram_ix];
-            self.current_sample[CH3] = switch (self.ch3_volume) {
+            const val_raw = self.ch3_wav_ram[self.ch3_wav_ram_ix];
+            const val = switch (self.ch3_volume) {
                 0 => 0,
-                1 => val,
-                2 => val >> 1,
-                3 => val >> 2,
+                1 => val_raw,
+                2 => val_raw >> 1,
+                3 => val_raw >> 2,
             };
+            self.updateSample(CH3, val, 0);
         }
 
         // Noise channel
@@ -424,7 +521,8 @@ pub const Apu = struct {
                 }
                 const bit_0 = self.ch4_lfsr & 0x0001;
                 self.ch4_lfsr >>= 1;
-                self.current_sample[CH4] = if (bit_0 == 0) 0 else self.ch_volume[CH4];
+                const val = if (bit_0 == 0) 0 else self.ch_volume[CH4];
+                self.updateSample(CH4, val, 0);
             }
         }
     }
