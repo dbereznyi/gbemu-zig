@@ -6,7 +6,14 @@ const format = std.fmt.format;
 
 const NUM_SAMPLES = 512;
 
-const SAMPLES_CLOCK_DIVIDER: usize = @round(2097152.0 / 48000.0);
+const SAMPLES_CLOCK_DIVIDER = 2097152.0 / 48000.0;
+const SAMPLES_CLOCK_DIVIDER_LOW: usize = @floor(SAMPLES_CLOCK_DIVIDER);
+const SAMPLES_CLOCK_DIVIDER_HIGH: usize = @ceil(SAMPLES_CLOCK_DIVIDER);
+const SAMPLES_CLOCK_DIVIDERS = [_]usize{ 
+    SAMPLES_CLOCK_DIVIDER_LOW - 1,
+    SAMPLES_CLOCK_DIVIDER_LOW - 2,
+    SAMPLES_CLOCK_DIVIDER_LOW - 2,
+};
 
 const BL_PHASES: usize = 64;
 const BL_STEP_WIDTH: usize = 32;
@@ -196,6 +203,8 @@ pub const Apu = struct {
     samples: []Sample,
     samples_ix: usize,
     samples_timer: u8,
+    samples_clock_divider_ix: usize,
+    cycles_since_render: usize,
 
     div_apu_counter: usize,
     next_lfsr_tick_in: u4,
@@ -272,8 +281,10 @@ pub const Apu = struct {
             .samples = try alloc.alloc(Sample, NUM_SAMPLES),
             .samples_ix = 0,
             .samples_timer = 0,
+            .samples_clock_divider_ix = 0,
+            .cycles_since_render = 0,
             .div_apu_counter = 0,
-            .next_lfsr_tick_in = 8,
+            .next_lfsr_tick_in = 4,
             .is_1mhz_tick = false,
             .files = files,
         };
@@ -363,11 +374,25 @@ pub const Apu = struct {
     }
 
     pub fn render(self: *Self) void {
+        self.cycles_since_render += 1;
         self.samples_timer += 1;
-        if (self.samples_timer < SAMPLES_CLOCK_DIVIDER) {
+        if (self.samples_timer < SAMPLES_CLOCK_DIVIDERS[self.samples_clock_divider_ix]) {
             return;
         }
-        self.samples_timer = 0;
+        defer {
+            self.samples_clock_divider_ix = 
+                (self.samples_clock_divider_ix + 1) % SAMPLES_CLOCK_DIVIDERS.len;
+            self.cycles_since_render = 0;
+            self.samples_timer = 0;
+        }
+
+        // 1 APU cycle every 2097152 Hz
+        // 1 / 2097152 ~ 0.4768 us
+        // true sample rate is   (clock_divider * 0.4768 us)
+        // target sample rate is 1 / 480000 = 20.8333 us
+        //const sample_every: f32 =
+        //    (1.0 / 2097152.0) * @as(f32, @floatFromInt(SAMPLES_CLOCK_DIVIDERS[self.samples_clock_divider_ix]));
+        //std.debug.print("sample every {d:.4} us\n", .{ sample_every * 1000000 });
 
         var output = Sample.init(0, 0);
         for (0..4) |ch_ix| {
@@ -382,7 +407,7 @@ pub const Apu = struct {
             const queue_result = c.SDL_QueueAudio(
                 self.audio_device,
                 @ptrCast(self.samples),
-                @intCast(NUM_SAMPLES * @sizeOf(Sample)),
+                @intCast(self.samples.len * @sizeOf(Sample)),
             );
             if (queue_result != 0) {
                 std.debug.panic(
@@ -391,7 +416,7 @@ pub const Apu = struct {
                 );
             }
             
-            if (true) {
+            if (false) {
                 for (0..4) |i| {
                     _ = self.files[i].write(
                         std.mem.sliceAsBytes(self.ch_samples[i][0..self.samples_ix])
@@ -480,7 +505,7 @@ pub const Apu = struct {
                     self.duty_step[ch_ix] +%= 1;
                 }
                 const val = WAVEFORMS[self.wave_duty[ch_ix]][self.duty_step[ch_ix]] * self.ch_volume[ch_ix];
-                self.updateSample(ch_ix, val, 0);
+                self.updateSample(ch_ix, val, self.cycles_since_render % BL_PHASES);
             }
         }
 
@@ -499,12 +524,12 @@ pub const Apu = struct {
                 2 => val_raw >> 1,
                 3 => val_raw >> 2,
             };
-            self.updateSample(CH3, val, 0);
+            self.updateSample(CH3, val, self.cycles_since_render % BL_PHASES);
         }
 
         // Noise channel
         if (self.next_lfsr_tick_in == 0) {
-            self.next_lfsr_tick_in = 8;
+            self.next_lfsr_tick_in = 4;
 
             self.ch4_lfsr_timer += 1;
             const divider: u32 = self.ch4_clock_divider;
@@ -522,7 +547,7 @@ pub const Apu = struct {
                 const bit_0 = self.ch4_lfsr & 0x0001;
                 self.ch4_lfsr >>= 1;
                 const val = if (bit_0 == 0) 0 else self.ch_volume[CH4];
-                self.updateSample(CH4, val, 0);
+                self.updateSample(CH4, val, self.cycles_since_render % BL_PHASES);
             }
         }
     }

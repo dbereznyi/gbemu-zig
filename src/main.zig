@@ -71,13 +71,13 @@ pub fn main() !void {
 
     c.SDL_PauseAudioDevice(audio_device, 0);
 
-    const num_audio_devices = c.SDL_GetNumAudioDevices(0);
-    for (0..@intCast(num_audio_devices)) |i| {
-        const name = c.SDL_GetAudioDeviceName(@intCast(i), 0);
-        if (name == null) {
-            continue;
-        }
-    }
+    //const num_audio_devices = c.SDL_GetNumAudioDevices(0);
+    //for (0..@intCast(num_audio_devices)) |i| {
+    //    const name = c.SDL_GetAudioDeviceName(@intCast(i), 0);
+    //    if (name == null) {
+    //        continue;
+    //    }
+    //}
 
     // Main window
 
