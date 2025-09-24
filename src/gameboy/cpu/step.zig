@@ -16,54 +16,61 @@ const runDebugger = @import("../debug/runDebugger.zig").runDebugger;
 const executeDebugCmd = @import("../debug/executeCmd.zig").executeCmd;
 const decodeInstrAt = @import("decode.zig").decodeInstrAt;
 
-pub fn stepCpu(gb: *Gb) void {
-    switch (gb.state) {
-        .running => stepCurrentInstr(gb),
-        .halted => {
-            if (gb.anyInterruptsPending()) {
-                gb.ir = 0; // NOP
-                gb.state = .running;
-            }
-        },
-        .handling_interrupt => {
-            switch (gb.current_instr_cycle) {
-                0 => gb.pc -%= 1,
-                1 => gb.sp -%= 1,
-                2 => {
-                    gb.write(gb.sp, @truncate(gb.pc >> 8));
-                    gb.sp -%= 1;
-                },
-                3 => {
-                    gb.write(gb.sp, @truncate(gb.pc));
+pub fn stepCpu(gb: *Gb, cycles: usize) void {
+    for (0..cycles) |_| {
+        if (gb.cycles_until_ei == 1) {
+            gb.ime = true;
+        }
+        gb.cycles_until_ei -|= 1;
 
-                    if (gb.isInterruptPending(Interrupt.VBLANK)) {
-                        gb.pc = 0x0040;
-                        gb.clearInterrupt(Interrupt.VBLANK);
-                    } else if (gb.isInterruptPending(Interrupt.STAT)) {
-                        gb.pc = 0x0048;
-                        gb.clearInterrupt(Interrupt.STAT);
-                    } else if (gb.isInterruptPending(Interrupt.TIMER)) {
-                        gb.pc = 0x0050;
-                        gb.clearInterrupt(Interrupt.TIMER);
-                    } else if (gb.isInterruptPending(Interrupt.SERIAL)) {
-                        gb.pc = 0x0058;
-                        gb.clearInterrupt(Interrupt.SERIAL);
-                    } else if (gb.isInterruptPending(Interrupt.JOYPAD)) {
-                        gb.pc = 0x0060;
-                        gb.clearInterrupt(Interrupt.JOYPAD);
-                    }
-
-                    gb.ime = false;
-                },
-                else => {
+        switch (gb.state) {
+            .running => stepCurrentInstr(gb),
+            .halted => {
+                if (gb.anyInterruptsPending()) {
+                    gb.ir = 0; // NOP
                     gb.state = .running;
-                    fetchOpcode(gb, .normal);
-                    return;
-                },
-            }
-            gb.current_instr_cycle += 1;
-        },
-        else => {},
+                }
+            },
+            .handling_interrupt => {
+                switch (gb.current_instr_cycle) {
+                    0 => gb.pc -%= 1,
+                    1 => gb.sp -%= 1,
+                    2 => {
+                        gb.write(gb.sp, @truncate(gb.pc >> 8));
+                        gb.sp -%= 1;
+                    },
+                    3 => {
+                        gb.write(gb.sp, @truncate(gb.pc));
+
+                        if (gb.isInterruptPending(Interrupt.VBLANK)) {
+                            gb.pc = 0x0040;
+                            gb.clearInterrupt(Interrupt.VBLANK);
+                        } else if (gb.isInterruptPending(Interrupt.STAT)) {
+                            gb.pc = 0x0048;
+                            gb.clearInterrupt(Interrupt.STAT);
+                        } else if (gb.isInterruptPending(Interrupt.TIMER)) {
+                            gb.pc = 0x0050;
+                            gb.clearInterrupt(Interrupt.TIMER);
+                        } else if (gb.isInterruptPending(Interrupt.SERIAL)) {
+                            gb.pc = 0x0058;
+                            gb.clearInterrupt(Interrupt.SERIAL);
+                        } else if (gb.isInterruptPending(Interrupt.JOYPAD)) {
+                            gb.pc = 0x0060;
+                            gb.clearInterrupt(Interrupt.JOYPAD);
+                        }
+
+                        gb.ime = false;
+                    },
+                    else => {
+                        gb.state = .running;
+                        fetchOpcode(gb, .normal);
+                        return;
+                    },
+                }
+                gb.current_instr_cycle += 1;
+            },
+            else => {},
+        }
     }
 }
 fn stepCurrentInstr(gb: *Gb) void {

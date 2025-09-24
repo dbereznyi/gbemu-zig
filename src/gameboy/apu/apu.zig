@@ -9,10 +9,10 @@ const NUM_SAMPLES = 512;
 const SAMPLES_CLOCK_DIVIDER = 2097152.0 / 48000.0;
 const SAMPLES_CLOCK_DIVIDER_LOW: usize = @floor(SAMPLES_CLOCK_DIVIDER);
 const SAMPLES_CLOCK_DIVIDER_HIGH: usize = @ceil(SAMPLES_CLOCK_DIVIDER);
-const SAMPLES_CLOCK_DIVIDERS = [_]usize{ 
+const SAMPLES_CLOCK_DIVIDERS = [_]usize{
     SAMPLES_CLOCK_DIVIDER_LOW,
-    SAMPLES_CLOCK_DIVIDER_LOW + 1,
-    SAMPLES_CLOCK_DIVIDER_LOW + 1,
+    SAMPLES_CLOCK_DIVIDER_HIGH,
+    SAMPLES_CLOCK_DIVIDER_HIGH,
 };
 
 const LFSR_CLOCK_DIVIDER: u8 = 8;
@@ -41,9 +41,7 @@ fn initBandLimitedSteps(alloc: std.mem.Allocator) !*[BL_PHASES][BL_STEP_WIDTH]f3
             for (0..master.len) |i| {
                 const i_f32: f32 = @floatFromInt(i);
                 const denom: f32 = @as(f32, @floatFromInt(master.len)) / 2;
-                const val = std.math.sin(
-                    (i_f32 - denom) * to_angle
-                ) * amplitude;
+                const val = std.math.sin((i_f32 - denom) * to_angle) * amplitude;
                 master[i] += val;
             }
             gain *= LOW_PASS;
@@ -106,11 +104,7 @@ const WAVEFORMS = [4][8]u1{
     [_]u1{ 1, 0, 0, 0, 0, 0, 0, 1 },
 };
 
-fn calcNewSweepFreqWithOverflowCheck(
-    shadow: u11, 
-    dir: u1, 
-    individual_step: u3
-) struct { u11, u1 } {
+fn calcNewSweepFreqWithOverflowCheck(shadow: u11, dir: u1, individual_step: u3) struct { u11, u1 } {
     const temp = shadow >> individual_step;
     return if (dir == 0) @addWithOverflow(shadow, temp) else @subWithOverflow(shadow, temp);
 }
@@ -223,7 +217,7 @@ pub const Apu = struct {
 
     pub fn init(alloc: std.mem.Allocator, audio_device: u32) !Self {
         const dir = std.fs.cwd();
-        const files = if (DEBUG_OUTPUT_TO_FILE) [_]std.fs.File{ 
+        const files = if (DEBUG_OUTPUT_TO_FILE) [_]std.fs.File{
             try dir.createFile("apu_1.dat", .{}),
             try dir.createFile("apu_2.dat", .{}),
             try dir.createFile("apu_3.dat", .{}),
@@ -236,7 +230,7 @@ pub const Apu = struct {
             try alloc.alloc(Sample, NUM_SAMPLES),
             try alloc.alloc(Sample, NUM_SAMPLES),
         };
-        
+
         return .{
             .on = 0,
             .volume_left = 0,
@@ -277,13 +271,12 @@ pub const Apu = struct {
             .ch4_clock_divider = 0,
             .audio_device = audio_device,
             .band_limited_steps = try initBandLimitedSteps(alloc),
-            .band_limited = 
-                [_]BandLimited{.{ 
-                    .buffer = [_]Sample{Sample.init(0, 0)} ** BL_STEP_WIDTH,
-                    .buffer_ix = 0,
-                    .output = Sample.init(0, 0),
-                    .input = Sample.init(0, 0),
-                }} ** 4,
+            .band_limited = [_]BandLimited{.{
+                .buffer = [_]Sample{Sample.init(0, 0)} ** BL_STEP_WIDTH,
+                .buffer_ix = 0,
+                .output = Sample.init(0, 0),
+                .input = Sample.init(0, 0),
+            }} ** 4,
             .ch_samples = ch_samples,
             .samples = try alloc.alloc(Sample, NUM_SAMPLES),
             .samples_ix = 0,
@@ -344,11 +337,11 @@ pub const Apu = struct {
 
     fn updateSample(self: *Self, ch_ix: usize, val: u4, phase: usize) void {
         const val_f32 = toAnalog(val);
-        const input = Sample{ 
-            .left = if (self.output_left[ch_ix] == 1) val_f32 else 0, 
+        const input = Sample{
+            .left = if (self.output_left[ch_ix] == 1) val_f32 else 0,
             .right = if (self.output_right[ch_ix] == 1) val_f32 else 0,
         };
-        const bl: *BandLimited = &self.band_limited[ch_ix]; 
+        const bl: *BandLimited = &self.band_limited[ch_ix];
         if (input.equals(bl.input)) {
             return;
         }
@@ -365,7 +358,7 @@ pub const Apu = struct {
     }
 
     fn readSample(self: *Self, ch_ix: usize) Sample {
-        const bl: *BandLimited = &self.band_limited[ch_ix]; 
+        const bl: *BandLimited = &self.band_limited[ch_ix];
         bl.output.left += bl.buffer[bl.buffer_ix].left * HIGH_PASS;
         bl.output.right += bl.buffer[bl.buffer_ix].right * HIGH_PASS;
 
@@ -404,14 +397,14 @@ pub const Apu = struct {
             //std.debug.print("avg cycles: {d:.2}\n", .{ avg });
 
             const sample_rate: f32 = 2097152.0 / avg;
-            std.debug.print("sample rate: {d:.2} Hz\n", .{ sample_rate });
+            std.debug.print("sample rate: {d:.2} Hz\n", .{sample_rate});
         }
 
-        self.cycles_since_last_render_hist_ix = 
+        self.cycles_since_last_render_hist_ix =
             (self.cycles_since_last_render_hist_ix + 1) % self.cycles_since_last_render_hist.len;
 
         defer {
-            self.samples_clock_divider_ix = 
+            self.samples_clock_divider_ix =
                 (self.samples_clock_divider_ix + 1) % SAMPLES_CLOCK_DIVIDERS.len;
             self.samples_timer = 0;
         }
@@ -439,12 +432,10 @@ pub const Apu = struct {
                     .{c.SDL_GetError()},
                 );
             }
-            
+
             if (DEBUG_OUTPUT_TO_FILE) {
                 for (0..4) |i| {
-                    _ = self.files[i].write(
-                        std.mem.sliceAsBytes(self.ch_samples[i][0..self.samples_ix])
-                    ) catch @panic("failed to write to file");
+                    _ = self.files[i].write(std.mem.sliceAsBytes(self.ch_samples[i][0..self.samples_ix])) catch @panic("failed to write to file");
                 }
             }
         }
@@ -566,8 +557,7 @@ pub const Apu = struct {
 
             const divider: u32 = self.ch4_clock_divider;
             const lfsr_timer_max: u32 =
-                if (divider > 0) divider << self.ch4_clock_shift
-                else 2;
+                if (divider > 0) divider << self.ch4_clock_shift else 2;
             self.ch4_lfsr_timer += 1;
             if (self.ch4_lfsr_timer >= lfsr_timer_max) {
                 self.ch4_lfsr_timer = 0;

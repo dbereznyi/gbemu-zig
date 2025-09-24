@@ -185,6 +185,8 @@ pub const Gb = struct {
     inVBlank: std.atomic.Value(bool),
     running: std.atomic.Value(bool),
 
+    // This is in T-cycles! TODO: need to make everything else in T-cycles
+    pending_cycles: usize,
     cycles: u64,
 
     pub fn init(
@@ -266,6 +268,7 @@ pub const Gb = struct {
             .isDrawing = false,
             .inVBlank = std.atomic.Value(bool).init(false),
             .running = std.atomic.Value(bool).init(true),
+            .pending_cycles = 0,
             .cycles = 0,
         };
     }
