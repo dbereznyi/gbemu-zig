@@ -10,15 +10,20 @@ const SAMPLES_CLOCK_DIVIDER = 2097152.0 / 48000.0;
 const SAMPLES_CLOCK_DIVIDER_LOW: usize = @floor(SAMPLES_CLOCK_DIVIDER);
 const SAMPLES_CLOCK_DIVIDER_HIGH: usize = @ceil(SAMPLES_CLOCK_DIVIDER);
 const SAMPLES_CLOCK_DIVIDERS = [_]usize{ 
-    SAMPLES_CLOCK_DIVIDER_LOW - 1,
-    SAMPLES_CLOCK_DIVIDER_LOW - 2,
-    SAMPLES_CLOCK_DIVIDER_LOW - 2,
+    SAMPLES_CLOCK_DIVIDER_LOW,
+    SAMPLES_CLOCK_DIVIDER_LOW + 1,
+    SAMPLES_CLOCK_DIVIDER_LOW + 1,
 };
+
+const LFSR_CLOCK_DIVIDER: u8 = 8;
 
 const BL_PHASES: usize = 64;
 const BL_STEP_WIDTH: usize = 32;
 const LOW_PASS: f32 = 0.999;
 const HIGH_PASS: f32 = 0.990;
+
+const DEBUG_DISPLAY_SAMPLE_RATE = true;
+const DEBUG_OUTPUT_TO_FILE = true;
 
 fn initBandLimitedSteps(alloc: std.mem.Allocator) !*[BL_PHASES][BL_STEP_WIDTH]f32 {
     const master = try alloc.alloc(f32, BL_PHASES * BL_STEP_WIDTH);
@@ -204,24 +209,26 @@ pub const Apu = struct {
     samples_ix: usize,
     samples_timer: u8,
     samples_clock_divider_ix: usize,
-    cycles_since_render: usize,
 
     div_apu_counter: usize,
-    next_lfsr_tick_in: u4,
+    next_lfsr_tick_in: u8,
     is_1mhz_tick: bool,
 
+    cycles_since_last_render: usize,
+    cycles_since_last_render_hist: []usize,
+    cycles_since_last_render_hist_ix: usize,
     files: [4]std.fs.File,
 
     const Self = @This();
 
     pub fn init(alloc: std.mem.Allocator, audio_device: u32) !Self {
         const dir = std.fs.cwd();
-        const files = [_]std.fs.File{ 
+        const files = if (DEBUG_OUTPUT_TO_FILE) [_]std.fs.File{ 
             try dir.createFile("apu_1.dat", .{}),
             try dir.createFile("apu_2.dat", .{}),
             try dir.createFile("apu_3.dat", .{}),
             try dir.createFile("apu_4.dat", .{}),
-        };
+        } else undefined;
 
         const ch_samples = [_][]Sample{
             try alloc.alloc(Sample, NUM_SAMPLES),
@@ -282,10 +289,12 @@ pub const Apu = struct {
             .samples_ix = 0,
             .samples_timer = 0,
             .samples_clock_divider_ix = 0,
-            .cycles_since_render = 0,
             .div_apu_counter = 0,
-            .next_lfsr_tick_in = 4,
+            .next_lfsr_tick_in = LFSR_CLOCK_DIVIDER,
             .is_1mhz_tick = false,
+            .cycles_since_last_render = 0,
+            .cycles_since_last_render_hist = try alloc.alloc(usize, 16),
+            .cycles_since_last_render_hist_ix = 0,
             .files = files,
         };
     }
@@ -374,25 +383,38 @@ pub const Apu = struct {
     }
 
     pub fn render(self: *Self) void {
-        self.cycles_since_render += 1;
+        self.cycles_since_last_render += 1;
+
         self.samples_timer += 1;
         if (self.samples_timer < SAMPLES_CLOCK_DIVIDERS[self.samples_clock_divider_ix]) {
             return;
         }
+
+        self.cycles_since_last_render_hist[self.cycles_since_last_render_hist_ix] =
+            self.cycles_since_last_render;
+        self.cycles_since_last_render = 0;
+
+        if (DEBUG_DISPLAY_SAMPLE_RATE and self.cycles_since_last_render_hist_ix == self.cycles_since_last_render_hist.len - 1) {
+            var avg: f32 = 0.0;
+            for (0..self.cycles_since_last_render_hist.len) |i| {
+                avg += @floatFromInt(self.cycles_since_last_render_hist[i]);
+            }
+            avg /= @floatFromInt(self.cycles_since_last_render_hist.len);
+
+            //std.debug.print("avg cycles: {d:.2}\n", .{ avg });
+
+            const sample_rate: f32 = 2097152.0 / avg;
+            std.debug.print("sample rate: {d:.2} Hz\n", .{ sample_rate });
+        }
+
+        self.cycles_since_last_render_hist_ix = 
+            (self.cycles_since_last_render_hist_ix + 1) % self.cycles_since_last_render_hist.len;
+
         defer {
             self.samples_clock_divider_ix = 
                 (self.samples_clock_divider_ix + 1) % SAMPLES_CLOCK_DIVIDERS.len;
-            self.cycles_since_render = 0;
             self.samples_timer = 0;
         }
-
-        // 1 APU cycle every 2097152 Hz
-        // 1 / 2097152 ~ 0.4768 us
-        // true sample rate is   (clock_divider * 0.4768 us)
-        // target sample rate is 1 / 480000 = 20.8333 us
-        //const sample_every: f32 =
-        //    (1.0 / 2097152.0) * @as(f32, @floatFromInt(SAMPLES_CLOCK_DIVIDERS[self.samples_clock_divider_ix]));
-        //std.debug.print("sample every {d:.4} us\n", .{ sample_every * 1000000 });
 
         var output = Sample.init(0, 0);
         for (0..4) |ch_ix| {
@@ -404,6 +426,8 @@ pub const Apu = struct {
         self.samples_ix += 1;
 
         if (self.samples_ix >= NUM_SAMPLES) {
+            defer self.samples_ix = 0;
+
             const queue_result = c.SDL_QueueAudio(
                 self.audio_device,
                 @ptrCast(self.samples),
@@ -416,20 +440,19 @@ pub const Apu = struct {
                 );
             }
             
-            if (false) {
+            if (DEBUG_OUTPUT_TO_FILE) {
                 for (0..4) |i| {
                     _ = self.files[i].write(
                         std.mem.sliceAsBytes(self.ch_samples[i][0..self.samples_ix])
                     ) catch @panic("failed to write to file");
                 }
             }
-
-            self.samples_ix = 0;
         }
     }
 
-    pub fn step(self: *Self, div_apu_occurred: bool) void {
-        if (div_apu_occurred) {
+    pub fn step(self: *Self, div_apu_occurred: *bool) void {
+        if (div_apu_occurred.*) {
+            div_apu_occurred.* = false;
             self.div_apu_counter += 1;
         }
         const tick_256hz = self.div_apu_counter / 2 > 0;
@@ -472,16 +495,26 @@ pub const Apu = struct {
         }
 
         for (0..4) |ch_ix| {
+            // Length timer
             if (self.length_enable[ch_ix] == 1 and tick_256hz) {
-                const add_result = @addWithOverflow(self.length_timer[ch_ix], 1);
-                self.length_timer[ch_ix] = add_result[0];
-                if (add_result[1] == 1) {
-                    //std.debug.print("CH{}: length timer expired, turning off\n", .{ch_ix});
-                    self.ch_on[ch_ix] = 0;
+                if (ch_ix != CH3) {
+                    const add_result = @addWithOverflow(self.length_timer[ch_ix], 1);
+                    self.length_timer[ch_ix] = add_result[0];
+                    if (add_result[1] == 1) {
+                        //std.debug.print("CH{}: length timer expired, turning off\n", .{ch_ix});
+                        self.ch_on[ch_ix] = 0;
+                    }
+                } else {
+                    const add_result = @addWithOverflow(self.ch3_length_timer, 1);
+                    self.ch3_length_timer = add_result[0];
+                    if (add_result[1] == 1) {
+                        self.ch_on[CH3] = 0;
+                    }
                 }
             }
 
-            if (ch_ix != CH3 and self.envelope_sweep_pace[ch_ix] != 0 and tick_64hz) {
+            // Envelope
+            if (tick_64hz and ch_ix != CH3 and self.envelope_sweep_pace[ch_ix] != 0) {
                 self.envelope_timer[ch_ix] += 1;
                 if (self.envelope_timer[ch_ix] >= self.envelope_sweep_pace[ch_ix]) {
                     self.envelope_timer[ch_ix] = 0;
@@ -505,7 +538,7 @@ pub const Apu = struct {
                     self.duty_step[ch_ix] +%= 1;
                 }
                 const val = WAVEFORMS[self.wave_duty[ch_ix]][self.duty_step[ch_ix]] * self.ch_volume[ch_ix];
-                self.updateSample(ch_ix, val, self.cycles_since_render % BL_PHASES);
+                self.updateSample(ch_ix, val, self.cycles_since_last_render % BL_PHASES);
             }
         }
 
@@ -524,30 +557,36 @@ pub const Apu = struct {
                 2 => val_raw >> 1,
                 3 => val_raw >> 2,
             };
-            self.updateSample(CH3, val, self.cycles_since_render % BL_PHASES);
+            self.updateSample(CH3, val, self.cycles_since_last_render % BL_PHASES);
         }
 
         // Noise channel
         if (self.next_lfsr_tick_in == 0) {
-            self.next_lfsr_tick_in = 4;
+            self.next_lfsr_tick_in = LFSR_CLOCK_DIVIDER;
 
-            self.ch4_lfsr_timer += 1;
             const divider: u32 = self.ch4_clock_divider;
             const lfsr_timer_max: u32 =
-                if (divider > 0) divider * (@as(u32, 1) << self.ch4_clock_shift)
-                else (@as(u32, 1) << (self.ch4_clock_shift -| 1));
+                if (divider > 0) divider << self.ch4_clock_shift
+                else 2;
+            self.ch4_lfsr_timer += 1;
             if (self.ch4_lfsr_timer >= lfsr_timer_max) {
                 self.ch4_lfsr_timer = 0;
 
-                const next_lfsr_bit = 0x0001 & (~(self.ch4_lfsr & 0x0001) ^ ((self.ch4_lfsr & 0x0002) >> 1));
-                self.ch4_lfsr = (self.ch4_lfsr & 0x7fff) | (next_lfsr_bit << 15);
-                if (self.ch4_lfsr_width == 1) {
-                    self.ch4_lfsr = (self.ch4_lfsr & 0xff7f) | (next_lfsr_bit << 7);
-                }
-                const bit_0 = self.ch4_lfsr & 0x0001;
+                const bit0_bit1_xor = self.ch4_lfsr ^ (self.ch4_lfsr >> 1);
+                const next_lfsr_bit = 0x0001 & ~bit0_bit1_xor;
                 self.ch4_lfsr >>= 1;
+
+                const high_bit_mask: u16 = if (self.ch4_lfsr_width == 1) 0x4040 else 0x4000;
+
+                if (next_lfsr_bit != 0) {
+                    self.ch4_lfsr |= high_bit_mask;
+                } else {
+                    self.ch4_lfsr &= ~high_bit_mask;
+                }
+
+                const bit_0 = self.ch4_lfsr & 0x0001;
                 const val = if (bit_0 == 0) 0 else self.ch_volume[CH4];
-                self.updateSample(CH4, val, self.cycles_since_render % BL_PHASES);
+                self.updateSample(CH4, val, self.cycles_since_last_render % BL_PHASES);
             }
         }
     }
