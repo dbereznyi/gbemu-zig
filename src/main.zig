@@ -10,15 +10,10 @@ const Button = @import("gameboy/joypad/joypad.zig").Joypad.Button;
 const Palette = @import("gameboy/ppu/ppu.zig").Ppu.Palette;
 const runDebugger = @import("gameboy/debug/runDebugger.zig").runDebugger;
 const executeDebugCmd = @import("gameboy/debug/executeCmd.zig").executeCmd;
-const renderVramViewer = @import("gameboy/ppu/step.zig").renderVramViewer;
 const Sample = @import("sample.zig").Sample;
 const constants = @import("constants.zig");
 
-const SCALE = 3;
-
-const CYCLES_UNTIL_VBLANK: usize = 16416;
-const VBLANK_CYCLES: usize = 1140;
-const FRAME_CYCLES: usize = CYCLES_UNTIL_VBLANK + VBLANK_CYCLES;
+const WINDOW_SCALE = 3;
 
 pub fn main() !void {
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
@@ -50,15 +45,15 @@ pub fn main() !void {
     // var main_window_x: c_int = undefined;
     // var main_window_y: c_int = undefined;
     // c.SDL_GetWindowPosition(window, &main_window_x, &main_window_y);
-    // const vram_window_x = main_window_x + (160 * SCALE);
+    // const vram_window_x = main_window_x + (160 * WINDOW_SCALE);
     // const vram_window_y = main_window_y - 28;
 
     // const vram_window = c.SDL_CreateWindow(
     //     "vram viewer",
     //     vram_window_x,
     //     vram_window_y,
-    //     VRAM_WINDOW_WIDTH * SCALE,
-    //     VRAM_WINDOW_HEIGHT * SCALE,
+    //     VRAM_WINDOW_WIDTH * WINDOW_SCALE,
+    //     VRAM_WINDOW_HEIGHT * WINDOW_SCALE,
     //     c.SDL_WINDOW_OPENGL,
     // ) orelse {
     //     c.SDL_Log("Unable to create window: %s", c.SDL_GetError());
@@ -157,8 +152,8 @@ const Sdl = struct {
             "gameboy",
             c.SDL_WINDOWPOS_UNDEFINED,
             c.SDL_WINDOWPOS_UNDEFINED,
-            160 * SCALE,
-            144 * SCALE,
+            160 * WINDOW_SCALE,
+            144 * WINDOW_SCALE,
             c.SDL_WINDOW_OPENGL,
         ) orelse {
             c.SDL_Log("Unable to create window: %s", c.SDL_GetError());

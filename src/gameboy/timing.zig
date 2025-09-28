@@ -9,6 +9,7 @@ const runDma = @import("./dma/run.zig").runDma;
 const LCDC_PERIOD: u64 = 70224;
 const CLOCK_RATE: u64 = 4194304;
 
+// TODO figure out how this should behave when debug paused
 pub fn syncTime(gb: *Gb) void {
     if (gb.cycles_since_last_sync < LCDC_PERIOD / 3) {
         return;
@@ -44,4 +45,6 @@ pub fn advanceGameboy(gb: *Gb, cycles: usize) void {
     runApu(gb, false);
     runPpu(gb, cycles);
     runDma(gb);
+
+    gb.cycles +%= cycles;
 }
