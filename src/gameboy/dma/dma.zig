@@ -11,6 +11,7 @@ pub const Dma = struct {
     transferPending: bool,
     startAddr: u16,
     bytesTransferred: u16,
+    cycles: usize,
 
     pub fn init() Dma {
         return Dma{
@@ -18,6 +19,7 @@ pub const Dma = struct {
             .transferPending = false,
             .startAddr = 0x0000,
             .bytesTransferred = 0,
+            .cycles = 0,
         };
     }
 

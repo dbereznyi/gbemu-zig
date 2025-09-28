@@ -2,6 +2,7 @@ const std = @import("std");
 const c = @cImport({
     @cInclude("SDL2/SDL.h");
 });
+const Sample = @import("../../sample.zig").Sample;
 const format = std.fmt.format;
 
 const NUM_SAMPLES = 512;
@@ -23,7 +24,6 @@ const LOW_PASS: f32 = 0.999;
 const HIGH_PASS: f32 = 0.990;
 
 const DEBUG_DISPLAY_SAMPLE_RATE = true;
-const DEBUG_OUTPUT_TO_FILE = true;
 
 fn initBandLimitedSteps(alloc: std.mem.Allocator) !*[BL_PHASES][BL_STEP_WIDTH]f32 {
     const master = try alloc.alloc(f32, BL_PHASES * BL_STEP_WIDTH);
@@ -114,36 +114,6 @@ const CH2 = 1;
 const CH3 = 2;
 const CH4 = 3;
 
-const Sample = packed struct {
-    left: f32,
-    right: f32,
-
-    pub fn init(left: f32, right: f32) Sample {
-        return .{
-            .left = left,
-            .right = right,
-        };
-    }
-
-    pub fn add(self: Sample, other: Sample) Sample {
-        return .{
-            .left = self.left + other.left,
-            .right = self.right + other.right,
-        };
-    }
-
-    pub fn subtract(self: Sample, other: Sample) Sample {
-        return .{
-            .left = self.left - other.left,
-            .right = self.right - other.right,
-        };
-    }
-
-    pub fn equals(self: Sample, other: Sample) bool {
-        return self.left == other.left and self.right == other.right;
-    }
-};
-
 const BandLimited = struct {
     buffer: [BL_STEP_WIDTH]Sample,
     buffer_ix: usize,
@@ -152,6 +122,13 @@ const BandLimited = struct {
 };
 
 pub const Apu = struct {
+    const Self = @This();
+
+    pub const AudioCallback = struct {
+        context: *anyopaque,
+        callback: *const fn (context: *anyopaque, apu: *Self, sample: Sample) void,
+    };
+
     on: u1,
     volume_left: u3,
     volume_right: u3,
@@ -195,14 +172,13 @@ pub const Apu = struct {
     ch4_lfsr_width: u1,
     ch4_clock_divider: u3,
 
-    audio_device: u32,
     band_limited_steps: *[BL_PHASES][BL_STEP_WIDTH]f32,
     ch_samples: [4][]Sample,
     band_limited: [4]BandLimited,
-    samples: []Sample,
-    samples_ix: usize,
     samples_timer: u8,
     samples_clock_divider_ix: usize,
+
+    audio_callback: AudioCallback,
 
     div_apu_counter: usize,
     next_lfsr_tick_in: u8,
@@ -211,19 +187,8 @@ pub const Apu = struct {
     cycles_since_last_render: usize,
     cycles_since_last_render_hist: []usize,
     cycles_since_last_render_hist_ix: usize,
-    files: [4]std.fs.File,
 
-    const Self = @This();
-
-    pub fn init(alloc: std.mem.Allocator, audio_device: u32) !Self {
-        const dir = std.fs.cwd();
-        const files = if (DEBUG_OUTPUT_TO_FILE) [_]std.fs.File{
-            try dir.createFile("apu_1.dat", .{}),
-            try dir.createFile("apu_2.dat", .{}),
-            try dir.createFile("apu_3.dat", .{}),
-            try dir.createFile("apu_4.dat", .{}),
-        } else undefined;
-
+    pub fn init(alloc: std.mem.Allocator, audio_callback: AudioCallback) !Self {
         const ch_samples = [_][]Sample{
             try alloc.alloc(Sample, NUM_SAMPLES),
             try alloc.alloc(Sample, NUM_SAMPLES),
@@ -269,7 +234,7 @@ pub const Apu = struct {
             .ch4_clock_shift = 0,
             .ch4_lfsr_width = 0,
             .ch4_clock_divider = 0,
-            .audio_device = audio_device,
+            .audio_callback = audio_callback,
             .band_limited_steps = try initBandLimitedSteps(alloc),
             .band_limited = [_]BandLimited{.{
                 .buffer = [_]Sample{Sample.init(0, 0)} ** BL_STEP_WIDTH,
@@ -278,8 +243,6 @@ pub const Apu = struct {
                 .input = Sample.init(0, 0),
             }} ** 4,
             .ch_samples = ch_samples,
-            .samples = try alloc.alloc(Sample, NUM_SAMPLES),
-            .samples_ix = 0,
             .samples_timer = 0,
             .samples_clock_divider_ix = 0,
             .div_apu_counter = 0,
@@ -288,7 +251,6 @@ pub const Apu = struct {
             .cycles_since_last_render = 0,
             .cycles_since_last_render_hist = try alloc.alloc(usize, 16),
             .cycles_since_last_render_hist_ix = 0,
-            .files = files,
         };
     }
 
@@ -415,30 +377,8 @@ pub const Apu = struct {
             self.ch_samples[ch_ix][self.samples_ix] = ch_output;
             output = output.add(ch_output);
         }
-        self.samples[self.samples_ix] = output;
-        self.samples_ix += 1;
 
-        if (self.samples_ix >= NUM_SAMPLES) {
-            defer self.samples_ix = 0;
-
-            const queue_result = c.SDL_QueueAudio(
-                self.audio_device,
-                @ptrCast(self.samples),
-                @intCast(self.samples.len * @sizeOf(Sample)),
-            );
-            if (queue_result != 0) {
-                std.debug.panic(
-                    "SDL_QueueAudio failed with error: {s}\n",
-                    .{c.SDL_GetError()},
-                );
-            }
-
-            if (DEBUG_OUTPUT_TO_FILE) {
-                for (0..4) |i| {
-                    _ = self.files[i].write(std.mem.sliceAsBytes(self.ch_samples[i][0..self.samples_ix])) catch @panic("failed to write to file");
-                }
-            }
-        }
+        self.audio_callback.callback(self.audio_callback.context, self, output);
     }
 
     pub fn step(self: *Self, div_apu_occurred: *bool) void {

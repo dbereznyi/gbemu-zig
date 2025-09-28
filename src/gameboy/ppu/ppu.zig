@@ -3,6 +3,13 @@ const Pixel = @import("../../pixel.zig").Pixel;
 const format = std.fmt.format;
 
 pub const Ppu = struct {
+    const Self = @This();
+
+    pub const VblankCallback = struct {
+        context: *anyopaque,
+        callback: *const fn (context: *anyopaque, screen: []Pixel) void,
+    };
+
     pub const Mode = enum {
         oam,
         drawing,
@@ -67,7 +74,19 @@ pub const Ppu = struct {
     obj_attrs_buf: [10]Ppu.ObjectAttribute,
     obj_attrs: []Ppu.ObjectAttribute,
 
-    pub fn init(palette: Palette) Ppu {
+    screen: []Pixel,
+    vblank_callback: VblankCallback,
+
+    pub fn init(
+        alloc: std.mem.Allocator,
+        palette: Palette,
+        vblank_callback: VblankCallback,
+    ) !Ppu {
+        const screen: []Pixel = try alloc.alloc(Pixel, 160 * 144);
+        for (screen) |*pixel| {
+            pixel.* = palette.data()[0];
+        }
+
         return Ppu{
             .dots = 0,
             .palette = palette,
@@ -78,7 +97,13 @@ pub const Ppu = struct {
             .mode = .oam,
             .obj_attrs_buf = undefined,
             .obj_attrs = undefined,
+            .screen = screen,
+            .vblank_callback = vblank_callback,
         };
+    }
+
+    pub fn deinit(self: *const Self, alloc: std.mem.Allocator) void {
+        alloc.free(self.screen);
     }
 
     pub fn printState(ppu: *const Ppu, writer: anytype) !void {

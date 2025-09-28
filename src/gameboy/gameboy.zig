@@ -12,6 +12,7 @@ const Joypad = @import("joypad/joypad.zig").Joypad;
 const Ppu = @import("ppu/ppu.zig").Ppu;
 const Apu = @import("apu/apu.zig").Apu;
 const ApuReg = @import("apu/apu.zig").ApuReg;
+const Sample = @import("../sample.zig").Sample;
 
 pub const IoReg = .{
     .JOYP = 0x00,
@@ -129,14 +130,16 @@ pub const StatFlag = .{
 };
 
 pub const Gb = struct {
-    pub const State = enum {
-        running,
-        halted,
-        handling_interrupt,
-        stopped,
-    };
+    const Self = @This();
 
-    state: State,
+    stopped: bool,
+    halted: bool,
+    just_halted: bool,
+    halt_bug: bool,
+    toggle_ime: bool,
+    cycles_since_last_sync: u64,
+    last_sync: std.time.Instant,
+    vblank_just_occurred: bool,
 
     pc: u16,
     sp: u16,
@@ -178,8 +181,6 @@ pub const Gb = struct {
     timer: Timer,
     debug: Debug,
 
-    screen: []Pixel,
-
     scanningOam: bool,
     isDrawing: bool,
     inVBlank: std.atomic.Value(bool),
@@ -194,7 +195,8 @@ pub const Gb = struct {
         rom: []const u8,
         save_data: ?[]const u8,
         palette: Ppu.Palette,
-        audio_device: u32,
+        vblank_callback: Ppu.VblankCallback,
+        audio_callback: Apu.AudioCallback,
     ) !Gb {
         const vram = try alloc.alloc(u8, 8 * 1024);
         for (vram, 0..) |_, i| {
@@ -222,13 +224,15 @@ pub const Gb = struct {
             hram[i] = 0;
         }
 
-        const screen: []Pixel = try alloc.alloc(Pixel, 160 * 144);
-        for (screen) |*pixel| {
-            pixel.* = palette.data()[0];
-        }
-
         return Gb{
-            .state = .running,
+            .stopped = false,
+            .halted = false,
+            .just_halted = false,
+            .halt_bug = false,
+            .toggle_ime = false,
+            .cycles_since_last_sync = 0,
+            .last_sync = try std.time.Instant.now(),
+            .vblank_just_occurred = false,
             .pc = 0x0100,
             .sp = 0xfffe,
             .a = 0,
@@ -257,9 +261,8 @@ pub const Gb = struct {
             .hram = hram,
             .ie = 0,
             .cart = try Cart.init(rom, save_data, alloc),
-            .screen = screen,
-            .ppu = Ppu.init(palette),
-            .apu = try Apu.init(alloc, audio_device),
+            .ppu = try Ppu.init(alloc, palette, vblank_callback),
+            .apu = try Apu.init(alloc, audio_callback),
             .joypad = Joypad.init(),
             .dma = Dma.init(),
             .timer = Timer.init(),
@@ -279,9 +282,9 @@ pub const Gb = struct {
         alloc.free(gb.oam);
         alloc.free(gb.io_regs);
         alloc.free(gb.hram);
-        alloc.free(gb.screen);
         gb.cart.deinit(alloc);
         gb.debug.deinit();
+        gb.ppu.deinit(alloc);
     }
 
     pub fn isRunning(gb: *Gb) bool {

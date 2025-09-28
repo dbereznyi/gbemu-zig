@@ -1,9 +1,11 @@
 const std = @import("std");
-const stepGameboy = @import("../step.zig").stepGameboy;
+const syncTime = @import("../timing.zig").syncTime;
+const advanceGameboy = @import("../timing.zig").advanceGameboy;
 const expect = std.testing.expect;
 const as16 = @import("../../util.zig").as16;
 const incAs16 = @import("../../util.zig").incAs16;
 const Gb = @import("../gameboy.zig").Gb;
+const IoReg = @import("../gameboy.zig").IoReg;
 const Interrupt = @import("../gameboy.zig").Interrupt;
 const Cond = @import("operand.zig").Cond;
 const Src8 = @import("operand.zig").Src8;
@@ -16,13 +18,94 @@ const shouldDebugBreak = @import("../debug/shouldDebugBreak.zig").shouldDebugBre
 const runDebugger = @import("../debug/runDebugger.zig").runDebugger;
 const executeDebugCmd = @import("../debug/executeCmd.zig").executeCmd;
 const decodeInstrAt = @import("decode.zig").decodeInstrAt;
+const runDma = @import("../dma/run.zig").runDma;
 
 pub fn runCpu(gb: *Gb) void {
-    if (gb.state == .running) {
+    if ((gb.ie & 0x10 != 0) and (gb.ime or gb.halted)) {
+        syncTime(gb);
+    }
+
+    if (gb.halted and !gb.just_halted) {
+        advanceGameboy(gb, 2);
+    }
+
+    if (gb.halted) {
+        advanceGameboy(gb, if (gb.just_halted) 4 else 2);
+    }
+    gb.just_halted = false;
+
+    const effective_ime = gb.ime;
+    if (gb.toggle_ime) {
+        gb.ime = !gb.ime;
+        gb.toggle_ime = false;
+    }
+
+    const interrupts_pending = gb.anyInterruptsPending();
+
+    if (gb.halted and !effective_ime and interrupts_pending) {
+        gb.halted = false;
+
+        gb.dma.cycles = 4;
+        runDma(gb);
+    } else if (effective_ime and interrupts_pending) {
+        gb.halted = false;
+
+        gb.dma.cycles = 4;
+        runDma(gb);
+
+        cycleStall(gb);
+        cycleStall(gb);
+
+        gb.sp -%= 1;
+        cycleWrite(gb, Dst8{ .Ind = gb.sp }, @truncate(gb.pc >> 8));
+
+        gb.sp -%= 1;
+        cycleWrite(gb, Dst8{ .Ind = gb.sp }, @truncate(gb.pc));
+
+        if (gb.isInterruptPending(Interrupt.VBLANK)) {
+            gb.pc = 0x0040;
+            gb.clearInterrupt(Interrupt.VBLANK);
+        } else if (gb.isInterruptPending(Interrupt.STAT)) {
+            gb.pc = 0x0048;
+            gb.clearInterrupt(Interrupt.STAT);
+        } else if (gb.isInterruptPending(Interrupt.TIMER)) {
+            gb.pc = 0x0050;
+            gb.clearInterrupt(Interrupt.TIMER);
+        } else if (gb.isInterruptPending(Interrupt.SERIAL)) {
+            gb.pc = 0x0058;
+            gb.clearInterrupt(Interrupt.SERIAL);
+        } else if (gb.isInterruptPending(Interrupt.JOYPAD)) {
+            gb.pc = 0x0060;
+            gb.clearInterrupt(Interrupt.JOYPAD);
+        }
+        cycleStall(gb);
+
+        gb.ime = false;
+    } else if (!gb.halted) {
+        // TODO impl debugging
+        // handleDebugCmd(gb);
+        // if (shouldDebugBreak(gb)) {
+        //     gb.debug.stdOutMutex.lock();
+        //     std.debug.print("\n", .{});
+        //     gb.printDebugTrace() catch {};
+        //     std.debug.print("\n> ", .{});
+        //     gb.debug.stdOutMutex.unlock();
+
+        //     gb.debug.setPaused(true);
+        //     gb.debug.stepModeEnabled = true;
+        // }
+        // gb.debug.addToExecutionTrace(
+        //     gb.cart.getBank(gb.pc),
+        //     gb.pc,
+        //     decodeInstrAt(gb.pc, gb),
+        // );
+
         const opcode = cycleReadPC(gb);
 
-        // TODO handle HDMA
-        // TODO handle halt bug
+        if (gb.halt_bug) {
+            gb.pc -%= 1;
+            gb.halt_bug = false;
+        }
 
         executeInstr(gb, opcode);
     }
@@ -30,9 +113,15 @@ pub fn runCpu(gb: *Gb) void {
     flushPendingCycles(gb);
 }
 
+fn handleDebugCmd(gb: *Gb) void {
+    const debugCmd = gb.debug.receiveCommand() orelse return;
+    executeDebugCmd(debugCmd, gb) catch gb.panic("Failed to execute debug command", .{});
+    gb.debug.acknowledgeCommand();
+}
+
 fn cycleRead(gb: *Gb, src: Src8) u8 {
     if (gb.pending_cycles > 0) {
-        stepGameboy(gb, gb.pending_cycles);
+        advanceGameboy(gb, gb.pending_cycles);
     }
     gb.pending_cycles = 4;
 
@@ -46,37 +135,39 @@ fn cycleReadPC(gb: *Gb) u8 {
 }
 
 fn cycleWrite(gb: *Gb, dst: Dst8, val: u8) void {
-    stepGameboy(gb, gb.pending_cycles);
+    advanceGameboy(gb, gb.pending_cycles);
     dst.write(val, gb);
     gb.pending_cycles = 4;
 }
 
 // Special case for instructions where 2 bytes are written in only 1 M-cycle.
 fn cycleWrite16(gb: *Gb, dst: Dst16, val: u16) void {
-    stepGameboy(gb, gb.pending_cycles);
+    advanceGameboy(gb, gb.pending_cycles);
     dst.write(val, gb);
     gb.pending_cycles = 4;
 }
 
 // PC can be written in just 1 M-cycle.
 fn cycleWritePC(gb: *Gb, val: u16) void {
-    stepGameboy(gb, gb.pending_cycles);
+    advanceGameboy(gb, gb.pending_cycles);
     gb.pc = val;
     gb.pending_cycles = 4;
 }
 
 // Stall for 1 M-cycle.
 fn cycleStall(gb: *Gb) void {
-    stepGameboy(gb, gb.pending_cycles);
+    advanceGameboy(gb, gb.pending_cycles);
     gb.pending_cycles = 4;
 }
 
 fn flushPendingCycles(gb: *Gb) void {
     if (gb.pending_cycles > 0) {
-        stepGameboy(gb, gb.pending_cycles);
+        advanceGameboy(gb, gb.pending_cycles);
     }
     gb.pending_cycles = 0;
 }
+
+const IncDec = enum { inc, dec };
 
 fn executeInstr(gb: *Gb, opcode: u8) void {
     switch (opcode) {
@@ -358,12 +449,6 @@ fn invalidOpcode(gb: *Gb) void {
     gb.panic("Invalid opcode: ${x:0>2}\n", .{gb.ir});
 }
 
-fn handleDebugCmd(gb: *Gb) !void {
-    const debugCmd = gb.debug.receiveCommand() orelse return;
-    try executeDebugCmd(debugCmd, gb);
-    gb.debug.acknowledgeCommand();
-}
-
 fn ldRegReg(gb: *Gb, comptime dst: Dst8, comptime src: Src8) void {
     dst.write(src.read(gb), gb);
 }
@@ -378,16 +463,29 @@ fn ldIndReg(gb: *Gb, comptime src: Src8) void {
 }
 
 fn halt(gb: *Gb) void {
-    if (gb.ime or (!gb.ime and !gb.anyInterruptsPending())) {
-        gb.state = .halted;
+    _ = cycleRead(gb, Src8{ .Ind = gb.pc });
+    gb.pending_cycles = 0;
+
+    if (gb.anyInterruptsPending()) {
+        gb.halted = false;
+
+        if (gb.ime) {
+            gb.pc -%= 1;
+        } else {
+            gb.halt_bug = true;
+        }
+    } else {
+        gb.halted = true;
     }
+
+    gb.just_halted = true;
 }
 
 fn ldReg16Imm16(gb: *Gb, comptime dst: Dst16) void {
-    const z = cycleReadPC(gb);
-    const w = cycleReadPC(gb);
+    const low = cycleReadPC(gb);
+    const high = cycleReadPC(gb);
 
-    cycleWrite16(gb, dst, as16(w, z));
+    cycleWrite16(gb, dst, as16(high, low));
 }
 
 fn ldIndA(gb: *Gb, dst: Dst8) void {
@@ -495,7 +593,8 @@ fn rrca(gb: *Gb) void {
 }
 
 fn stop(gb: *Gb) void {
-    //gb.panic("TODO: implement STOP instruction\n", .{});
+    // TODO implement properly
+    gb.stopped = true;
 }
 
 fn rotateLeftThroughCarry(gb: *Gb, comptime dst: Dst8) bool {
@@ -555,8 +654,8 @@ test "calcJrDestAddr" {
 fn jr(gb: *Gb) void {
     const offset = cycleReadPC(gb);
 
-    const dest_upper = undefined;
-    const dest_lower = undefined;
+    var dest_upper: u8 = undefined;
+    var dest_lower: u8 = undefined;
     calcJrDestAddr(gb.pc, offset, &dest_upper, &dest_lower);
     cycleStall(gb);
 
@@ -577,6 +676,19 @@ fn rra(gb: *Gb) void {
     gb.negative = false;
     gb.halfCarry = false;
     gb.carry = carry;
+}
+
+fn jrCond(gb: *Gb, comptime cond: Cond) void {
+    const offset = cycleReadPC(gb);
+
+    if (cond.check(gb)) {
+        var low: u8 = undefined;
+        var high: u8 = undefined;
+        calcJrDestAddr(gb.pc, offset, &high, &low);
+        cycleStall(gb);
+
+        gb.pc = as16(high, low);
+    }
 }
 
 fn daa(gb: *Gb) void {
@@ -687,7 +799,7 @@ fn pop(gb: *Gb, comptime dst: Dst16) void {
     const high = cycleRead(gb, Src8{ .Ind = gb.sp });
     gb.sp +%= 1;
 
-    dst.write(gb, as16(high, low));
+    dst.write(as16(high, low), gb);
 }
 
 fn jpCond(gb: *Gb, comptime cond: Cond) void {
@@ -702,6 +814,10 @@ fn jp(gb: *Gb) void {
     const addr_low = cycleReadPC(gb);
     const addr_high = cycleReadPC(gb);
     cycleWritePC(gb, as16(addr_high, addr_low));
+}
+
+fn jpHL(gb: *Gb) void {
+    gb.pc = as16(gb.h, gb.l);
 }
 
 fn callCond(gb: *Gb, comptime cond: Cond) void {
@@ -775,7 +891,7 @@ fn reti(gb: *Gb) void {
 }
 
 fn prefix(gb: *Gb) void {
-    const opcode = cycleReadPC();
+    const opcode = cycleReadPC(gb);
 
     const dst: Dst8 = switch (@as(u3, @truncate(opcode))) {
         0 => .B,
@@ -788,7 +904,7 @@ fn prefix(gb: *Gb) void {
         7 => .A,
     };
     const bit_index: u3 = @as(u3, @truncate(opcode >> 3));
-    const prefix_op = switch (opcode) {
+    const prefix_op: PrefixOp = switch (opcode) {
         0x00...0x07 => .rlc,
         0x08...0x0f => .rrc,
         0x10...0x17 => .rl,
@@ -813,7 +929,7 @@ fn prefix(gb: *Gb) void {
         &gb.carry,
     );
     if (gb.prefix_op != .bit) {
-        if (dst == .IndHL) cycleWrite(gb, Dst8.IndHL) else dst.write(result, gb);
+        if (dst == .IndHL) cycleWrite(gb, Dst8.IndHL, result) else dst.write(result, gb);
     }
 }
 
@@ -860,7 +976,7 @@ fn addSPe8(gb: *Gb) void {
     cycleStall(gb);
 
     const adj: u8 = if (val & 0b1000_0000 > 0) 0xff else 0x00;
-    var sp_high = @truncate(gb.sp >> 8);
+    var sp_high: u8 = @truncate(gb.sp >> 8);
     var half_carry_dummy: bool = undefined;
     var carry_dummy: bool = gb.carry;
     AluOp.execute(
@@ -893,13 +1009,13 @@ fn ldAIoC(gb: *Gb) void {
 }
 
 fn di(gb: *Gb) void {
-    gb.cycles_until_ei = 0;
     gb.ime = false;
 }
 
 fn ei(gb: *Gb) void {
-    // TODO figure out how to implement this behavior with new timing impl
-    gb.cycles_until_ei = 2;
+    if (!gb.ime and !gb.toggle_ime) {
+        gb.toggle_ime = true;
+    }
 }
 
 fn ldHLSPe8(gb: *Gb) void {
@@ -939,4 +1055,11 @@ fn ldHLSPe8(gb: *Gb) void {
 fn ldSPHL(gb: *Gb) void {
     gb.sp = as16(gb.h, gb.l);
     cycleStall(gb);
+}
+
+fn ldAInd16(gb: *Gb) void {
+    const low = cycleReadPC(gb);
+    const high = cycleReadPC(gb);
+    const val = cycleRead(gb, Src8{ .Ind = as16(high, low) });
+    gb.a = val;
 }
