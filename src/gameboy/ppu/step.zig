@@ -24,165 +24,163 @@ const TileDataAddressingMode = enum {
     signed, // "$8800 method"
 };
 
-// Advance the state of the PPU by `cycles` M-cycles (1 M-cycle = 4 dots).
-pub fn stepPpu(gb: *Gb, cycles: usize) void {
-    for (0..cycles) |_| {
-        std.debug.assert(gb.ppu.dots % 4 == 0);
-        std.debug.assert(gb.ppu.dots < VBLANK_END);
+// Advance the state of the PPU by 1 M-cycle (1 M-cycle = 4 dots).
+pub fn stepPpu(gb: *Gb) void {
+    std.debug.assert(gb.ppu.dots % 4 == 0);
+    std.debug.assert(gb.ppu.dots < VBLANK_END);
 
-        switch (gb.ppu.mode) {
-            .oam => {
-                std.debug.assert(gb.ppu.dots % LINE_DOTS < DRAWING_START);
-                std.debug.assert(gb.ppu.x == 0);
-                std.debug.assert(gb.ppu.y < 144);
-                std.debug.assert(gb.io_regs[IoReg.LY] < 144);
-                std.debug.assert(!gb.isDrawing);
+    switch (gb.ppu.mode) {
+        .oam => {
+            std.debug.assert(gb.ppu.dots % LINE_DOTS < DRAWING_START);
+            std.debug.assert(gb.ppu.x == 0);
+            std.debug.assert(gb.ppu.y < 144);
+            std.debug.assert(gb.io_regs[IoReg.LY] < 144);
+            std.debug.assert(!gb.isDrawing);
 
-                if (gb.ppu.dots % LINE_DOTS == 0) {
-                    const stat = gb.io_regs[IoReg.STAT];
-                    const statInterruptsEnabled = gb.ie & Interrupt.STAT > 0;
-                    const intOnMode2 = stat & StatFlag.INT_MODE_2_ENABLE > 0;
-                    if (statInterruptsEnabled and intOnMode2) {
-                        gb.requestInterrupt(Interrupt.STAT);
-                    }
-
-                    gb.setStatMode(StatFlag.MODE_2);
-
-                    if (gb.isLcdOn()) {
-                        gb.scanningOam = true;
-                        gb.ppu.obj_attrs = readObjectAttributesForLine(
-                            gb.ppu.y,
-                            &gb.ppu.obj_attrs_buf,
-                            gb,
-                        );
-                    } else {
-                        gb.ppu.obj_attrs.len = 0;
-                    }
-                } else if (gb.ppu.dots % LINE_DOTS == DRAWING_START - 4) {
-                    gb.scanningOam = false;
-                    gb.ppu.mode = .drawing;
-                }
-            },
-            .drawing => {
-                std.debug.assert(gb.ppu.dots % LINE_DOTS >= DRAWING_START);
-                std.debug.assert(gb.ppu.dots % LINE_DOTS < HBLANK_START);
-                std.debug.assert(gb.ppu.y < 144);
-                std.debug.assert(gb.io_regs[IoReg.LY] < 144);
-                std.debug.assert(!gb.scanningOam);
-
-                if (gb.ppu.dots == DRAWING_START) {
-                    gb.ppu.windowY = 0;
-                    gb.ppu.wy = gb.io_regs[IoReg.WY];
+            if (gb.ppu.dots % LINE_DOTS == 0) {
+                const stat = gb.io_regs[IoReg.STAT];
+                const statInterruptsEnabled = gb.ie & Interrupt.STAT > 0;
+                const intOnMode2 = stat & StatFlag.INT_MODE_2_ENABLE > 0;
+                if (statInterruptsEnabled and intOnMode2) {
+                    gb.requestInterrupt(Interrupt.STAT);
                 }
 
-                if (gb.ppu.dots % LINE_DOTS == DRAWING_START) {
-                    gb.isDrawing = true;
-                    gb.setStatMode(StatFlag.MODE_3);
-                } else if (gb.ppu.dots % LINE_DOTS >= DRAWING_START + 12) {
-                    for (gb.ppu.x..gb.ppu.x + 4) |x| {
-                        const colorId = colorIdAt(
-                            x,
-                            gb.ppu.y,
-                            gb,
-                            gb.ppu.obj_attrs,
-                            &gb.ppu.windowY,
-                            gb.ppu.wy,
-                        );
-                        gb.screen[gb.ppu.y * 160 + x] = gb.ppu.palette.data()[colorId];
-                    }
-                    gb.ppu.x = (gb.ppu.x + 4) % 160;
+                gb.setStatMode(StatFlag.MODE_2);
 
-                    if (gb.ppu.dots % LINE_DOTS == HBLANK_START - 4) {
-                        // TODO need to account for mode 3 varying in length
-                        gb.ppu.x = 0;
-                        gb.isDrawing = false;
-                        gb.ppu.mode = .hBlank;
-                    }
+                if (gb.isLcdOn()) {
+                    gb.scanningOam = true;
+                    gb.ppu.obj_attrs = readObjectAttributesForLine(
+                        gb.ppu.y,
+                        &gb.ppu.obj_attrs_buf,
+                        gb,
+                    );
+                } else {
+                    gb.ppu.obj_attrs.len = 0;
                 }
-            },
-            .hBlank => {
-                std.debug.assert(gb.ppu.dots % LINE_DOTS >= HBLANK_START);
-                std.debug.assert(gb.ppu.dots < VBLANK_START);
-                std.debug.assert(gb.ppu.x == 0);
-                std.debug.assert(gb.ppu.y < 144);
-                std.debug.assert(gb.io_regs[IoReg.LY] < 144);
-                std.debug.assert(!gb.scanningOam);
-                std.debug.assert(!gb.isDrawing);
+            } else if (gb.ppu.dots % LINE_DOTS == DRAWING_START - 4) {
+                gb.scanningOam = false;
+                gb.ppu.mode = .drawing;
+            }
+        },
+        .drawing => {
+            std.debug.assert(gb.ppu.dots % LINE_DOTS >= DRAWING_START);
+            std.debug.assert(gb.ppu.dots % LINE_DOTS < HBLANK_START);
+            std.debug.assert(gb.ppu.y < 144);
+            std.debug.assert(gb.io_regs[IoReg.LY] < 144);
+            std.debug.assert(!gb.scanningOam);
 
-                if (gb.ppu.dots % LINE_DOTS == HBLANK_START) {
-                    const stat = gb.io_regs[IoReg.STAT];
-                    const statInterruptsEnabled = gb.ie & Interrupt.STAT > 0;
-                    const intOnMode0 = stat & StatFlag.INT_MODE_0_ENABLE > 0;
+            if (gb.ppu.dots == DRAWING_START) {
+                gb.ppu.windowY = 0;
+                gb.ppu.wy = gb.io_regs[IoReg.WY];
+            }
 
-                    gb.setStatMode(StatFlag.MODE_0);
-                    if (statInterruptsEnabled and intOnMode0) {
-                        gb.requestInterrupt(Interrupt.STAT);
-                    }
-                } else if (gb.ppu.dots % LINE_DOTS == LINE_DOTS - 4) {
-                    gb.ppu.y += 1;
-
-                    const stat = gb.io_regs[IoReg.STAT];
-                    const statInterruptsEnabled = gb.ie & Interrupt.STAT > 0;
-                    const intOnLycIncident = stat & StatFlag.INT_LYC_INCIDENT_ENABLE > 0;
-
-                    // TODO when is this actually supposed to trigger?
-                    gb.io_regs[IoReg.LY] = @truncate(gb.ppu.y);
-                    const lycIncident = gb.ppu.y == gb.io_regs[IoReg.LYC];
-                    gb.setStatLycIncident(lycIncident);
-                    if (statInterruptsEnabled and intOnLycIncident and lycIncident) {
-                        gb.requestInterrupt(Interrupt.STAT);
-                    }
-
-                    if (gb.ppu.y < 144) {
-                        gb.scanningOam = true;
-                        gb.ppu.mode = .oam;
-                    } else {
-                        gb.inVBlank.store(true, .monotonic);
-                        gb.ppu.mode = .vBlank;
-                    }
+            if (gb.ppu.dots % LINE_DOTS == DRAWING_START) {
+                gb.isDrawing = true;
+                gb.setStatMode(StatFlag.MODE_3);
+            } else if (gb.ppu.dots % LINE_DOTS >= DRAWING_START + 12) {
+                for (gb.ppu.x..gb.ppu.x + 4) |x| {
+                    const colorId = colorIdAt(
+                        x,
+                        gb.ppu.y,
+                        gb,
+                        gb.ppu.obj_attrs,
+                        &gb.ppu.windowY,
+                        gb.ppu.wy,
+                    );
+                    gb.screen[gb.ppu.y * 160 + x] = gb.ppu.palette.data()[colorId];
                 }
-            },
-            .vBlank => {
-                std.debug.assert(gb.ppu.dots >= VBLANK_START);
-                std.debug.assert(gb.ppu.dots < VBLANK_END);
-                std.debug.assert(gb.ppu.y >= 144);
-                std.debug.assert(gb.ppu.y < 154);
-                std.debug.assert(gb.io_regs[IoReg.LY] >= 144);
-                std.debug.assert(gb.io_regs[IoReg.LY] < 154);
-                std.debug.assert(!gb.scanningOam);
-                std.debug.assert(!gb.isDrawing);
+                gb.ppu.x = (gb.ppu.x + 4) % 160;
 
-                if (gb.ppu.dots == VBLANK_START) {
-                    const stat = gb.io_regs[IoReg.STAT];
-                    const vblankInterruptsEnabled = gb.ie & Interrupt.VBLANK > 0;
-                    const statInterruptsEnabled = gb.ie & Interrupt.STAT > 0;
-                    const intOnMode1 = stat & StatFlag.INT_MODE_1_ENABLE > 0;
+                if (gb.ppu.dots % LINE_DOTS == HBLANK_START - 4) {
+                    // TODO need to account for mode 3 varying in length
+                    gb.ppu.x = 0;
+                    gb.isDrawing = false;
+                    gb.ppu.mode = .hBlank;
+                }
+            }
+        },
+        .hBlank => {
+            std.debug.assert(gb.ppu.dots % LINE_DOTS >= HBLANK_START);
+            std.debug.assert(gb.ppu.dots < VBLANK_START);
+            std.debug.assert(gb.ppu.x == 0);
+            std.debug.assert(gb.ppu.y < 144);
+            std.debug.assert(gb.io_regs[IoReg.LY] < 144);
+            std.debug.assert(!gb.scanningOam);
+            std.debug.assert(!gb.isDrawing);
 
-                    gb.setStatMode(StatFlag.MODE_1);
-                    if (statInterruptsEnabled and intOnMode1) {
-                        gb.requestInterrupt(Interrupt.STAT);
-                    }
-                    if (vblankInterruptsEnabled) {
-                        gb.requestInterrupt(Interrupt.VBLANK);
-                    }
+            if (gb.ppu.dots % LINE_DOTS == HBLANK_START) {
+                const stat = gb.io_regs[IoReg.STAT];
+                const statInterruptsEnabled = gb.ie & Interrupt.STAT > 0;
+                const intOnMode0 = stat & StatFlag.INT_MODE_0_ENABLE > 0;
+
+                gb.setStatMode(StatFlag.MODE_0);
+                if (statInterruptsEnabled and intOnMode0) {
+                    gb.requestInterrupt(Interrupt.STAT);
+                }
+            } else if (gb.ppu.dots % LINE_DOTS == LINE_DOTS - 4) {
+                gb.ppu.y += 1;
+
+                const stat = gb.io_regs[IoReg.STAT];
+                const statInterruptsEnabled = gb.ie & Interrupt.STAT > 0;
+                const intOnLycIncident = stat & StatFlag.INT_LYC_INCIDENT_ENABLE > 0;
+
+                // TODO when is this actually supposed to trigger?
+                gb.io_regs[IoReg.LY] = @truncate(gb.ppu.y);
+                const lycIncident = gb.ppu.y == gb.io_regs[IoReg.LYC];
+                gb.setStatLycIncident(lycIncident);
+                if (statInterruptsEnabled and intOnLycIncident and lycIncident) {
+                    gb.requestInterrupt(Interrupt.STAT);
                 }
 
-                if (gb.ppu.dots % LINE_DOTS == LINE_DOTS - 4) {
-                    // TODO do LYC incident interrupts occur in VBLANK?
-                    gb.ppu.y = (gb.ppu.y + 1) % 154;
-                    gb.io_regs[IoReg.LY] = @truncate(gb.ppu.y);
-                }
-
-                if (gb.ppu.dots == VBLANK_END - 4) {
-                    gb.inVBlank.store(false, .monotonic);
+                if (gb.ppu.y < 144) {
                     gb.scanningOam = true;
                     gb.ppu.mode = .oam;
+                } else {
+                    gb.inVBlank.store(true, .monotonic);
+                    gb.ppu.mode = .vBlank;
                 }
-            },
-        }
+            }
+        },
+        .vBlank => {
+            std.debug.assert(gb.ppu.dots >= VBLANK_START);
+            std.debug.assert(gb.ppu.dots < VBLANK_END);
+            std.debug.assert(gb.ppu.y >= 144);
+            std.debug.assert(gb.ppu.y < 154);
+            std.debug.assert(gb.io_regs[IoReg.LY] >= 144);
+            std.debug.assert(gb.io_regs[IoReg.LY] < 154);
+            std.debug.assert(!gb.scanningOam);
+            std.debug.assert(!gb.isDrawing);
 
-        gb.ppu.dots = (gb.ppu.dots + 4) % VBLANK_END;
+            if (gb.ppu.dots == VBLANK_START) {
+                const stat = gb.io_regs[IoReg.STAT];
+                const vblankInterruptsEnabled = gb.ie & Interrupt.VBLANK > 0;
+                const statInterruptsEnabled = gb.ie & Interrupt.STAT > 0;
+                const intOnMode1 = stat & StatFlag.INT_MODE_1_ENABLE > 0;
+
+                gb.setStatMode(StatFlag.MODE_1);
+                if (statInterruptsEnabled and intOnMode1) {
+                    gb.requestInterrupt(Interrupt.STAT);
+                }
+                if (vblankInterruptsEnabled) {
+                    gb.requestInterrupt(Interrupt.VBLANK);
+                }
+            }
+
+            if (gb.ppu.dots % LINE_DOTS == LINE_DOTS - 4) {
+                // TODO do LYC incident interrupts occur in VBLANK?
+                gb.ppu.y = (gb.ppu.y + 1) % 154;
+                gb.io_regs[IoReg.LY] = @truncate(gb.ppu.y);
+            }
+
+            if (gb.ppu.dots == VBLANK_END - 4) {
+                gb.inVBlank.store(false, .monotonic);
+                gb.scanningOam = true;
+                gb.ppu.mode = .oam;
+            }
+        },
     }
+
+    gb.ppu.dots = (gb.ppu.dots + 4) % VBLANK_END;
 }
 
 fn readObjectAttributesForLine(y: usize, selected_objs_buf: *[10]Ppu.ObjectAttribute, gb: *Gb) []Ppu.ObjectAttribute {

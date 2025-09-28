@@ -19,19 +19,22 @@ pub const Joypad = struct {
     };
 
     const Mode = enum {
-        waitingForLowEdge,
-        lowEdge,
+        waiting_for_low_edge,
+        low_edge,
     };
 
     mode: Joypad.Mode,
     data: u8,
-    cyclesSinceLowEdgeTransition: u8,
+    cycles_since_low_edge_transition: u8,
+
+    cycles_odd: usize,
 
     pub fn init() Joypad {
         return Joypad{
-            .mode = .waitingForLowEdge,
+            .mode = .waiting_for_low_edge,
             .data = 0,
-            .cyclesSinceLowEdgeTransition = 0,
+            .cycles_since_low_edge_transition = 0,
+            .cycles_odd = 0,
         };
     }
 

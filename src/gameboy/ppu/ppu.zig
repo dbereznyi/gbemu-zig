@@ -77,6 +77,8 @@ pub const Ppu = struct {
     screen: []Pixel,
     vblank_callback: VblankCallback,
 
+    cycles_odd: usize,
+
     pub fn init(
         alloc: std.mem.Allocator,
         palette: Palette,
@@ -99,6 +101,7 @@ pub const Ppu = struct {
             .obj_attrs = undefined,
             .screen = screen,
             .vblank_callback = vblank_callback,
+            .cycles_odd = 0,
         };
     }
 

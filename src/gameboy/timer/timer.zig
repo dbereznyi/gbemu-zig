@@ -12,11 +12,14 @@ pub const Timer = struct {
     cycles_elapsed: usize,
     state: State,
 
+    odd_cycles: usize,
+
     pub fn init() Timer {
         return Timer{
             .system_counter = 0,
             .cycles_elapsed = 0,
             .state = .running,
+            .odd_cycles = 0,
         };
     }
 

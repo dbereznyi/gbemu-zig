@@ -12,6 +12,7 @@ pub const Dma = struct {
     startAddr: u16,
     bytesTransferred: u16,
     cycles: usize,
+    cycles_odd: usize,
 
     pub fn init() Dma {
         return Dma{
@@ -20,6 +21,7 @@ pub const Dma = struct {
             .startAddr = 0x0000,
             .bytesTransferred = 0,
             .cycles = 0,
+            .cycles_odd = 0,
         };
     }
 
