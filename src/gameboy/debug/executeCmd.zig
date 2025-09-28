@@ -143,7 +143,7 @@ pub fn executeCmd(cmd: DebugCmd, gb: *Gb) !void {
         .joypadPress => |button| gb.joypad.pressButton(button),
         .joypadRelease => |button| gb.joypad.releaseButton(button),
         .ticks => |args| {
-            try format(writer, "M-cycles: {}\n", .{gb.cycles});
+            try format(writer, "T-cycles: {}\n", .{gb.cycles});
             if (!args.keep) {
                 gb.cycles = 0;
                 try format(writer, "Cycle counter reset to 0.\n", .{});

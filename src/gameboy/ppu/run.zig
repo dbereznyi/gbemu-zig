@@ -7,6 +7,7 @@ const LcdcFlag = @import("../gameboy.zig").LcdcFlag;
 const ObjFlag = @import("../gameboy.zig").ObjFlag;
 const StatFlag = @import("../gameboy.zig").StatFlag;
 const Ppu = @import("ppu.zig").Ppu;
+const syncTime = @import("../timing.zig").syncTime;
 
 const LINE_DOTS: usize = 456;
 const OAM_DOTS: usize = 80;
@@ -178,7 +179,17 @@ fn stepPpu(gb: *Gb) void {
                     gb.requestInterrupt(Interrupt.VBLANK);
                 }
 
-                gb.ppu.vblank_callback.callback(gb.ppu.vblank_callback.context, gb.ppu.screen);
+                if (!gb.isLcdOn()) {
+                    @memset(gb.ppu.screen, gb.ppu.palette.data()[0]);
+                }
+
+                if (gb.ppu.vblank_callback) |vblank_callback| {
+                    vblank_callback.callback(
+                        vblank_callback.context,
+                        gb.ppu.screen,
+                    );
+                }
+                syncTime(gb);
             }
 
             if (gb.ppu.dots % LINE_DOTS == LINE_DOTS - 4) {

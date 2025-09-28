@@ -139,7 +139,6 @@ pub const Gb = struct {
     toggle_ime: bool,
     cycles_since_last_sync: u64,
     last_sync: std.time.Instant,
-    vblank_just_occurred: bool,
 
     pc: u16,
     sp: u16,
@@ -155,16 +154,7 @@ pub const Gb = struct {
     halfCarry: bool,
     carry: bool,
 
-    // Internal registers.
-    ir: u8,
-    current_instr_cycle: u3,
-    w: u8,
-    z: u8,
-    prefix_op: PrefixOp,
-    cycles_until_ei: u2,
     ime: bool,
-
-    div_apu_occurred: bool,
 
     vram: []u8,
     wram: []u8,
@@ -195,7 +185,7 @@ pub const Gb = struct {
         rom: []const u8,
         save_data: ?[]const u8,
         palette: Ppu.Palette,
-        vblank_callback: Ppu.VblankCallback,
+        vblank_callback: ?Ppu.VblankCallback,
         audio_callback: Apu.AudioCallback,
     ) !Gb {
         const vram = try alloc.alloc(u8, 8 * 1024);
@@ -232,7 +222,6 @@ pub const Gb = struct {
             .toggle_ime = false,
             .cycles_since_last_sync = 0,
             .last_sync = try std.time.Instant.now(),
-            .vblank_just_occurred = false,
             .pc = 0x0100,
             .sp = 0xfffe,
             .a = 0,
@@ -246,14 +235,7 @@ pub const Gb = struct {
             .negative = false,
             .halfCarry = false,
             .carry = false,
-            .ir = 0,
-            .current_instr_cycle = 0,
-            .w = 0,
-            .z = 0,
-            .prefix_op = undefined,
-            .cycles_until_ei = 0,
             .ime = false,
-            .div_apu_occurred = false,
             .vram = vram,
             .wram = wram,
             .oam = oam,

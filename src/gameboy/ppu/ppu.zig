@@ -75,14 +75,14 @@ pub const Ppu = struct {
     obj_attrs: []Ppu.ObjectAttribute,
 
     screen: []Pixel,
-    vblank_callback: VblankCallback,
+    vblank_callback: ?VblankCallback,
 
     cycles_odd: usize,
 
     pub fn init(
         alloc: std.mem.Allocator,
         palette: Palette,
-        vblank_callback: VblankCallback,
+        vblank_callback: ?VblankCallback,
     ) !Ppu {
         const screen: []Pixel = try alloc.alloc(Pixel, 160 * 144);
         for (screen) |*pixel| {

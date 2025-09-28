@@ -395,7 +395,7 @@ fn executeInstr(gb: *Gb, opcode: u8) void {
         0xd0 => retCond(gb, .NC),
         0xd1 => pop(gb, .DE),
         0xd2 => jpCond(gb, .NC),
-        0xd3 => invalidOpcode(gb),
+        0xd3 => invalidOpcode(gb, opcode),
         0xd4 => callCond(gb, .NC),
         0xd5 => push(gb, .DE),
         0xd6 => aluOpImm(gb, .sub),
@@ -403,26 +403,26 @@ fn executeInstr(gb: *Gb, opcode: u8) void {
         0xd8 => retCond(gb, .C),
         0xd9 => reti(gb),
         0xda => jpCond(gb, .C),
-        0xdb => invalidOpcode(gb),
+        0xdb => invalidOpcode(gb, opcode),
         0xdc => callCond(gb, .C),
-        0xdd => invalidOpcode(gb),
+        0xdd => invalidOpcode(gb, opcode),
         0xde => aluOpImm(gb, .sbc),
         0xdf => rst(gb, 0x18),
 
         0xe0 => ldIndIoA(gb),
         0xe1 => pop(gb, .HL),
         0xe2 => ldIoCA(gb),
-        0xe3 => invalidOpcode(gb),
-        0xe4 => invalidOpcode(gb),
+        0xe3 => invalidOpcode(gb, opcode),
+        0xe4 => invalidOpcode(gb, opcode),
         0xe5 => push(gb, .HL),
         0xe6 => aluOpImm(gb, .and_),
         0xe7 => rst(gb, 0x20),
         0xe8 => addSPe8(gb),
         0xe9 => jpHL(gb),
         0xea => ldInd16A(gb),
-        0xeb => invalidOpcode(gb),
-        0xec => invalidOpcode(gb),
-        0xed => invalidOpcode(gb),
+        0xeb => invalidOpcode(gb, opcode),
+        0xec => invalidOpcode(gb, opcode),
+        0xed => invalidOpcode(gb, opcode),
         0xee => aluOpImm(gb, .xor),
         0xef => rst(gb, 0x28),
 
@@ -430,7 +430,7 @@ fn executeInstr(gb: *Gb, opcode: u8) void {
         0xf1 => pop(gb, .AF),
         0xf2 => ldAIoC(gb),
         0xf3 => di(gb),
-        0xf4 => invalidOpcode(gb),
+        0xf4 => invalidOpcode(gb, opcode),
         0xf5 => push(gb, .AF),
         0xf6 => aluOpImm(gb, .or_),
         0xf7 => rst(gb, 0x30),
@@ -438,15 +438,15 @@ fn executeInstr(gb: *Gb, opcode: u8) void {
         0xf9 => ldSPHL(gb),
         0xfa => ldAInd16(gb),
         0xfb => ei(gb),
-        0xfc => invalidOpcode(gb),
-        0xfd => invalidOpcode(gb),
+        0xfc => invalidOpcode(gb, opcode),
+        0xfd => invalidOpcode(gb, opcode),
         0xfe => aluOpImm(gb, .cp),
         0xff => rst(gb, 0x38),
     }
 }
 
-fn invalidOpcode(gb: *Gb) void {
-    gb.panic("Invalid opcode: ${x:0>2}\n", .{gb.ir});
+fn invalidOpcode(gb: *Gb, opcode: u8) void {
+    gb.panic("Invalid opcode: ${x:0>2}\n", .{opcode});
 }
 
 fn ldRegReg(gb: *Gb, comptime dst: Dst8, comptime src: Src8) void {
@@ -928,7 +928,7 @@ fn prefix(gb: *Gb) void {
         &gb.halfCarry,
         &gb.carry,
     );
-    if (gb.prefix_op != .bit) {
+    if (prefix_op != .bit) {
         if (dst == .IndHL) cycleWrite(gb, Dst8.IndHL, result) else dst.write(result, gb);
     }
 }

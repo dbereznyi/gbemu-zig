@@ -15,7 +15,6 @@ pub fn runTimer(gb: *Gb, cycles: usize) void {
 
         // signal a DIV-APU event when bit 4 changes from 0 to 1
         if (prev_div & 0b0001_0000 == 0 and gb.io_regs[IoReg.DIV] & 0b0001_0000 != 0) {
-            //gb.div_apu_occurred = true;
             gb.apu.handleDivEvent();
         }
 
