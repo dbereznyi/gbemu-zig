@@ -267,7 +267,7 @@ pub const Apu = struct {
     samples_timer: u8,
     samples_clock_divider_ix: usize,
 
-    audio_callback: AudioCallback,
+    audio_callback: ?AudioCallback,
 
     div_apu_counter: usize,
     next_lfsr_tick_in: u8,
@@ -281,7 +281,7 @@ pub const Apu = struct {
     cycles_since_last_render_hist: []usize,
     cycles_since_last_render_hist_ix: usize,
 
-    pub fn init(alloc: std.mem.Allocator, audio_callback: AudioCallback) !Self {
+    pub fn init(alloc: std.mem.Allocator, audio_callback: ?AudioCallback) !Self {
         const ch_samples = [_][]Sample{
             try alloc.alloc(Sample, constants.AUDIO.SAMPLES_BUFFER_LEN),
             try alloc.alloc(Sample, constants.AUDIO.SAMPLES_BUFFER_LEN),
@@ -459,146 +459,8 @@ pub const Apu = struct {
         }
         self.ch_samples_ix = (self.ch_samples_ix + 1) % constants.AUDIO.SAMPLES_BUFFER_LEN;
 
-        self.audio_callback.callback(self.audio_callback.context, self, output);
-    }
-
-    pub fn step(self: *Self, div_apu_occurred: *bool) void {
-        if (div_apu_occurred.*) {
-            div_apu_occurred.* = false;
-            self.div_apu_counter += 1;
-        }
-        const tick_256hz = self.div_apu_counter / 2 > 0;
-        const tick_128hz = self.div_apu_counter / 4 > 0;
-        const tick_64hz = self.div_apu_counter == 8;
-        if (self.div_apu_counter == 8) {
-            self.div_apu_counter = 0;
-        }
-        defer self.is_1mhz_tick = !self.is_1mhz_tick;
-        defer {
-            // TODO there is a bug where this underflows somehow.
-            self.next_lfsr_tick_in -|= 1;
-        }
-
-        // CH1 period sweep
-        if (self.ch1.period_sweep_enabled != 0 and tick_128hz) {
-            const result = calcNewSweepFreqWithOverflowCheck(
-                self.ch1.period_sweep_shadow,
-                self.ch1.period_sweep_dir,
-                self.ch1.period_sweep_individual_step,
-            );
-            if (result[1] == 1) {
-                //std.debug.print("freq overflow in step, turning off\n", .{});
-                self.ch_on[CH1] = 0;
-                return;
-            } else {
-                self.ch1.period_sweep_shadow = result[0];
-                self.period[CH1] = self.ch1.period_sweep_shadow;
-                const result2 = calcNewSweepFreqWithOverflowCheck(
-                    self.ch1.period_sweep_shadow,
-                    self.ch1.period_sweep_dir,
-                    self.ch1.period_sweep_individual_step,
-                );
-                if (result2[1] == 1) {
-                    //std.debug.print("freq overflow in step (check #2), turning off\n", .{});
-                    self.ch_on[CH1] = 0;
-                    return;
-                }
-            }
-        }
-
-        for (0..4) |ch_ix| {
-            // Length timer
-            if (self.length_enable[ch_ix] == 1 and tick_256hz) {
-                if (ch_ix != CH3) {
-                    const add_result = @addWithOverflow(self.length_timer[ch_ix], 1);
-                    self.length_timer[ch_ix] = add_result[0];
-                    if (add_result[1] == 1) {
-                        //std.debug.print("CH{}: length timer expired, turning off\n", .{ch_ix});
-                        self.ch_on[ch_ix] = 0;
-                    }
-                } else {
-                    const add_result = @addWithOverflow(self.ch3.length_timer, 1);
-                    self.ch3.length_timer = add_result[0];
-                    if (add_result[1] == 1) {
-                        self.ch_on[CH3] = 0;
-                    }
-                }
-            }
-
-            // Envelope
-            if (tick_64hz and ch_ix != CH3 and self.envelope_sweep_pace[ch_ix] != 0) {
-                self.envelope_timer[ch_ix] += 1;
-                if (self.envelope_timer[ch_ix] >= self.envelope_sweep_pace[ch_ix]) {
-                    self.envelope_timer[ch_ix] = 0;
-                    if (self.envelope_dir[ch_ix] == 1) {
-                        self.ch_volume[ch_ix] +|= 1;
-                    } else {
-                        //std.debug.print("CH{}: decrementing volume ({} -> {})\n", .{ ch_ix, self.ch_volume[ch_ix], self.ch_volume[ch_ix] -| 1 });
-                        self.ch_volume[ch_ix] -|= 1;
-                    }
-                }
-            }
-        }
-
-        // Pulse channels
-        if (self.is_1mhz_tick) {
-            for (0..2) |ch_ix| {
-                const period_inc = @addWithOverflow(self.period[ch_ix], 1);
-                self.period[ch_ix] = period_inc[0];
-                if (period_inc[1] == 1) {
-                    self.period[ch_ix] = self.period_setting[ch_ix];
-                    self.duty_step[ch_ix] +%= 1;
-                }
-                const val = WAVEFORMS[self.pulse[ch_ix].wave_duty][self.pulse[ch_ix].duty_step] * self.ch_volume[ch_ix];
-                self.updateSample(ch_ix, val, self.cycles_since_last_render % BL_PHASES);
-            }
-        }
-
-        // Wave channel
-        {
-            const period_inc = @addWithOverflow(self.period[CH3], 1);
-            self.period[CH3] = period_inc[0];
-            if (period_inc[1] == 1) {
-                self.period[CH3] = self.period_setting[CH3];
-                self.ch3.wav_ram_ix +%= 1;
-            }
-            const val_raw = self.ch3.wav_ram[self.ch3.wav_ram_ix];
-            const val = switch (self.ch3.volume) {
-                0 => 0,
-                1 => val_raw,
-                2 => val_raw >> 1,
-                3 => val_raw >> 2,
-            };
-            self.updateSample(CH3, val, self.cycles_since_last_render % BL_PHASES);
-        }
-
-        // Noise channel
-        if (self.next_lfsr_tick_in == 0) {
-            self.next_lfsr_tick_in = LFSR_CLOCK_DIVIDER;
-
-            const divider: u32 = self.ch4.clock_divider;
-            const lfsr_timer_max: u32 =
-                if (divider > 0) divider << self.ch4.clock_shift else 2;
-            self.ch4.lfsr_timer += 1;
-            if (self.ch4.lfsr_timer >= lfsr_timer_max) {
-                self.ch4.lfsr_timer = 0;
-
-                const bit0_bit1_xor = self.ch4.lfsr ^ (self.ch4.lfsr >> 1);
-                const next_lfsr_bit = 0x0001 & ~bit0_bit1_xor;
-                self.ch4.lfsr >>= 1;
-
-                const high_bit_mask: u16 = if (self.ch4.lfsr_width == 1) 0x4040 else 0x4000;
-
-                if (next_lfsr_bit != 0) {
-                    self.ch4.lfsr |= high_bit_mask;
-                } else {
-                    self.ch4.lfsr &= ~high_bit_mask;
-                }
-
-                const bit_0 = self.ch4.lfsr & 0x0001;
-                const val = if (bit_0 == 0) 0 else self.ch_volume[CH4];
-                self.updateSample(CH4, val, self.cycles_since_last_render % BL_PHASES);
-            }
+        if (self.audio_callback) |audio_callback| {
+            audio_callback.callback(audio_callback.context, self, output);
         }
     }
 

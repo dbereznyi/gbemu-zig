@@ -186,7 +186,7 @@ pub const Gb = struct {
         save_data: ?[]const u8,
         palette: Ppu.Palette,
         vblank_callback: ?Ppu.VblankCallback,
-        audio_callback: Apu.AudioCallback,
+        audio_callback: ?Apu.AudioCallback,
     ) !Gb {
         const vram = try alloc.alloc(u8, 8 * 1024);
         for (vram, 0..) |_, i| {
