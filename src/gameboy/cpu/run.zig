@@ -94,11 +94,11 @@ pub fn runCpu(gb: *Gb) void {
         //     gb.debug.setPaused(true);
         //     gb.debug.stepModeEnabled = true;
         // }
-        // gb.debug.addToExecutionTrace(
-        //     gb.cart.getBank(gb.pc),
-        //     gb.pc,
-        //     decodeInstrAt(gb.pc, gb),
-        // );
+        gb.debug.addToExecutionTrace(
+            gb.cart.getBank(gb.pc),
+            gb.pc,
+            decodeInstrAt(gb.pc, gb),
+        );
 
         const opcode = cycleReadPC(gb);
 
