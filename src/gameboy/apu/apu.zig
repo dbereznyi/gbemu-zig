@@ -9,8 +9,8 @@ const constants = @import("../../constants.zig");
 const NUM_SAMPLES = 512;
 
 const SAMPLES_CLOCK_DIVIDER = 2097152.0 / @as(f32, @floatFromInt(constants.AUDIO.SAMPLE_RATE));
-const SAMPLES_CLOCK_DIVIDER_LOW: usize = @floor(SAMPLES_CLOCK_DIVIDER);
-const SAMPLES_CLOCK_DIVIDER_HIGH: usize = @ceil(SAMPLES_CLOCK_DIVIDER);
+const SAMPLES_CLOCK_DIVIDER_LOW: i32 = @floor(SAMPLES_CLOCK_DIVIDER);
+const SAMPLES_CLOCK_DIVIDER_HIGH: i32 = @ceil(SAMPLES_CLOCK_DIVIDER);
 const SAMPLES_CLOCK_DIVIDERS = [_]usize{
     SAMPLES_CLOCK_DIVIDER_LOW,
     SAMPLES_CLOCK_DIVIDER_HIGH,
@@ -23,8 +23,6 @@ const BL_PHASES: usize = 64;
 const BL_STEP_WIDTH: usize = 32;
 const LOW_PASS: f32 = 0.999;
 const HIGH_PASS: f32 = 0.990;
-
-const DEBUG_DISPLAY_SAMPLE_RATE = true;
 
 fn initBandLimitedSteps(alloc: std.mem.Allocator) !*[BL_PHASES][BL_STEP_WIDTH]f32 {
     const master = try alloc.alloc(f32, BL_PHASES * BL_STEP_WIDTH);
@@ -274,12 +272,10 @@ pub const Apu = struct {
     is_1mhz_tick: bool,
 
     // This counts 2 MHz cycles
-    cycles: usize,
+    cycles: i32,
     sample_cycles: u32,
 
-    cycles_since_last_render: usize,
-    cycles_since_last_render_hist: []usize,
-    cycles_since_last_render_hist_ix: usize,
+    cycles_since_last_render: i32,
 
     pub fn init(alloc: std.mem.Allocator, audio_callback: ?AudioCallback) !Self {
         const ch_samples = [_][]Sample{
@@ -329,8 +325,6 @@ pub const Apu = struct {
             .cycles = 0,
             .sample_cycles = 0,
             .cycles_since_last_render = 0,
-            .cycles_since_last_render_hist = try alloc.alloc(usize, 16),
-            .cycles_since_last_render_hist_ix = 0,
         };
     }
 
@@ -418,39 +412,6 @@ pub const Apu = struct {
     }
 
     pub fn render(self: *Self) void {
-        self.cycles_since_last_render += 1;
-
-        self.samples_timer += 1;
-        if (self.samples_timer < SAMPLES_CLOCK_DIVIDERS[self.samples_clock_divider_ix]) {
-            return;
-        }
-
-        self.cycles_since_last_render_hist[self.cycles_since_last_render_hist_ix] =
-            self.cycles_since_last_render;
-        self.cycles_since_last_render = 0;
-
-        if (DEBUG_DISPLAY_SAMPLE_RATE and self.cycles_since_last_render_hist_ix == self.cycles_since_last_render_hist.len - 1) {
-            var avg: f32 = 0.0;
-            for (0..self.cycles_since_last_render_hist.len) |i| {
-                avg += @floatFromInt(self.cycles_since_last_render_hist[i]);
-            }
-            avg /= @floatFromInt(self.cycles_since_last_render_hist.len);
-
-            //std.debug.print("avg cycles: {d:.2}\n", .{ avg });
-
-            const sample_rate: f32 = 2097152.0 / avg;
-            std.debug.print("sample rate: {d:.2} Hz\n", .{sample_rate});
-        }
-
-        self.cycles_since_last_render_hist_ix =
-            (self.cycles_since_last_render_hist_ix + 1) % self.cycles_since_last_render_hist.len;
-
-        defer {
-            self.samples_clock_divider_ix =
-                (self.samples_clock_divider_ix + 1) % SAMPLES_CLOCK_DIVIDERS.len;
-            self.samples_timer = 0;
-        }
-
         var output = Sample.init(0, 0);
         for (0..4) |ch_ix| {
             const ch_output = self.readSample(ch_ix);
@@ -510,11 +471,11 @@ pub const Apu = struct {
 
                 self.pulse[ch_ix].duty_step +%= 1;
                 const val = WAVEFORMS[self.pulse[ch_ix].wave_duty][self.pulse[ch_ix].duty_step] * self.ch_volume[ch_ix];
-                self.updateSample(ch_ix, val, cycles - cycles_rem);
+                self.updateSample(ch_ix, val, @intCast(cycles - cycles_rem));
             }
 
             if (cycles_rem > 0) {
-                self.pulse[ch_ix].timer -= @truncate(cycles_rem);
+                self.pulse[ch_ix].timer -= @intCast(cycles_rem);
             }
         }
 
@@ -534,11 +495,11 @@ pub const Apu = struct {
                     2 => val_raw >> 1,
                     3 => val_raw >> 2,
                 };
-                self.updateSample(CH3, val, cycles - cycles_rem);
+                self.updateSample(CH3, val, @intCast(cycles - cycles_rem));
             }
 
             if (cycles_rem > 0) {
-                self.ch3.timer -= @truncate(cycles_rem);
+                self.ch3.timer -= @intCast(cycles_rem);
             }
         }
 
@@ -570,11 +531,11 @@ pub const Apu = struct {
 
                 const bit_0 = self.ch4.lfsr & 0x0001;
                 const val = if (bit_0 == 0) 0 else self.ch_volume[CH4];
-                self.updateSample(CH4, val, self.cycles_since_last_render % BL_PHASES);
+                self.updateSample(CH4, val, @intCast(cycles - cycles_rem));
             }
 
             if (cycles_rem > 0) {
-                self.ch4.timer -= @truncate(cycles_rem);
+                self.ch4.timer -= @intCast(cycles_rem);
             }
         }
 
@@ -659,6 +620,9 @@ pub const Apu = struct {
                         //std.debug.print("CH{}: decrementing volume ({} -> {})\n", .{ ch_ix, self.ch_volume[ch_ix], self.ch_volume[ch_ix] -| 1 });
                         self.ch_volume[ch_ix] -|= 1;
                     }
+
+                    const val = WAVEFORMS[self.pulse[ch_ix].wave_duty][self.pulse[ch_ix].duty_step] * self.ch_volume[ch_ix];
+                    self.updateSample(ch_ix, val, @as(usize, @intCast(self.cycles_since_last_render)) % BL_PHASES);
                 }
             }
         }

@@ -134,7 +134,6 @@ pub const Gb = struct {
 
     stopped: bool,
     halted: bool,
-    just_halted: bool,
     halt_bug: bool,
     toggle_ime: bool,
     cycles_since_last_sync: u64,
@@ -171,9 +170,6 @@ pub const Gb = struct {
     timer: Timer,
     debug: Debug,
 
-    scanningOam: bool,
-    isDrawing: bool,
-    inVBlank: std.atomic.Value(bool),
     running: std.atomic.Value(bool),
 
     // This is in T-cycles! TODO: need to make everything else in T-cycles
@@ -217,7 +213,6 @@ pub const Gb = struct {
         return Gb{
             .stopped = false,
             .halted = false,
-            .just_halted = false,
             .halt_bug = false,
             .toggle_ime = false,
             .cycles_since_last_sync = 0,
@@ -249,9 +244,6 @@ pub const Gb = struct {
             .dma = Dma.init(),
             .timer = Timer.init(),
             .debug = try Debug.init(alloc),
-            .scanningOam = false,
-            .isDrawing = false,
-            .inVBlank = std.atomic.Value(bool).init(false),
             .running = std.atomic.Value(bool).init(true),
             .pending_cycles = 0,
             .cycles = 0,
@@ -293,26 +285,9 @@ pub const Gb = struct {
         gb.carry = flags & 0b0001_0000 > 0;
     }
 
-    pub fn push16(gb: *Gb, value: u16) void {
-        const high: u8 = @truncate(value >> 8);
-        const low: u8 = @truncate(value);
-        gb.sp -%= 1;
-        gb.write(gb.sp, high);
-        gb.sp -%= 1;
-        gb.write(gb.sp, low);
-    }
-
-    pub fn pop16(gb: *Gb) u16 {
-        const low = gb.read(gb.sp);
-        gb.sp +%= 1;
-        const high = gb.read(gb.sp);
-        gb.sp +%= 1;
-        return as16(high, low);
-    }
-
     pub fn isVramInUse(gb: *Gb) bool {
         const lcdOn = gb.io_regs[IoReg.LCDC] & LcdcFlag.ON > 0;
-        return lcdOn and gb.isDrawing;
+        return lcdOn and gb.ppu.drawing;
     }
 
     pub fn isLcdOn(gb: *Gb) bool {
@@ -342,7 +317,7 @@ pub const Gb = struct {
             0xe000...0xfdff => gb.wram[addr - 0xe000],
             // OAM
             0xfe00...0xfe9f => blk: {
-                if (!gb.isLcdOn() or !gb.scanningOam or gb.debug.isPaused()) {
+                if (!gb.isLcdOn() or !gb.ppu.scanning_oam or gb.debug.isPaused()) {
                     const val = gb.oam[addr - 0xfe00];
                     break :blk val;
                 } else {
@@ -414,7 +389,7 @@ pub const Gb = struct {
             },
             // OAM
             0xfe00...0xfe9f => {
-                if (!gb.isLcdOn() or !gb.scanningOam or gb.debug.isPaused()) {
+                if (!gb.isLcdOn() or !gb.ppu.scanning_oam or gb.debug.isPaused()) {
                     gb.oam[addr - 0xfe00] = val;
                 } else {
                     std.log.warn("Attempted to write to OAM while in use (${x} -> {x})\n", .{ val, addr });

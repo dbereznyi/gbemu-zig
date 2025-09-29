@@ -5,6 +5,8 @@ const runDebugger = @import("debug/runDebugger.zig").runDebugger;
 const executeDebugCmd = @import("debug/executeCmd.zig").executeCmd;
 
 pub fn runGameboy(gb: *Gb) void {
+    //processDebugCommand(gb);
+
     runCpu(gb);
 }
 

@@ -49,7 +49,7 @@ fn stepPpu(gb: *Gb) void {
             std.debug.assert(gb.ppu.x == 0);
             std.debug.assert(gb.ppu.y < 144);
             std.debug.assert(gb.io_regs[IoReg.LY] < 144);
-            std.debug.assert(!gb.isDrawing);
+            std.debug.assert(!gb.ppu.drawing);
 
             if (gb.ppu.dots % LINE_DOTS == 0) {
                 const stat = gb.io_regs[IoReg.STAT];
@@ -62,7 +62,7 @@ fn stepPpu(gb: *Gb) void {
                 gb.setStatMode(StatFlag.MODE_2);
 
                 if (gb.isLcdOn()) {
-                    gb.scanningOam = true;
+                    gb.ppu.scanning_oam = true;
                     gb.ppu.obj_attrs = readObjectAttributesForLine(
                         gb.ppu.y,
                         &gb.ppu.obj_attrs_buf,
@@ -72,7 +72,7 @@ fn stepPpu(gb: *Gb) void {
                     gb.ppu.obj_attrs.len = 0;
                 }
             } else if (gb.ppu.dots % LINE_DOTS == DRAWING_START - 4) {
-                gb.scanningOam = false;
+                gb.ppu.scanning_oam = false;
                 gb.ppu.mode = .drawing;
             }
         },
@@ -81,7 +81,7 @@ fn stepPpu(gb: *Gb) void {
             std.debug.assert(gb.ppu.dots % LINE_DOTS < HBLANK_START);
             std.debug.assert(gb.ppu.y < 144);
             std.debug.assert(gb.io_regs[IoReg.LY] < 144);
-            std.debug.assert(!gb.scanningOam);
+            std.debug.assert(!gb.ppu.scanning_oam);
 
             if (gb.ppu.dots == DRAWING_START) {
                 gb.ppu.windowY = 0;
@@ -89,7 +89,7 @@ fn stepPpu(gb: *Gb) void {
             }
 
             if (gb.ppu.dots % LINE_DOTS == DRAWING_START) {
-                gb.isDrawing = true;
+                gb.ppu.drawing = true;
                 gb.setStatMode(StatFlag.MODE_3);
             } else if (gb.ppu.dots % LINE_DOTS >= DRAWING_START + 12) {
                 for (gb.ppu.x..gb.ppu.x + 4) |x| {
@@ -108,7 +108,7 @@ fn stepPpu(gb: *Gb) void {
                 if (gb.ppu.dots % LINE_DOTS == HBLANK_START - 4) {
                     // TODO need to account for mode 3 varying in length
                     gb.ppu.x = 0;
-                    gb.isDrawing = false;
+                    gb.ppu.drawing = false;
                     gb.ppu.mode = .hBlank;
                 }
             }
@@ -119,8 +119,8 @@ fn stepPpu(gb: *Gb) void {
             std.debug.assert(gb.ppu.x == 0);
             std.debug.assert(gb.ppu.y < 144);
             std.debug.assert(gb.io_regs[IoReg.LY] < 144);
-            std.debug.assert(!gb.scanningOam);
-            std.debug.assert(!gb.isDrawing);
+            std.debug.assert(!gb.ppu.scanning_oam);
+            std.debug.assert(!gb.ppu.drawing);
 
             if (gb.ppu.dots % LINE_DOTS == HBLANK_START) {
                 const stat = gb.io_regs[IoReg.STAT];
@@ -147,10 +147,9 @@ fn stepPpu(gb: *Gb) void {
                 }
 
                 if (gb.ppu.y < 144) {
-                    gb.scanningOam = true;
+                    gb.ppu.scanning_oam = true;
                     gb.ppu.mode = .oam;
                 } else {
-                    gb.inVBlank.store(true, .monotonic);
                     gb.ppu.mode = .vBlank;
                 }
             }
@@ -162,8 +161,8 @@ fn stepPpu(gb: *Gb) void {
             std.debug.assert(gb.ppu.y < 154);
             std.debug.assert(gb.io_regs[IoReg.LY] >= 144);
             std.debug.assert(gb.io_regs[IoReg.LY] < 154);
-            std.debug.assert(!gb.scanningOam);
-            std.debug.assert(!gb.isDrawing);
+            std.debug.assert(!gb.ppu.scanning_oam);
+            std.debug.assert(!gb.ppu.drawing);
 
             if (gb.ppu.dots == VBLANK_START) {
                 const stat = gb.io_regs[IoReg.STAT];
@@ -199,8 +198,7 @@ fn stepPpu(gb: *Gb) void {
             }
 
             if (gb.ppu.dots == VBLANK_END - 4) {
-                gb.inVBlank.store(false, .monotonic);
-                gb.scanningOam = true;
+                gb.ppu.scanning_oam = true;
                 gb.ppu.mode = .oam;
             }
         },

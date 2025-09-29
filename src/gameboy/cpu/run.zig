@@ -21,18 +21,9 @@ const decodeInstrAt = @import("decode.zig").decodeInstrAt;
 const runDma = @import("../dma/run.zig").runDma;
 
 pub fn runCpu(gb: *Gb) void {
-    if ((gb.ie & 0x10 != 0) and (gb.ime or gb.halted)) {
-        syncTime(gb);
-    }
-
-    if (gb.halted and !gb.just_halted) {
-        advanceGameboy(gb, 2);
-    }
-
     if (gb.halted) {
-        advanceGameboy(gb, if (gb.just_halted) 4 else 2);
+        advanceGameboy(gb, 4);
     }
-    gb.just_halted = false;
 
     const effective_ime = gb.ime;
     if (gb.toggle_ime) {
@@ -82,8 +73,6 @@ pub fn runCpu(gb: *Gb) void {
 
         gb.ime = false;
     } else if (!gb.halted) {
-        // TODO impl debugging
-        // handleDebugCmd(gb);
         // if (shouldDebugBreak(gb)) {
         //     gb.debug.stdOutMutex.lock();
         //     std.debug.print("\n", .{});
@@ -94,11 +83,11 @@ pub fn runCpu(gb: *Gb) void {
         //     gb.debug.setPaused(true);
         //     gb.debug.stepModeEnabled = true;
         // }
-        gb.debug.addToExecutionTrace(
-            gb.cart.getBank(gb.pc),
-            gb.pc,
-            decodeInstrAt(gb.pc, gb),
-        );
+        // gb.debug.addToExecutionTrace(
+        //     gb.cart.getBank(gb.pc),
+        //     gb.pc,
+        //     decodeInstrAt(gb.pc, gb),
+        // );
 
         const opcode = cycleReadPC(gb);
 
@@ -108,15 +97,12 @@ pub fn runCpu(gb: *Gb) void {
         }
 
         executeInstr(gb, opcode);
+
+        std.debug.print("executed opcode ${x:02} with new PC=${x:04}\n", .{ opcode, gb.pc });
     }
 
     flushPendingCycles(gb);
-}
-
-fn handleDebugCmd(gb: *Gb) void {
-    const debugCmd = gb.debug.receiveCommand() orelse return;
-    executeDebugCmd(debugCmd, gb) catch gb.panic("Failed to execute debug command", .{});
-    gb.debug.acknowledgeCommand();
+    syncTime(gb);
 }
 
 fn cycleRead(gb: *Gb, src: Src8) u8 {
@@ -477,8 +463,6 @@ fn halt(gb: *Gb) void {
     } else {
         gb.halted = true;
     }
-
-    gb.just_halted = true;
 }
 
 fn ldReg16Imm16(gb: *Gb, comptime dst: Dst16) void {

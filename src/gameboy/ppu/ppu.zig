@@ -74,6 +74,9 @@ pub const Ppu = struct {
     obj_attrs_buf: [10]Ppu.ObjectAttribute,
     obj_attrs: []Ppu.ObjectAttribute,
 
+    scanning_oam: bool,
+    drawing: bool,
+
     screen: []Pixel,
     vblank_callback: ?VblankCallback,
 
@@ -99,6 +102,8 @@ pub const Ppu = struct {
             .mode = .oam,
             .obj_attrs_buf = undefined,
             .obj_attrs = undefined,
+            .scanning_oam = false,
+            .drawing = false,
             .screen = screen,
             .vblank_callback = vblank_callback,
             .cycles_odd = 0,

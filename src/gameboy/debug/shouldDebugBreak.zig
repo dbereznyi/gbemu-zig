@@ -15,7 +15,6 @@ pub fn shouldDebugBreak(gb: *Gb) bool {
         return false;
     }
 
-    // Note: with stepAccurate(), skipCurrentInstruction should be ignored.
     if (false and gb.debug.skipCurrentInstruction) {
         gb.debug.skipCurrentInstruction = false;
         return false;
@@ -24,21 +23,18 @@ pub fn shouldDebugBreak(gb: *Gb) bool {
         return true;
     }
 
-    if (ENABLE_SOFTWARE_BREAKPOINTS and gb.ir == 0x40) { // software breakpoint ("ld b, b")
+    // software breakpoint ("ld b, b")
+    if (ENABLE_SOFTWARE_BREAKPOINTS and gb.read(gb.pc) == 0x40) {
         return true;
     }
 
-    var breakpointHit = false;
     for (gb.debug.breakpoints.items) |breakpoint| {
         const addr = breakpoint.addr;
         const bank = breakpoint.bank;
         if (gb.pc == addr and gb.cart.getBank(gb.pc) == bank) {
-            breakpointHit = true;
-            break;
+            return true;
         }
     }
-    if (breakpointHit) {
-        return true;
-    }
+
     return false;
 }

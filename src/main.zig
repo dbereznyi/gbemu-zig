@@ -302,6 +302,8 @@ const Sdl = struct {
         _ = c.SDL_RenderClear(self.renderer);
         _ = c.SDL_RenderCopy(self.renderer, self.texture, null, null);
         c.SDL_RenderPresent(self.renderer);
+
+        std.debug.print("rendered\n!", .{});
     }
 
     pub fn audioCallback(self: *Self, apu: *Apu, sample: Sample) void {
