@@ -501,7 +501,7 @@ pub const Gb = struct {
             gb.io_regs[IoReg.STAT],
         });
         try format(writer, "IE: %{b:0>8} IF: %{b:0>8} IME: {}\n", .{
-            gb.io_regs[IoReg.IE],
+            gb.ie,
             gb.io_regs[IoReg.IF],
             @as(u1, if (gb.ime) 1 else 0),
         });

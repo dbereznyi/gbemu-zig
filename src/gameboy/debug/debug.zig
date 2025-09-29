@@ -17,6 +17,7 @@ pub const Debug = struct {
     pub const MAX_TRACE_LENGTH = 16;
 
     paused: std.atomic.Value(bool),
+    just_unpaused: std.atomic.Value(bool),
     skipCurrentInstruction: bool,
     stepModeEnabled: bool,
     breakpoints: std.ArrayList(Breakpoint),
@@ -41,6 +42,7 @@ pub const Debug = struct {
 
         return Debug{
             .paused = std.atomic.Value(bool).init(false),
+            .just_unpaused = std.atomic.Value(bool).init(false),
             .skipCurrentInstruction = false,
             .stepModeEnabled = false,
             .breakpoints = breakpoints,
@@ -67,6 +69,18 @@ pub const Debug = struct {
 
     pub fn setPaused(debug: *Debug, val: bool) void {
         debug.paused.store(val, .monotonic);
+
+        if (!val) {
+            debug.just_unpaused.store(true, .monotonic);
+        }
+    }
+
+    pub fn justUnpaused(debug: *Debug) bool {
+        return debug.just_unpaused.load(.monotonic);
+    }
+
+    pub fn clearJustUnpaused(debug: *Debug) void {
+        debug.just_unpaused.store(false, .monotonic);
     }
 
     pub fn sendCommand(debug: *Debug, cmd: DebugCmd) void {

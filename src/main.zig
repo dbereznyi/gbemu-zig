@@ -121,7 +121,7 @@ pub fn main() !void {
 
     if (true) {
         //try gb.debug.breakpoints.append(.{ .bank = 3, .addr = 0x4000 });
-        //try gb.debug.breakpoints.append(.{ .bank = 0, .addr = 0x0181 });
+        try gb.debug.breakpoints.append(.{ .bank = 0, .addr = 0x0150 });
         gb.debug.stackBase = 0xdfff;
     }
 
@@ -278,6 +278,10 @@ const Sdl = struct {
                 }
 
                 runGameboy(gb);
+
+                _ = c.SDL_RenderClear(self.renderer);
+                _ = c.SDL_RenderCopy(self.renderer, self.texture, null, null);
+                c.SDL_RenderPresent(self.renderer);
 
                 // renderVramViewer(&gb, &vram_pixels);
                 // _ = c.SDL_UpdateTexture(vram_texture, null, @ptrCast(vram_pixels), VRAM_WINDOW_WIDTH * 3);

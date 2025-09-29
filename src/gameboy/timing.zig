@@ -9,8 +9,14 @@ const runDma = @import("./dma/run.zig").runDma;
 const LCDC_PERIOD: u64 = 70224;
 const CLOCK_RATE: u64 = 4194304;
 
-// TODO figure out how this should behave when debug paused
 pub fn syncTime(gb: *Gb) void {
+    if (gb.debug.justUnpaused()) {
+        gb.last_sync = std.time.Instant.now() catch @panic("Could not get current time");
+        gb.cycles_since_last_sync = 0;
+        gb.debug.clearJustUnpaused();
+        return;
+    }
+
     if (gb.cycles_since_last_sync < LCDC_PERIOD / 3) {
         return;
     }
@@ -19,6 +25,7 @@ pub fn syncTime(gb: *Gb) void {
 
     const now = std.time.Instant.now() catch @panic("Could not get current time");
     const sleep_time_ns = target_ns + now.since(gb.last_sync);
+
     if (sleep_time_ns > 0 and sleep_time_ns < LCDC_PERIOD * 1_200_000_000 / CLOCK_RATE) {
         std.time.sleep(sleep_time_ns);
         gb.last_sync = std.time.Instant.now() catch @panic("Could not get current time");

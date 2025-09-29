@@ -969,14 +969,14 @@ pub const Apu = struct {
 
             if (ch_ix == CH1 or ch_ix == CH2) {
                 try format(writer, "    Duty cycle: {s}\n", .{
-                    switch (self.wave_duty[ch_ix]) {
+                    switch (self.pulse[ch_ix].wave_duty) {
                         0 => "12.5%",
                         1 => "25%",
                         2 => "50%",
                         3 => "75%",
                     },
                 });
-                try format(writer, "    Duty step: {}\n", .{self.duty_step[ch_ix]});
+                try format(writer, "    Duty step: {}\n", .{self.pulse[ch_ix].duty_step});
             }
 
             if (ch_ix == CH4) {

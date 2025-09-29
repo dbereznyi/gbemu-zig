@@ -73,21 +73,11 @@ pub fn runCpu(gb: *Gb) void {
 
         gb.ime = false;
     } else if (!gb.halted) {
-        // if (shouldDebugBreak(gb)) {
-        //     gb.debug.stdOutMutex.lock();
-        //     std.debug.print("\n", .{});
-        //     gb.printDebugTrace() catch {};
-        //     std.debug.print("\n> ", .{});
-        //     gb.debug.stdOutMutex.unlock();
-
-        //     gb.debug.setPaused(true);
-        //     gb.debug.stepModeEnabled = true;
-        // }
-        // gb.debug.addToExecutionTrace(
-        //     gb.cart.getBank(gb.pc),
-        //     gb.pc,
-        //     decodeInstrAt(gb.pc, gb),
-        // );
+        gb.debug.addToExecutionTrace(
+            gb.cart.getBank(gb.pc),
+            gb.pc,
+            decodeInstrAt(gb.pc, gb),
+        );
 
         const opcode = cycleReadPC(gb);
 
@@ -98,7 +88,16 @@ pub fn runCpu(gb: *Gb) void {
 
         executeInstr(gb, opcode);
 
-        std.debug.print("executed opcode ${x:02} with new PC=${x:04}\n", .{ opcode, gb.pc });
+        if (shouldDebugBreak(gb)) {
+            gb.debug.stdOutMutex.lock();
+            std.debug.print("\n", .{});
+            gb.printDebugTrace() catch {};
+            std.debug.print("\n> ", .{});
+            gb.debug.stdOutMutex.unlock();
+
+            gb.debug.setPaused(true);
+            gb.debug.stepModeEnabled = true;
+        }
     }
 
     flushPendingCycles(gb);
@@ -142,8 +141,7 @@ fn cycleWritePC(gb: *Gb, val: u16) void {
 
 // Stall for 1 M-cycle.
 fn cycleStall(gb: *Gb) void {
-    advanceGameboy(gb, gb.pending_cycles);
-    gb.pending_cycles = 4;
+    gb.pending_cycles += 4;
 }
 
 fn flushPendingCycles(gb: *Gb) void {
