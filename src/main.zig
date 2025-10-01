@@ -306,7 +306,7 @@ const Sdl = struct {
         self.samples_buf[self.samples_buf_ix] = sample;
         self.samples_buf_ix += 1;
 
-        if (self.samples_buf.len == constants.AUDIO.SAMPLES_BUFFER_LEN) {
+        if (self.samples_buf_ix == constants.AUDIO.SAMPLES_BUFFER_LEN) {
             defer self.samples_buf_ix = 0;
 
             const result = c.SDL_QueueAudio(
