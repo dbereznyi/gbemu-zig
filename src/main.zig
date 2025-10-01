@@ -4,7 +4,6 @@ const c = @cImport({
 const std = @import("std");
 const Pixel = @import("pixel.zig").Pixel;
 const Gb = @import("gameboy/gameboy.zig").Gb;
-const Apu = @import("gameboy/apu/apu.zig").Apu;
 const runGameboy = @import("gameboy/run.zig").runGameboy;
 const Button = @import("gameboy/joypad/joypad.zig").Joypad.Button;
 const Palette = @import("gameboy/ppu/ppu.zig").Ppu.Palette;
@@ -12,6 +11,10 @@ const runDebugger = @import("gameboy/debug/runDebugger.zig").runDebugger;
 const executeDebugCmd = @import("gameboy/debug/executeCmd.zig").executeCmd;
 const Sample = @import("sample.zig").Sample;
 const constants = @import("constants.zig");
+
+const CYCLES_UNTIL_VBLANK: usize = 16416;
+const VBLANK_CYCLES: usize = 1140;
+const FRAME_CYCLES: usize = CYCLES_UNTIL_VBLANK + VBLANK_CYCLES;
 
 const WINDOW_SCALE = 3;
 
@@ -121,7 +124,7 @@ pub fn main() !void {
 
     if (false) {
         //try gb.debug.breakpoints.append(.{ .bank = 3, .addr = 0x4000 });
-        try gb.debug.breakpoints.append(.{ .bank = 0, .addr = 0x0150 });
+        try gb.debug.breakpoints.append(.{ .bank = 0, .addr = 0x028a });
         gb.debug.stackBase = 0xdfff;
     }
 
@@ -140,7 +143,6 @@ const Sdl = struct {
 
     samples_buf: []Sample,
     samples_buf_ix: usize,
-    audio_files: ?[4]std.fs.File,
 
     pub fn init(alloc: std.mem.Allocator) !Self {
         if (c.SDL_Init(c.SDL_INIT_VIDEO | c.SDL_INIT_AUDIO) != 0) {
@@ -194,21 +196,6 @@ const Sdl = struct {
 
         const samples_buf = try alloc.alloc(Sample, constants.AUDIO.SAMPLES_BUFFER_LEN);
 
-        const audio_files = blk: {
-            if (constants.DEBUG.OUTPUT_AUDIO_FILES) {
-                const dir = std.fs.cwd();
-
-                break :blk [_]std.fs.File{
-                    try dir.createFile("apu_1.dat", .{}),
-                    try dir.createFile("apu_2.dat", .{}),
-                    try dir.createFile("apu_3.dat", .{}),
-                    try dir.createFile("apu_4.dat", .{}),
-                };
-            } else {
-                break :blk null;
-            }
-        };
-
         return .{
             .window = window,
             .renderer = renderer,
@@ -216,7 +203,6 @@ const Sdl = struct {
             .audio_device = audio_device,
             .samples_buf = samples_buf,
             .samples_buf_ix = 0,
-            .audio_files = audio_files,
         };
     }
 
@@ -240,7 +226,15 @@ const Sdl = struct {
         while (gb.isRunning()) {
             self.handleEvents(gb);
 
+            const start = try std.time.Instant.now();
+
             runGameboy(gb);
+
+            const actualFrameTimeNs = (try std.time.Instant.now()).since(start);
+            const delay_ns = FRAME_CYCLES * 1000 -| actualFrameTimeNs;
+            if (delay_ns > 100) {
+                std.time.sleep(delay_ns);
+            }
 
             // renderVramViewer(&gb, &vram_pixels);
             // _ = c.SDL_UpdateTexture(vram_texture, null, @ptrCast(vram_pixels), VRAM_WINDOW_WIDTH * 3);
@@ -294,10 +288,6 @@ const Sdl = struct {
                             gb.setIsRunning(false);
                         }
                     }
-
-                    // _ = c.SDL_RenderClear(self.renderer);
-                    // _ = c.SDL_RenderCopy(self.renderer, self.texture, null, null);
-                    // c.SDL_RenderPresent(self.renderer);
                 },
                 c.SDL_QUIT => gb.setIsRunning(false),
                 else => {},
@@ -312,7 +302,7 @@ const Sdl = struct {
         c.SDL_RenderPresent(self.renderer);
     }
 
-    pub fn audioCallback(self: *Self, apu: *Apu, sample: Sample) void {
+    pub fn audioCallback(self: *Self, sample: Sample) void {
         self.samples_buf[self.samples_buf_ix] = sample;
         self.samples_buf_ix += 1;
 
@@ -329,14 +319,6 @@ const Sdl = struct {
                     "SDL_QueueAudio failed with error: {s}\n",
                     .{c.SDL_GetError()},
                 );
-            }
-
-            if (self.audio_files) |audio_files| {
-                for (0..4) |i| {
-                    _ = audio_files[i].write(
-                        std.mem.sliceAsBytes(apu.ch_samples[i][0..self.samples_buf.len]),
-                    ) catch @panic("failed to write to file");
-                }
             }
         }
     }

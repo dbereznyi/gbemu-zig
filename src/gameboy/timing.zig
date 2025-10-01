@@ -14,26 +14,51 @@ pub fn syncTime(gb: *Gb) void {
         gb.last_sync = std.time.Instant.now() catch @panic("Could not get current time");
         gb.debug.clearJustUnpaused();
     }
+    if (gb.debug.isPaused()) {
+        std.debug.print("debug paused!\n", .{});
+        std.time.sleep(16666666);
+        return;
+    }
     if (gb.cycles_since_last_sync < LCDC_PERIOD / 3) {
         return;
     }
 
     const target_ns = gb.cycles_since_last_sync * 1_000_000_000 / CLOCK_RATE;
+    std.time.sleep(target_ns);
 
-    const now = std.time.Instant.now() catch @panic("Could not get current time");
-    const sleep_time_ns = target_ns + now.since(gb.last_sync);
+    // const now = std.time.Instant.now() catch @panic("Could not get current time");
+    // const sleep_time_ns: i64 = target_ns - @as(i64, @intCast(now.since(gb.last_sync)));
 
-    if (sleep_time_ns > 0 and sleep_time_ns < LCDC_PERIOD * 1_200_000_000 / CLOCK_RATE) {
-        std.time.sleep(sleep_time_ns);
-        gb.last_sync = std.time.Instant.now() catch @panic("Could not get current time");
-    } else {
-        if (sleep_time_ns < 0 and -sleep_time_ns < LCDC_PERIOD * 1_200_000_000 / CLOCK_RATE) {
-            // Skip this sync to even out time difference
-            return;
-        }
+    // if (sleep_time_ns > 0 and sleep_time_ns < LCDC_PERIOD * 1_100_000_000 / CLOCK_RATE) {
+    //     std.debug.print(
+    //         "sleeping {} ns ({} us) to sync for {} cycles. time since last sync: {} ns ({} us)\n",
+    //         .{
+    //             sleep_time_ns,
+    //             @divTrunc(sleep_time_ns, 1000),
+    //             gb.cycles_since_last_sync,
+    //             now.since(gb.last_sync),
+    //             now.since(gb.last_sync) / 1000,
+    //         },
+    //     );
+    //     std.time.sleep(@intCast(sleep_time_ns));
+    //     gb.last_sync = std.time.Instant.now() catch @panic("Could not get current time");
+    // } else {
+    //     if (sleep_time_ns < 0 and -sleep_time_ns < LCDC_PERIOD * 1_100_000_000 / CLOCK_RATE) {
+    //         // Skip this sync to even out time difference
+    //         return;
+    //     }
 
-        gb.last_sync = now;
-    }
+    //     std.debug.print(
+    //         "sleep_time_ns {} ns ({} us), skipping sleep. cycles passed = {}\n",
+    //         .{
+    //             sleep_time_ns,
+    //             @divTrunc(sleep_time_ns, 1000),
+    //             gb.cycles_since_last_sync,
+    //         },
+    //     );
+
+    //     gb.last_sync = now;
+    // }
 
     gb.cycles_since_last_sync = 0;
 }

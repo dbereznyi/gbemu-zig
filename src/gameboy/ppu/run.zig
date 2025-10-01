@@ -151,6 +151,18 @@ fn stepPpu(gb: *Gb) void {
                     gb.ppu.mode = .oam;
                 } else {
                     gb.ppu.mode = .vBlank;
+
+                    if (!gb.isLcdOn()) {
+                        @memset(gb.ppu.screen, gb.ppu.palette.data()[0]);
+                    }
+
+                    if (gb.ppu.vblank_callback) |vblank_callback| {
+                        vblank_callback.callback(
+                            vblank_callback.context,
+                            gb.ppu.screen,
+                        );
+                    }
+                    //syncTime(gb);
                 }
             }
         },
@@ -177,18 +189,6 @@ fn stepPpu(gb: *Gb) void {
                 if (vblankInterruptsEnabled) {
                     gb.requestInterrupt(Interrupt.VBLANK);
                 }
-
-                if (!gb.isLcdOn()) {
-                    @memset(gb.ppu.screen, gb.ppu.palette.data()[0]);
-                }
-
-                if (gb.ppu.vblank_callback) |vblank_callback| {
-                    vblank_callback.callback(
-                        vblank_callback.context,
-                        gb.ppu.screen,
-                    );
-                }
-                syncTime(gb);
             }
 
             if (gb.ppu.dots % LINE_DOTS == LINE_DOTS - 4) {
@@ -200,6 +200,8 @@ fn stepPpu(gb: *Gb) void {
             if (gb.ppu.dots == VBLANK_END - 4) {
                 gb.ppu.scanning_oam = true;
                 gb.ppu.mode = .oam;
+
+                gb.ppu.frame_done = true;
             }
         },
     }

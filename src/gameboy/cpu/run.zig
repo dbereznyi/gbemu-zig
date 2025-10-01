@@ -70,6 +70,8 @@ pub fn runCpu(gb: *Gb) void {
         }
         cycleStall(gb);
 
+        tryDebugBreak(gb);
+
         gb.ime = false;
     } else if (!gb.halted) {
         gb.debug.addToExecutionTrace(
@@ -87,19 +89,23 @@ pub fn runCpu(gb: *Gb) void {
 
         executeInstr(gb, opcode);
 
-        if (shouldDebugBreak(gb)) {
-            gb.debug.stdOutMutex.lock();
-            std.debug.print("\n", .{});
-            gb.printDebugTrace() catch {};
-            std.debug.print("\n> ", .{});
-            gb.debug.stdOutMutex.unlock();
-
-            gb.debug.setPaused(true);
-            gb.debug.stepModeEnabled = true;
-        }
+        tryDebugBreak(gb);
     }
 
     flushPendingCycles(gb);
+}
+
+fn tryDebugBreak(gb: *Gb) void {
+    if (shouldDebugBreak(gb)) {
+        gb.debug.stdOutMutex.lock();
+        std.debug.print("\n", .{});
+        gb.printDebugTrace() catch {};
+        std.debug.print("\n> ", .{});
+        gb.debug.stdOutMutex.unlock();
+
+        gb.debug.setPaused(true);
+        gb.debug.stepModeEnabled = true;
+    }
 }
 
 fn cycleRead(gb: *Gb, src: Src8) u8 {
@@ -279,7 +285,7 @@ fn executeInstr(gb: *Gb, opcode: u8) void {
         0x74 => ldIndReg(gb, .H),
         0x75 => ldIndReg(gb, .L),
         0x76 => halt(gb),
-        0x77 => ldRegReg(gb, .H, .A),
+        0x77 => ldIndReg(gb, .A),
         0x78 => ldRegReg(gb, .A, .B),
         0x79 => ldRegReg(gb, .A, .C),
         0x7a => ldRegReg(gb, .A, .D),
@@ -522,10 +528,9 @@ fn ldImm16SP(gb: *Gb) void {
 fn addHLReg16(gb: *Gb, comptime src: Src16) void {
     var zero_dummy: bool = undefined;
 
-    var l: u8 = undefined;
     AluOp.execute(
         .add,
-        &l,
+        &gb.l,
         src.readLower(gb),
         &zero_dummy,
         &gb.negative,
@@ -534,10 +539,9 @@ fn addHLReg16(gb: *Gb, comptime src: Src16) void {
     );
     cycleStall(gb);
 
-    var h: u8 = undefined;
     AluOp.execute(
         .adc,
-        &h,
+        &gb.h,
         src.readUpper(gb),
         &zero_dummy,
         &gb.negative,

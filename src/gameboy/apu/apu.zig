@@ -17,8 +17,6 @@ const SAMPLES_CLOCK_DIVIDERS = [_]usize{
     SAMPLES_CLOCK_DIVIDER_HIGH,
 };
 
-const LFSR_CLOCK_DIVIDER: u8 = 8;
-
 const BL_PHASES: usize = 64;
 const BL_STEP_WIDTH: usize = 32;
 const LOW_PASS: f32 = 0.999;
@@ -231,7 +229,7 @@ pub const Apu = struct {
 
     pub const AudioCallback = struct {
         context: *anyopaque,
-        callback: *const fn (context: *anyopaque, apu: *Self, sample: Sample) void,
+        callback: *const fn (context: *anyopaque, sample: Sample) void,
     };
 
     on: u1,
@@ -266,10 +264,9 @@ pub const Apu = struct {
     samples_clock_divider_ix: usize,
 
     audio_callback: ?AudioCallback,
+    audio_files: ?[4]std.fs.File,
 
     div_apu_counter: usize,
-    next_lfsr_tick_in: u8,
-    is_1mhz_tick: bool,
 
     // This counts 2 MHz cycles
     cycles: i32,
@@ -283,6 +280,21 @@ pub const Apu = struct {
             try alloc.alloc(Sample, constants.AUDIO.SAMPLES_BUFFER_LEN),
             try alloc.alloc(Sample, constants.AUDIO.SAMPLES_BUFFER_LEN),
             try alloc.alloc(Sample, constants.AUDIO.SAMPLES_BUFFER_LEN),
+        };
+
+        const audio_files = blk: {
+            if (constants.DEBUG.OUTPUT_AUDIO_FILES) {
+                const dir = std.fs.cwd();
+
+                break :blk [_]std.fs.File{
+                    try dir.createFile("apu_1.dat", .{}),
+                    try dir.createFile("apu_2.dat", .{}),
+                    try dir.createFile("apu_3.dat", .{}),
+                    try dir.createFile("apu_4.dat", .{}),
+                };
+            } else {
+                break :blk null;
+            }
         };
 
         return .{
@@ -320,11 +332,10 @@ pub const Apu = struct {
             .samples_timer = 0,
             .samples_clock_divider_ix = 0,
             .div_apu_counter = 0,
-            .next_lfsr_tick_in = LFSR_CLOCK_DIVIDER,
-            .is_1mhz_tick = false,
             .cycles = 0,
             .sample_cycles = 0,
             .cycles_since_last_render = 0,
+            .audio_files = audio_files,
         };
     }
 
@@ -421,8 +432,19 @@ pub const Apu = struct {
         self.ch_samples_ix = (self.ch_samples_ix + 1) % constants.AUDIO.SAMPLES_BUFFER_LEN;
 
         if (self.audio_callback) |audio_callback| {
-            audio_callback.callback(audio_callback.context, self, output);
+            audio_callback.callback(audio_callback.context, output);
         }
+
+        // if (self.audio_files) |audio_files| {
+        //     for (0..4) |i| {
+        //         _ = audio_files[i].write(
+        //             std.mem.sliceAsBytes(apu.ch_samples[i][0..self.samples_buf.len]),
+        //         ) catch @panic("failed to write to file");
+        //     }
+        // }
+
+        self.sample_cycles = 0;
+        self.cycles_since_last_render = 0;
     }
 
     pub fn run(self: *Self, force: bool) void {
