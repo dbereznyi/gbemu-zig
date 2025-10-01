@@ -12,11 +12,8 @@ const CLOCK_RATE: u64 = 4194304;
 pub fn syncTime(gb: *Gb) void {
     if (gb.debug.justUnpaused()) {
         gb.last_sync = std.time.Instant.now() catch @panic("Could not get current time");
-        gb.cycles_since_last_sync = 0;
         gb.debug.clearJustUnpaused();
-        return;
     }
-
     if (gb.cycles_since_last_sync < LCDC_PERIOD / 3) {
         return;
     }

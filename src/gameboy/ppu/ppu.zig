@@ -128,6 +128,6 @@ pub const Ppu = struct {
                 .vBlank => "vBlank",
             },
         });
-        try format(writer, "Cycles until next frame: {}\n", .{(70224 - ppu.dots) / 4});
+        try format(writer, "Cycles until next frame: {}\n", .{70224 - ppu.dots});
     }
 };

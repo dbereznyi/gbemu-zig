@@ -119,7 +119,7 @@ pub fn main() !void {
     );
     defer gb.deinit(alloc);
 
-    if (true) {
+    if (false) {
         //try gb.debug.breakpoints.append(.{ .bank = 3, .addr = 0x4000 });
         try gb.debug.breakpoints.append(.{ .bank = 0, .addr = 0x0150 });
         gb.debug.stackBase = 0xdfff;
@@ -272,16 +272,14 @@ const Sdl = struct {
                                 gb.setIsRunning(false);
                             }
                         }
+
+                        _ = c.SDL_RenderClear(self.renderer);
+                        _ = c.SDL_RenderCopy(self.renderer, self.texture, null, null);
+                        c.SDL_RenderPresent(self.renderer);
                     },
                     c.SDL_QUIT => gb.setIsRunning(false),
                     else => {},
                 }
-
-                runGameboy(gb);
-
-                _ = c.SDL_RenderClear(self.renderer);
-                _ = c.SDL_RenderCopy(self.renderer, self.texture, null, null);
-                c.SDL_RenderPresent(self.renderer);
 
                 // renderVramViewer(&gb, &vram_pixels);
                 // _ = c.SDL_UpdateTexture(vram_texture, null, @ptrCast(vram_pixels), VRAM_WINDOW_WIDTH * 3);
@@ -298,6 +296,8 @@ const Sdl = struct {
                 //     c.SDL_SetWindowTitle(window, title_cstr);
                 // }
             }
+
+            runGameboy(gb);
         }
     }
 
@@ -306,8 +306,6 @@ const Sdl = struct {
         _ = c.SDL_RenderClear(self.renderer);
         _ = c.SDL_RenderCopy(self.renderer, self.texture, null, null);
         c.SDL_RenderPresent(self.renderer);
-
-        std.debug.print("rendered\n!", .{});
     }
 
     pub fn audioCallback(self: *Self, apu: *Apu, sample: Sample) void {

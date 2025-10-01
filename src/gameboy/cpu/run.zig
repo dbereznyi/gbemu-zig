@@ -1,5 +1,4 @@
 const std = @import("std");
-const syncTime = @import("../timing.zig").syncTime;
 const advanceGameboy = @import("../timing.zig").advanceGameboy;
 const expect = std.testing.expect;
 const as16 = @import("../../util.zig").as16;
@@ -101,7 +100,6 @@ pub fn runCpu(gb: *Gb) void {
     }
 
     flushPendingCycles(gb);
-    syncTime(gb);
 }
 
 fn cycleRead(gb: *Gb, src: Src8) u8 {

@@ -1,11 +1,13 @@
 const std = @import("std");
 const Gb = @import("gameboy.zig").Gb;
+const syncTime = @import("timing.zig").syncTime;
 const runCpu = @import("cpu/run.zig").runCpu;
 const shouldDebugBreak = @import("debug/shouldDebugBreak.zig").shouldDebugBreak;
 const runDebugger = @import("debug/runDebugger.zig").runDebugger;
 const executeDebugCmd = @import("debug/executeCmd.zig").executeCmd;
 
 pub fn runGameboy(gb: *Gb) void {
+    syncTime(gb);
     processDebugCommand(gb);
 
     if (gb.debug.isPaused()) {
