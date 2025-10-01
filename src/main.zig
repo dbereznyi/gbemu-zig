@@ -238,66 +238,70 @@ const Sdl = struct {
         _ = c.SDL_UpdateTexture(self.texture, null, @ptrCast(gb.ppu.screen), 160 * 3);
 
         while (gb.isRunning()) {
-            var event: c.SDL_Event = undefined;
-            while (c.SDL_PollEvent(&event) != 0) {
-                switch (event.type) {
-                    c.SDL_KEYUP => switch (event.key.keysym.sym) {
-                        c.SDLK_a => gb.joypad.releaseButton(Button.start),
-                        c.SDLK_s => gb.joypad.releaseButton(Button.select),
-                        c.SDLK_x => gb.joypad.releaseButton(Button.a),
-                        c.SDLK_z => gb.joypad.releaseButton(Button.b),
-                        c.SDLK_RIGHT => gb.joypad.releaseButton(Button.right),
-                        c.SDLK_LEFT => gb.joypad.releaseButton(Button.left),
-                        c.SDLK_UP => gb.joypad.releaseButton(Button.up),
-                        c.SDLK_DOWN => gb.joypad.releaseButton(Button.down),
-                        else => {},
-                    },
-                    c.SDL_KEYDOWN => switch (event.key.keysym.sym) {
-                        c.SDLK_a => gb.joypad.pressButton(Button.start),
-                        c.SDLK_s => gb.joypad.pressButton(Button.select),
-                        c.SDLK_x => gb.joypad.pressButton(Button.a),
-                        c.SDLK_z => gb.joypad.pressButton(Button.b),
-                        c.SDLK_RIGHT => gb.joypad.pressButton(Button.right),
-                        c.SDLK_LEFT => gb.joypad.pressButton(Button.left),
-                        c.SDLK_UP => gb.joypad.pressButton(Button.up),
-                        c.SDLK_DOWN => gb.joypad.pressButton(Button.down),
-                        else => {},
-                    },
-                    c.SDL_WINDOWEVENT => {
-                        if (event.window.event == c.SDL_WINDOWEVENT_CLOSE) {
-                            // if (event.window.windowID == c.SDL_GetWindowID(vram_window)) {
-                            //     c.SDL_HideWindow(self.vram_window);
-                            // } else
-                            if (event.window.windowID == c.SDL_GetWindowID(self.window)) {
-                                gb.setIsRunning(false);
-                            }
-                        }
-
-                        _ = c.SDL_RenderClear(self.renderer);
-                        _ = c.SDL_RenderCopy(self.renderer, self.texture, null, null);
-                        c.SDL_RenderPresent(self.renderer);
-                    },
-                    c.SDL_QUIT => gb.setIsRunning(false),
-                    else => {},
-                }
-
-                // renderVramViewer(&gb, &vram_pixels);
-                // _ = c.SDL_UpdateTexture(vram_texture, null, @ptrCast(vram_pixels), VRAM_WINDOW_WIDTH * 3);
-                // _ = c.SDL_RenderClear(vram_renderer);
-                // _ = c.SDL_RenderCopy(vram_renderer, vram_texture, null, null);
-                // c.SDL_RenderPresent(vram_renderer);
-
-                // {
-                //     const uncapped_fps = 1_000_000_000 / actualFrameTimeNs;
-                //     const fps = if (uncapped_fps > 60) 60 else uncapped_fps;
-                //     var buf: [32]u8 = undefined;
-                //     const title = try std.fmt.bufPrint(&buf, "gameboy (FPS: {})\x00", .{fps});
-                //     const title_cstr: [*:0]const u8 = title.ptr[0 .. title.len - 1 :0];
-                //     c.SDL_SetWindowTitle(window, title_cstr);
-                // }
-            }
+            self.handleEvents(gb);
 
             runGameboy(gb);
+
+            // renderVramViewer(&gb, &vram_pixels);
+            // _ = c.SDL_UpdateTexture(vram_texture, null, @ptrCast(vram_pixels), VRAM_WINDOW_WIDTH * 3);
+            // _ = c.SDL_RenderClear(vram_renderer);
+            // _ = c.SDL_RenderCopy(vram_renderer, vram_texture, null, null);
+            // c.SDL_RenderPresent(vram_renderer);
+
+            // {
+            //     const uncapped_fps = 1_000_000_000 / actualFrameTimeNs;
+            //     const fps = if (uncapped_fps > 60) 60 else uncapped_fps;
+            //     var buf: [32]u8 = undefined;
+            //     const title = try std.fmt.bufPrint(&buf, "gameboy (FPS: {})\x00", .{fps});
+            //     const title_cstr: [*:0]const u8 = title.ptr[0 .. title.len - 1 :0];
+            //     c.SDL_SetWindowTitle(window, title_cstr);
+            // }
+        }
+    }
+
+    fn handleEvents(self: *Self, gb: *Gb) void {
+        var event: c.SDL_Event = undefined;
+        while (c.SDL_PollEvent(&event) != 0) {
+            switch (event.type) {
+                c.SDL_KEYUP => switch (event.key.keysym.sym) {
+                    c.SDLK_a => gb.joypad.releaseButton(Button.start),
+                    c.SDLK_s => gb.joypad.releaseButton(Button.select),
+                    c.SDLK_x => gb.joypad.releaseButton(Button.a),
+                    c.SDLK_z => gb.joypad.releaseButton(Button.b),
+                    c.SDLK_RIGHT => gb.joypad.releaseButton(Button.right),
+                    c.SDLK_LEFT => gb.joypad.releaseButton(Button.left),
+                    c.SDLK_UP => gb.joypad.releaseButton(Button.up),
+                    c.SDLK_DOWN => gb.joypad.releaseButton(Button.down),
+                    else => {},
+                },
+                c.SDL_KEYDOWN => switch (event.key.keysym.sym) {
+                    c.SDLK_a => gb.joypad.pressButton(Button.start),
+                    c.SDLK_s => gb.joypad.pressButton(Button.select),
+                    c.SDLK_x => gb.joypad.pressButton(Button.a),
+                    c.SDLK_z => gb.joypad.pressButton(Button.b),
+                    c.SDLK_RIGHT => gb.joypad.pressButton(Button.right),
+                    c.SDLK_LEFT => gb.joypad.pressButton(Button.left),
+                    c.SDLK_UP => gb.joypad.pressButton(Button.up),
+                    c.SDLK_DOWN => gb.joypad.pressButton(Button.down),
+                    else => {},
+                },
+                c.SDL_WINDOWEVENT => {
+                    if (event.window.event == c.SDL_WINDOWEVENT_CLOSE) {
+                        // if (event.window.windowID == c.SDL_GetWindowID(vram_window)) {
+                        //     c.SDL_HideWindow(self.vram_window);
+                        // } else
+                        if (event.window.windowID == c.SDL_GetWindowID(self.window)) {
+                            gb.setIsRunning(false);
+                        }
+                    }
+
+                    // _ = c.SDL_RenderClear(self.renderer);
+                    // _ = c.SDL_RenderCopy(self.renderer, self.texture, null, null);
+                    // c.SDL_RenderPresent(self.renderer);
+                },
+                c.SDL_QUIT => gb.setIsRunning(false),
+                else => {},
+            }
         }
     }
 

@@ -1,3 +1,4 @@
+const std = @import("std");
 const Gb = @import("../gameboy.zig").Gb;
 const IoReg = @import("../gameboy.zig").IoReg;
 
