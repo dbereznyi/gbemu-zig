@@ -15,7 +15,7 @@ pub fn shouldDebugBreak(gb: *Gb) bool {
         return false;
     }
 
-    if (gb.debug.stepModeEnabled) {
+    if (gb.debug.break_next_inst) {
         return true;
     }
 

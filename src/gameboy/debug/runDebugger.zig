@@ -4,17 +4,17 @@ const DebugCmd = @import("cmd.zig").DebugCmd;
 const executeCmd = @import("executeCmd.zig").executeCmd;
 
 pub fn runDebugger(gb: *Gb) !void {
-    gb.debug.stdOutMutex.lock();
+    gb.debug.std_out_mutex.lock();
     std.debug.print("> ", .{});
-    gb.debug.stdOutMutex.unlock();
+    gb.debug.std_out_mutex.unlock();
 
     while (true) {
         var inputBuf: [128]u8 = undefined;
         const inputLen = try std.io.getStdIn().read(&inputBuf);
 
-        gb.debug.stdOutMutex.lock();
+        gb.debug.std_out_mutex.lock();
         defer std.debug.print("> ", .{});
-        defer gb.debug.stdOutMutex.unlock();
+        defer gb.debug.std_out_mutex.unlock();
 
         var cmd: DebugCmd = undefined;
         if (inputLen > 1) {
@@ -23,15 +23,15 @@ pub fn runDebugger(gb: *Gb) !void {
                 continue;
             };
         } else {
-            cmd = gb.debug.lastCommand orelse {
+            cmd = gb.debug.last_command orelse {
                 continue;
             };
         }
 
-        gb.debug.lastCommand = cmd;
+        gb.debug.last_command = cmd;
         gb.debug.sendCommand(cmd);
-        gb.debug.pendingResultSem.wait();
-        std.debug.print("{s}\n", .{gb.debug.pendingResult.items});
-        gb.debug.pendingResult.shrinkRetainingCapacity(0);
+        gb.debug.pending_result_sem.wait();
+        std.debug.print("{s}\n", .{gb.debug.pending_result.items});
+        gb.debug.pending_result.shrinkRetainingCapacity(0);
     }
 }

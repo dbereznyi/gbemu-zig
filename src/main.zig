@@ -125,7 +125,7 @@ pub fn main() !void {
     if (false) {
         //try gb.debug.breakpoints.append(.{ .bank = 3, .addr = 0x4000 });
         try gb.debug.breakpoints.append(.{ .bank = 0, .addr = 0x028a });
-        gb.debug.stackBase = 0xdfff;
+        gb.debug.stack_base = 0xdfff;
     }
 
     try sdl.run(&gb);

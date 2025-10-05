@@ -9,23 +9,23 @@ const DebugCmdTag = enum {
     trace,
     resume_,
     help,
-    breakpointList,
-    breakpointSet,
-    breakpointUnset,
-    breakpointClearAll,
-    viewRegisters,
-    viewMemory,
-    viewStack,
-    viewPpu,
-    viewOam,
-    viewDma,
-    viewJoypad,
-    viewTimer,
-    viewCart,
-    viewApu,
-    viewExecutionTrace,
-    joypadPress,
-    joypadRelease,
+    breakpoint_list,
+    breakpoint_set,
+    breakpoint_unset,
+    breakpoint_clear_all,
+    view_registers,
+    view_memory,
+    view_stack,
+    view_ppu,
+    view_oam,
+    view_dma,
+    view_joypad,
+    view_timer,
+    view_cart,
+    view_apu,
+    view_execution_trace,
+    joypad_press,
+    joypad_release,
     ticks,
     palette,
 };
@@ -41,23 +41,23 @@ pub const DebugCmd = union(DebugCmdTag) {
     trace: void,
     resume_: void,
     help: void,
-    breakpointList: void,
-    breakpointSet: Breakpoint,
-    breakpointUnset: u16,
-    breakpointClearAll: void,
-    viewRegisters: void,
-    viewMemory: AddrRange,
-    viewStack: void,
-    viewPpu: void,
-    viewOam: void,
-    viewDma: void,
-    viewJoypad: void,
-    viewTimer: void,
-    viewCart: void,
-    viewApu: void,
-    viewExecutionTrace: void,
-    joypadPress: Button,
-    joypadRelease: Button,
+    breakpoint_list: void,
+    breakpoint_set: Breakpoint,
+    breakpoint_unset: u16,
+    breakpoint_clear_all: void,
+    view_registers: void,
+    view_memory: AddrRange,
+    view_stack: void,
+    view_ppu: void,
+    view_oam: void,
+    view_dma: void,
+    view_joypad: void,
+    view_timer: void,
+    view_cart: void,
+    view_apu: void,
+    view_execution_trace: void,
+    joypad_press: Button,
+    joypad_release: Button,
     ticks: struct { keep: bool },
     palette: struct { new_palette: ?Ppu.Palette },
 
@@ -122,20 +122,20 @@ pub const DebugCmd = union(DebugCmdTag) {
                         const addr_str = p.untilByte(' ') orelse (p.toEnd() orelse break :blk null);
                         const addr = std.fmt.parseInt(u16, addr_str, 16) catch break :blk null;
 
-                        _ = p.until(Parser.isNumeral) orelse break :blk DebugCmd{ .breakpointSet = .{ .addr = addr, .bank = if (addr < 0x4000) 0 else 1 } };
+                        _ = p.until(Parser.isNumeral) orelse break :blk DebugCmd{ .breakpoint_set = .{ .addr = addr, .bank = if (addr < 0x4000) 0 else 1 } };
                         const bank_number_str = p.toEnd() orelse break :blk null;
                         const bank_number = std.fmt.parseInt(u8, bank_number_str, 10) catch break :blk null;
 
-                        break :blk DebugCmd{ .breakpointSet = .{ .addr = addr, .bank = bank_number } };
+                        break :blk DebugCmd{ .breakpoint_set = .{ .addr = addr, .bank = bank_number } };
                     },
                     'u' => {
                         _ = p.until(Parser.isNumeral);
                         const addrStr = p.toEnd() orelse break :blk null;
                         const number = std.fmt.parseInt(u16, addrStr, 10) catch break :blk null;
-                        break :blk DebugCmd{ .breakpointUnset = number };
+                        break :blk DebugCmd{ .breakpoint_unset = number };
                     },
-                    'l' => break :blk .breakpointList,
-                    'c' => break :blk .breakpointClearAll,
+                    'l' => break :blk .breakpoint_list,
+                    'c' => break :blk .breakpoint_clear_all,
                     else => break :blk null,
                 }
             },
@@ -143,27 +143,27 @@ pub const DebugCmd = union(DebugCmdTag) {
                 const modifier = p.pop() orelse break :blk null;
 
                 break :blk switch (modifier) {
-                    'r' => .viewRegisters,
+                    'r' => .view_registers,
                     'm' => m: {
                         _ = p.until(Parser.isHexNumeral);
                         const addr_str = p.untilByte(' ') orelse (p.toEnd() orelse break :m null);
                         const addr = std.fmt.parseInt(u16, addr_str, 16) catch break :m null;
 
-                        _ = p.until(Parser.isNumeral) orelse break :m DebugCmd{ .viewMemory = .{ .start = addr, .end = addr +% 1 } };
+                        _ = p.until(Parser.isNumeral) orelse break :m DebugCmd{ .view_memory = .{ .start = addr, .end = addr +% 1 } };
                         const num_bytes_str = p.toEnd() orelse break :m null;
                         const num_bytes = std.fmt.parseInt(u8, num_bytes_str, 10) catch break :blk null;
 
-                        break :m DebugCmd{ .viewMemory = .{ .start = addr, .end = addr +% num_bytes } };
+                        break :m DebugCmd{ .view_memory = .{ .start = addr, .end = addr +% num_bytes } };
                     },
-                    's' => .viewStack,
-                    'p' => .viewPpu,
-                    'o' => .viewOam,
-                    'd' => .viewDma,
-                    'j' => .viewJoypad,
-                    't' => .viewTimer,
-                    'c' => .viewCart,
-                    'a' => .viewApu,
-                    'e' => .viewExecutionTrace,
+                    's' => .view_stack,
+                    'p' => .view_ppu,
+                    'o' => .view_oam,
+                    'd' => .view_dma,
+                    'j' => .view_joypad,
+                    't' => .view_timer,
+                    'c' => .view_cart,
+                    'a' => .view_apu,
+                    'e' => .view_execution_trace,
                     else => null,
                 };
             },
@@ -192,8 +192,8 @@ pub const DebugCmd = union(DebugCmdTag) {
                 };
 
                 break :blk switch (modifier) {
-                    'p' => DebugCmd{ .joypadPress = button },
-                    'r' => DebugCmd{ .joypadRelease = button },
+                    'p' => DebugCmd{ .joypad_press = button },
+                    'r' => DebugCmd{ .joypad_release = button },
                     else => null,
                 };
             },

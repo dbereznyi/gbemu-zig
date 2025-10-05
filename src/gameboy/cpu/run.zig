@@ -98,14 +98,14 @@ pub fn runCpu(gb: *Gb) void {
 
 fn tryDebugBreak(gb: *Gb) void {
     if (shouldDebugBreak(gb)) {
-        gb.debug.stdOutMutex.lock();
+        gb.debug.std_out_mutex.lock();
         std.debug.print("\n", .{});
         gb.printDebugTrace() catch {};
         std.debug.print("\n> ", .{});
-        gb.debug.stdOutMutex.unlock();
+        gb.debug.std_out_mutex.unlock();
 
         gb.debug.setPaused(true);
-        gb.debug.stepModeEnabled = true;
+        gb.debug.break_next_inst = true;
     }
 }
 
