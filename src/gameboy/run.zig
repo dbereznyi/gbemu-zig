@@ -7,18 +7,9 @@ const runDebugger = @import("debug/runDebugger.zig").runDebugger;
 const executeDebugCmd = @import("debug/executeCmd.zig").executeCmd;
 
 pub fn runGameboy(gb: *Gb) void {
-    //syncTime(gb);
-    while (!gb.ppu.frame_done) {
-        processDebugCommand(gb);
-
-        if (gb.debug.isPaused()) {
-            std.time.sleep(16666667);
-            continue;
-        }
-
-        runCpu(gb);
-    }
-    gb.ppu.frame_done = false;
+    syncTime(gb);
+    processDebugCommand(gb);
+    runCpu(gb);
 }
 
 fn processDebugCommand(gb: *Gb) void {

@@ -1,5 +1,6 @@
 const std = @import("std");
 const advanceGameboy = @import("../timing.zig").advanceGameboy;
+const syncTime = @import("../timing.zig").syncTime;
 const expect = std.testing.expect;
 const as16 = @import("../../util.zig").as16;
 const incAs16 = @import("../../util.zig").incAs16;

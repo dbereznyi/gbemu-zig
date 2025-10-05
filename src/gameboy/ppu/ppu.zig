@@ -79,7 +79,6 @@ pub const Ppu = struct {
 
     screen: []Pixel,
     vblank_callback: ?VblankCallback,
-    frame_done: bool,
 
     cycles_odd: usize,
 
@@ -107,7 +106,6 @@ pub const Ppu = struct {
             .drawing = false,
             .screen = screen,
             .vblank_callback = vblank_callback,
-            .frame_done = false,
             .cycles_odd = 0,
         };
     }

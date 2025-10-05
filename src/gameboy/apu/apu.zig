@@ -429,7 +429,7 @@ pub const Apu = struct {
             self.ch_samples[ch_ix][self.ch_samples_ix] = ch_output;
             output = output.add(ch_output);
         }
-        self.ch_samples_ix = (self.ch_samples_ix + 1) % constants.AUDIO.SAMPLES_BUFFER_LEN;
+        defer self.ch_samples_ix = (self.ch_samples_ix + 1) % constants.AUDIO.SAMPLES_BUFFER_LEN;
 
         if (self.audio_callback) |audio_callback| {
             audio_callback.callback(audio_callback.context, output);
@@ -438,7 +438,7 @@ pub const Apu = struct {
         // if (self.audio_files) |audio_files| {
         //     for (0..4) |i| {
         //         _ = audio_files[i].write(
-        //             std.mem.sliceAsBytes(apu.ch_samples[i][0..self.samples_buf.len]),
+        //             std.mem.sliceAsBytes(self.ch_samples[i][0..self.ch_samples_ix]),
         //         ) catch @panic("failed to write to file");
         //     }
         // }

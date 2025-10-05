@@ -136,13 +136,14 @@ pub fn main() !void {
 const Sdl = struct {
     const Self = @This();
 
+    gb: ?*Gb,
     window: *c.SDL_Window,
     renderer: *c.SDL_Renderer,
     texture: *c.SDL_Texture,
     audio_device: u32,
-
     samples_buf: []Sample,
     samples_buf_ix: usize,
+    last_vblank_at: std.time.Instant,
 
     pub fn init(alloc: std.mem.Allocator) !Self {
         if (c.SDL_Init(c.SDL_INIT_VIDEO | c.SDL_INIT_AUDIO) != 0) {
@@ -197,12 +198,14 @@ const Sdl = struct {
         const samples_buf = try alloc.alloc(Sample, constants.AUDIO.SAMPLES_BUFFER_LEN);
 
         return .{
+            .gb = null,
             .window = window,
             .renderer = renderer,
             .texture = texture,
             .audio_device = audio_device,
             .samples_buf = samples_buf,
             .samples_buf_ix = 0,
+            .last_vblank_at = undefined,
         };
     }
 
@@ -216,24 +219,22 @@ const Sdl = struct {
     }
 
     pub fn run(self: *Self, gb: *Gb) !void {
-        const debuggerThread = try std.Thread.spawn(.{}, runDebugger, .{gb});
-        debuggerThread.detach();
+        self.gb = gb;
+
+        const debugger_thread = try std.Thread.spawn(.{}, runDebugger, .{gb});
+        debugger_thread.detach();
 
         c.SDL_PauseAudioDevice(self.audio_device, 0);
 
         _ = c.SDL_UpdateTexture(self.texture, null, @ptrCast(gb.ppu.screen), 160 * 3);
 
+        self.last_vblank_at = try std.time.Instant.now();
+
         while (gb.isRunning()) {
-            self.handleEvents(gb);
-
-            const start = try std.time.Instant.now();
-
-            runGameboy(gb);
-
-            const actualFrameTimeNs = (try std.time.Instant.now()).since(start);
-            const delay_ns = FRAME_CYCLES * 1000 -| actualFrameTimeNs;
-            if (delay_ns > 100) {
-                std.time.sleep(delay_ns);
+            if (gb.debug.isPaused()) {
+                self.handleEvents();
+            } else {
+                runGameboy(gb);
             }
 
             // renderVramViewer(&gb, &vram_pixels);
@@ -241,56 +242,49 @@ const Sdl = struct {
             // _ = c.SDL_RenderClear(vram_renderer);
             // _ = c.SDL_RenderCopy(vram_renderer, vram_texture, null, null);
             // c.SDL_RenderPresent(vram_renderer);
-
-            // {
-            //     const uncapped_fps = 1_000_000_000 / actualFrameTimeNs;
-            //     const fps = if (uncapped_fps > 60) 60 else uncapped_fps;
-            //     var buf: [32]u8 = undefined;
-            //     const title = try std.fmt.bufPrint(&buf, "gameboy (FPS: {})\x00", .{fps});
-            //     const title_cstr: [*:0]const u8 = title.ptr[0 .. title.len - 1 :0];
-            //     c.SDL_SetWindowTitle(window, title_cstr);
-            // }
         }
     }
 
-    fn handleEvents(self: *Self, gb: *Gb) void {
-        var event: c.SDL_Event = undefined;
-        while (c.SDL_PollEvent(&event) != 0) {
-            switch (event.type) {
-                c.SDL_KEYUP => switch (event.key.keysym.sym) {
-                    c.SDLK_a => gb.joypad.releaseButton(Button.start),
-                    c.SDLK_s => gb.joypad.releaseButton(Button.select),
-                    c.SDLK_x => gb.joypad.releaseButton(Button.a),
-                    c.SDLK_z => gb.joypad.releaseButton(Button.b),
-                    c.SDLK_RIGHT => gb.joypad.releaseButton(Button.right),
-                    c.SDLK_LEFT => gb.joypad.releaseButton(Button.left),
-                    c.SDLK_UP => gb.joypad.releaseButton(Button.up),
-                    c.SDLK_DOWN => gb.joypad.releaseButton(Button.down),
-                    else => {},
-                },
-                c.SDL_KEYDOWN => switch (event.key.keysym.sym) {
-                    c.SDLK_a => gb.joypad.pressButton(Button.start),
-                    c.SDLK_s => gb.joypad.pressButton(Button.select),
-                    c.SDLK_x => gb.joypad.pressButton(Button.a),
-                    c.SDLK_z => gb.joypad.pressButton(Button.b),
-                    c.SDLK_RIGHT => gb.joypad.pressButton(Button.right),
-                    c.SDLK_LEFT => gb.joypad.pressButton(Button.left),
-                    c.SDLK_UP => gb.joypad.pressButton(Button.up),
-                    c.SDLK_DOWN => gb.joypad.pressButton(Button.down),
-                    else => {},
-                },
-                c.SDL_WINDOWEVENT => {
-                    if (event.window.event == c.SDL_WINDOWEVENT_CLOSE) {
-                        // if (event.window.windowID == c.SDL_GetWindowID(vram_window)) {
-                        //     c.SDL_HideWindow(self.vram_window);
-                        // } else
-                        if (event.window.windowID == c.SDL_GetWindowID(self.window)) {
-                            gb.setIsRunning(false);
+    fn handleEvents(self: *Self) void {
+        if (self.gb) |gb| {
+            var event: c.SDL_Event = undefined;
+            while (c.SDL_PollEvent(&event) != 0) {
+                switch (event.type) {
+                    c.SDL_KEYUP => switch (event.key.keysym.sym) {
+                        c.SDLK_a => gb.joypad.releaseButton(Button.start),
+                        c.SDLK_s => gb.joypad.releaseButton(Button.select),
+                        c.SDLK_x => gb.joypad.releaseButton(Button.a),
+                        c.SDLK_z => gb.joypad.releaseButton(Button.b),
+                        c.SDLK_RIGHT => gb.joypad.releaseButton(Button.right),
+                        c.SDLK_LEFT => gb.joypad.releaseButton(Button.left),
+                        c.SDLK_UP => gb.joypad.releaseButton(Button.up),
+                        c.SDLK_DOWN => gb.joypad.releaseButton(Button.down),
+                        else => {},
+                    },
+                    c.SDL_KEYDOWN => switch (event.key.keysym.sym) {
+                        c.SDLK_a => gb.joypad.pressButton(Button.start),
+                        c.SDLK_s => gb.joypad.pressButton(Button.select),
+                        c.SDLK_x => gb.joypad.pressButton(Button.a),
+                        c.SDLK_z => gb.joypad.pressButton(Button.b),
+                        c.SDLK_RIGHT => gb.joypad.pressButton(Button.right),
+                        c.SDLK_LEFT => gb.joypad.pressButton(Button.left),
+                        c.SDLK_UP => gb.joypad.pressButton(Button.up),
+                        c.SDLK_DOWN => gb.joypad.pressButton(Button.down),
+                        else => {},
+                    },
+                    c.SDL_WINDOWEVENT => {
+                        if (event.window.event == c.SDL_WINDOWEVENT_CLOSE) {
+                            // if (event.window.windowID == c.SDL_GetWindowID(vram_window)) {
+                            //     c.SDL_HideWindow(self.vram_window);
+                            // } else
+                            if (event.window.windowID == c.SDL_GetWindowID(self.window)) {
+                                gb.setIsRunning(false);
+                            }
                         }
-                    }
-                },
-                c.SDL_QUIT => gb.setIsRunning(false),
-                else => {},
+                    },
+                    c.SDL_QUIT => gb.setIsRunning(false),
+                    else => {},
+                }
             }
         }
     }
@@ -300,6 +294,21 @@ const Sdl = struct {
         _ = c.SDL_RenderClear(self.renderer);
         _ = c.SDL_RenderCopy(self.renderer, self.texture, null, null);
         c.SDL_RenderPresent(self.renderer);
+
+        {
+            const frame_time_ns = (std.time.Instant.now() catch @panic("Could not get current time")).since(self.last_vblank_at);
+
+            const uncapped_fps = 1_000_000_000 / frame_time_ns;
+            const fps = if (uncapped_fps > 60) 60 else uncapped_fps;
+            var buf: [32]u8 = undefined;
+            const title = std.fmt.bufPrint(&buf, "gameboy (FPS: {})\x00", .{fps}) catch @panic("buffer overflow when trying to write title");
+            const title_cstr: [*:0]const u8 = title.ptr[0 .. title.len - 1 :0];
+            c.SDL_SetWindowTitle(self.window, title_cstr);
+        }
+
+        self.last_vblank_at = std.time.Instant.now() catch @panic("Could not get current time");
+
+        self.handleEvents();
     }
 
     pub fn audioCallback(self: *Self, sample: Sample) void {

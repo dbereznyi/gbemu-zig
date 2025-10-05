@@ -162,7 +162,7 @@ fn stepPpu(gb: *Gb) void {
                             gb.ppu.screen,
                         );
                     }
-                    //syncTime(gb);
+                    syncTime(gb);
                 }
             }
         },
@@ -200,8 +200,6 @@ fn stepPpu(gb: *Gb) void {
             if (gb.ppu.dots == VBLANK_END - 4) {
                 gb.ppu.scanning_oam = true;
                 gb.ppu.mode = .oam;
-
-                gb.ppu.frame_done = true;
             }
         },
     }
