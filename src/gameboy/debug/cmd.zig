@@ -62,8 +62,8 @@ pub const DebugCmd = union(DebugCmdTag) {
     palette: struct { new_palette: ?Ppu.Palette },
 
     pub fn parse(buf: []u8) ?DebugCmd {
-        const bufTrimmed = std.mem.trim(u8, buf, " \t\r\n");
-        var p = Parser.init(bufTrimmed);
+        const buf_trimmed = std.mem.trim(u8, buf, " \t\r\n");
+        var p = Parser.init(buf_trimmed);
 
         const command = p.pop() orelse return .trace;
         return switch (command) {
