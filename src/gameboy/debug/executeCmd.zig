@@ -57,14 +57,12 @@ pub fn executeCmd(cmd: DebugCmd, gb: *Gb) !void {
         },
         .trace => {
             if (gb.debug.isPaused()) {
-                gb.debug.skipCurrentInstruction = true;
                 gb.debug.stepModeEnabled = true;
                 gb.debug.setPaused(false);
             }
         },
         .resume_ => {
             if (gb.debug.isPaused()) {
-                gb.debug.skipCurrentInstruction = true;
                 gb.debug.stepModeEnabled = false;
                 gb.debug.setPaused(false);
             }

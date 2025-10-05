@@ -10,15 +10,6 @@ const constants = @import("../constants.zig");
 const LCDC_PERIOD: u64 = 70224;
 
 pub fn syncTime(gb: *Gb) void {
-    // if (gb.debug.justUnpaused()) {
-    //     gb.last_sync = std.time.Instant.now() catch @panic("Could not get current time");
-    //     gb.debug.clearJustUnpaused();
-    // }
-    // if (gb.debug.isPaused()) {
-    //     std.debug.print("debug paused!\n", .{});
-    //     std.time.sleep(16666666);
-    //     return;
-    // }
     if (gb.cycles_since_last_sync < LCDC_PERIOD / 3) {
         return;
     }

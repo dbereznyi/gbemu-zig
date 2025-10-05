@@ -15,10 +15,6 @@ pub fn shouldDebugBreak(gb: *Gb) bool {
         return false;
     }
 
-    if (false and gb.debug.skipCurrentInstruction) {
-        gb.debug.skipCurrentInstruction = false;
-        return false;
-    }
     if (gb.debug.stepModeEnabled) {
         return true;
     }

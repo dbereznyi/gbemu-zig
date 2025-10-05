@@ -233,9 +233,9 @@ const Sdl = struct {
         while (gb.isRunning()) {
             if (gb.debug.isPaused()) {
                 self.handleEvents();
-            } else {
-                runGameboy(gb);
             }
+
+            runGameboy(gb);
 
             // renderVramViewer(&gb, &vram_pixels);
             // _ = c.SDL_UpdateTexture(vram_texture, null, @ptrCast(vram_pixels), VRAM_WINDOW_WIDTH * 3);

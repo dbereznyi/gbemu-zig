@@ -9,7 +9,10 @@ const executeDebugCmd = @import("debug/executeCmd.zig").executeCmd;
 pub fn runGameboy(gb: *Gb) void {
     syncTime(gb);
     processDebugCommand(gb);
-    runCpu(gb);
+
+    if (!gb.debug.isPaused()) {
+        runCpu(gb);
+    }
 }
 
 fn processDebugCommand(gb: *Gb) void {
