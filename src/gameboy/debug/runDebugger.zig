@@ -9,16 +9,16 @@ pub fn runDebugger(gb: *Gb) !void {
     gb.debug.std_out_mutex.unlock();
 
     while (true) {
-        var inputBuf: [128]u8 = undefined;
-        const inputLen = try std.io.getStdIn().read(&inputBuf);
+        var input_buf: [128]u8 = undefined;
+        const input_len = try std.io.getStdIn().read(&input_buf);
 
         gb.debug.std_out_mutex.lock();
         defer std.debug.print("> ", .{});
         defer gb.debug.std_out_mutex.unlock();
 
         var cmd: DebugCmd = undefined;
-        if (inputLen > 1) {
-            cmd = DebugCmd.parse(inputBuf[0..inputLen]) orelse {
+        if (input_len > 1) {
+            cmd = DebugCmd.parse(input_buf[0..input_len]) orelse {
                 std.debug.print("Invalid command\n\n", .{});
                 continue;
             };

@@ -851,7 +851,6 @@ fn rst(gb: *Gb, comptime target: u8) void {
     gb.sp -%= 1;
 
     cycleWrite(gb, Dst8{ .Ind = gb.sp }, @truncate(gb.pc));
-    gb.sp -%= 1;
 
     gb.pc = target;
 }

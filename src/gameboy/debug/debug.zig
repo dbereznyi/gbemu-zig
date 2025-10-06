@@ -14,13 +14,13 @@ pub const Debug = struct {
         bank: u8,
         addr: u16,
     };
-    pub const MAX_TRACE_LENGTH = 16;
+    pub const MAX_TRACE_LENGTH = 256;
 
     paused: std.atomic.Value(bool),
     break_next_inst: bool,
     breakpoints: std.ArrayList(Breakpoint),
     stack_base: u16,
-    execution_trace: BoundedStack(TraceLine, MAX_TRACE_LENGTH),
+    execution_trace: *BoundedStack(TraceLine, MAX_TRACE_LENGTH),
 
     last_command: ?DebugCmd,
     pending_command: ?DebugCmd,
@@ -31,7 +31,8 @@ pub const Debug = struct {
 
     pub fn init(alloc: std.mem.Allocator) !Debug {
         const breakpoints = try std.ArrayList(Breakpoint).initCapacity(alloc, 128);
-        const execution_trace = BoundedStack(TraceLine, MAX_TRACE_LENGTH).init();
+        const execution_trace = try alloc.create(BoundedStack(TraceLine, MAX_TRACE_LENGTH));
+        execution_trace.* = BoundedStack(TraceLine, MAX_TRACE_LENGTH).init();
         // TODO Should probably use an allocator that actually frees, just in case
         // a ton of memory gets allocated from printing a debug command's result.
         // (Also may be a good idea to set an upper bound on how much text can be
