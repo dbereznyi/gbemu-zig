@@ -1,0 +1,76 @@
+INCLUDE "hardware.inc"
+
+DEF CH1_PERIOD_LOW EQU $80
+DEF CH1_PERIOD_HIGH EQU %101
+
+SECTION "VBlank", ROM0[$0040]
+    jp VBlank
+
+SECTION "Header", ROM0[$100]
+	jp EntryPoint
+
+	ds $150 - @, 0 ; Make room for the header
+
+EntryPoint:
+	; Shut down audio circuitry
+	ld a, 0
+	ld [rNR52], a
+
+	; Do not turn the LCD off outside of VBlank
+WaitVBlank:
+	ld a, [rLY]
+	cp 144
+	jp c, WaitVBlank
+
+	; Turn the LCD on
+	ld a, LCDCF_ON | LCDCF_BGON
+	ld [rLCDC], a
+	; During the first (blank) frame, initialize display registers
+	ld a, %00000010
+	ld [rBGP], a
+    ; Clear any pending interrupts
+    xor a
+    ld [rIF], a
+    ld a, IEF_VBLANK
+    ld [rIE], a
+
+    ; init APU
+
+    ld a, AUDENA_ON
+    ld [rNR52], a
+
+    ld a, AUD1SWEEP_UP
+    ld [rNR10], a
+    ld a, AUDLEN_DUTY_25
+    ld [rNR11], a
+    ld a, %0011_0_000
+    ld [rNR12], a
+    ld a, CH1_PERIOD_LOW
+    ld [rNR13], a
+    ld a, %10_000_101
+    ld [rNR14], a
+
+    ld a, %0_111_0_111
+    ld [rNR50], a
+
+    ld a, $ff
+    ld [rNR51], a
+
+    ei
+
+.haltLoop
+    halt
+    nop
+    jp .haltLoop
+
+VBlank:
+    push af
+    push bc
+    push de
+    push hl
+
+    pop hl
+    pop de
+    pop bc
+    pop af
+    reti

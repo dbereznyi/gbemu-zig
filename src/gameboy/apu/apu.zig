@@ -8,14 +8,10 @@ const constants = @import("../../constants.zig");
 
 const NUM_SAMPLES = 512;
 
-const SAMPLES_CLOCK_DIVIDER = 2097152.0 / @as(f32, @floatFromInt(constants.AUDIO.SAMPLE_RATE));
+const SAMPLES_CLOCK_DIVIDER = @as(f32, @floatFromInt(constants.GB.CLOCK_RATE)) / 2 / @as(f32, @floatFromInt(constants.AUDIO.SAMPLE_RATE));
 const SAMPLES_CLOCK_DIVIDER_LOW: i32 = @floor(SAMPLES_CLOCK_DIVIDER);
 const SAMPLES_CLOCK_DIVIDER_HIGH: i32 = @ceil(SAMPLES_CLOCK_DIVIDER);
-const SAMPLES_CLOCK_DIVIDERS = [_]usize{
-    SAMPLES_CLOCK_DIVIDER_LOW,
-    SAMPLES_CLOCK_DIVIDER_HIGH,
-    SAMPLES_CLOCK_DIVIDER_HIGH,
-};
+const MAX_CYCLES_PER_SAMPLE = SAMPLES_CLOCK_DIVIDER_HIGH;
 
 const BL_PHASES: usize = 64;
 const BL_STEP_WIDTH: usize = 32;
@@ -218,7 +214,8 @@ const PulseChannel = struct {
     }
 
     pub fn handlePeriodSettingChange(self: *Self, period_setting: u11) void {
-        const timer_val = (0b111_1111_1111 - period_setting) * 2;
+        const period_setting_u13: u13 = period_setting;
+        const timer_val = (0b111_1111_1111 - period_setting_u13) * 2;
         self.timer = timer_val;
         self.timer_reload = timer_val;
     }
@@ -237,7 +234,6 @@ pub const Apu = struct {
     volume_right: u3,
 
     ch_on: [4]u1,
-    current_sample: [4]u4,
     output_left: [4]u1,
     output_right: [4]u1,
     length_enable: [4]u1,
@@ -302,7 +298,6 @@ pub const Apu = struct {
             .volume_left = 0,
             .volume_right = 0,
             .ch_on = [_]u1{0} ** 4,
-            .current_sample = [_]u4{0} ** 4,
             .output_left = [_]u1{0} ** 4,
             .output_right = [_]u1{0} ** 4,
             .length_enable = [_]u1{0} ** 4,
@@ -423,6 +418,8 @@ pub const Apu = struct {
     }
 
     pub fn render(self: *Self) void {
+        defer self.cycles_since_last_render = 0;
+
         var output = Sample.init(0, 0);
         for (0..4) |ch_ix| {
             const ch_output = self.readSample(ch_ix);
@@ -435,28 +432,27 @@ pub const Apu = struct {
             audio_callback.callback(audio_callback.context, output);
         }
 
-        // if (self.audio_files) |audio_files| {
-        //     for (0..4) |i| {
-        //         _ = audio_files[i].write(
-        //             std.mem.sliceAsBytes(self.ch_samples[i][0..self.ch_samples_ix]),
-        //         ) catch @panic("failed to write to file");
-        //     }
-        // }
-
-        self.sample_cycles = 0;
-        self.cycles_since_last_render = 0;
+        if (self.audio_files) |audio_files| {
+            if (self.ch_samples_ix == constants.AUDIO.SAMPLES_BUFFER_LEN - 1) {
+                for (0..4) |i| {
+                    _ = audio_files[i].write(
+                        std.mem.sliceAsBytes(self.ch_samples[i][0..self.ch_samples_ix]),
+                    ) catch @panic("failed to write to file");
+                }
+            }
+        }
     }
 
     pub fn run(self: *Self, force: bool) void {
         var cycles = self.cycles;
 
-        const should_run = force or (cycles + self.cycles_since_last_render >= SAMPLES_CLOCK_DIVIDER_HIGH);
+        const should_run = force or (cycles + self.cycles_since_last_render >= MAX_CYCLES_PER_SAMPLE) or (self.sample_cycles >= constants.GB.CLOCK_RATE);
         if (!should_run) {
             return;
         }
 
-        while (cycles + self.cycles_since_last_render > SAMPLES_CLOCK_DIVIDER_HIGH) {
-            self.cycles = SAMPLES_CLOCK_DIVIDER_HIGH - self.cycles_since_last_render;
+        while (cycles + self.cycles_since_last_render > MAX_CYCLES_PER_SAMPLE) {
+            self.cycles = MAX_CYCLES_PER_SAMPLE - self.cycles_since_last_render;
 
             if (self.cycles > 0) {
                 cycles -= self.cycles;
@@ -784,6 +780,7 @@ pub const Apu = struct {
                 self.length_enable[CH1] = @truncate((val & 0b0100_0000) >> 6);
                 const val_u11: u11 = val;
                 self.period_setting[CH1] = (self.period_setting[CH1] & 0b000_1111_1111) | (val_u11 << 8);
+                self.pulse[CH1].handlePeriodSettingChange(self.period_setting[CH1]);
                 if (val & 0b1000_0000 > 0) {
                     self.triggerChannel(CH1);
                 }
@@ -813,6 +810,7 @@ pub const Apu = struct {
                 self.length_enable[CH2] = @truncate((val & 0b0100_0000) >> 6);
                 const val_u11: u11 = val;
                 self.period_setting[CH2] = (self.period_setting[CH2] & 0b000_1111_1111) | (val_u11 << 8);
+                self.pulse[CH2].handlePeriodSettingChange(self.period_setting[CH2]);
                 if (val & 0b1000_0000 > 0) {
                     self.triggerChannel(CH2);
                 }
@@ -841,6 +839,7 @@ pub const Apu = struct {
                 self.length_enable[CH3] = @truncate((val & 0b0100_0000) >> 6);
                 const val_u11: u11 = val;
                 self.period_setting[CH3] = (self.period_setting[CH3] & 0b000_1111_1111) | (val_u11 << 8);
+                self.ch3.handlePeriodSettingChange(self.period_setting[CH3]);
                 if (val & 0b1000_0000 > 0) {
                     self.triggerChannel(CH3);
                 }
@@ -934,15 +933,13 @@ pub const Apu = struct {
 
     pub fn printState(self: *const Self, writer: anytype) !void {
         try format(writer, "APU is {s}\n", .{if (self.on == 1) "on" else "off"});
-        //try format(writer, "Next envelope sweep tick in: {}\n", .{self.next_envelope_sweep_tick_in});
-        //try format(writer, "Next length timer tick in: {}\n", .{self.next_tick_256hz_in});
-        //try format(writer, "Next period sweep tick in: {}\n", .{self.next_tick_128hz_in});
+
         for (0..4) |ch_ix| {
             try format(writer, "CH{} is {s}\n", .{
                 ch_ix + 1,
                 if (self.ch_on[ch_ix] == 1) "on" else "off",
             });
-            try format(writer, "    Current sample: {}\n", .{self.current_sample[ch_ix]});
+            try format(writer, "    Current sample: {}\n", .{self.band_limited[ch_ix].buffer[self.band_limited[ch_ix].buffer_ix]});
 
             try format(writer, "    Pan: L={} R={} ~ {s}\n", .{
                 self.output_left[ch_ix],
@@ -1032,13 +1029,5 @@ pub const Apu = struct {
                 }
             }
         }
-
-        // try format(writer, "samples_ix={}\n", .{self.samples_ix});
-        // try format(writer, "Samples: ", .{});
-        // for (0..self.samples_ix) |i| {
-        //     //try format(writer, "{},{} ", .{ self.samples[i].left, self.samples[i].right });
-        //     try format(writer, "{} ", .{ self.samples[i].left });
-        // }
-        // try format(writer, "\n", .{});
     }
 };

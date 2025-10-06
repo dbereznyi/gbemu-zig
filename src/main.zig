@@ -142,6 +142,7 @@ const Sdl = struct {
     samples_buf: []Sample,
     samples_buf_ix: usize,
     last_vblank_at: std.time.Instant,
+    last_audio_render_at: std.time.Instant,
 
     pub fn init(alloc: std.mem.Allocator) !Self {
         if (c.SDL_Init(c.SDL_INIT_VIDEO | c.SDL_INIT_AUDIO) != 0) {
@@ -204,6 +205,7 @@ const Sdl = struct {
             .samples_buf = samples_buf,
             .samples_buf_ix = 0,
             .last_vblank_at = undefined,
+            .last_audio_render_at = try std.time.Instant.now(),
         };
     }
 
@@ -314,6 +316,8 @@ const Sdl = struct {
         self.samples_buf_ix += 1;
 
         if (self.samples_buf_ix == constants.AUDIO.SAMPLES_BUFFER_LEN) {
+            const now = std.time.Instant.now() catch @panic("...");
+            defer self.last_audio_render_at = now;
             defer self.samples_buf_ix = 0;
 
             const result = c.SDL_QueueAudio(
@@ -327,6 +331,13 @@ const Sdl = struct {
                     .{c.SDL_GetError()},
                 );
             }
+
+            const elapsed_ns = now.since(self.last_audio_render_at);
+            const effective_sample_rate = 1_000_000_000 / (elapsed_ns / constants.AUDIO.SAMPLES_BUFFER_LEN);
+            std.debug.print("time since last render = {} ns ({d:.2} Hz)\n", .{
+                elapsed_ns,
+                effective_sample_rate,
+            });
         }
     }
 };
