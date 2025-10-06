@@ -9,5 +9,5 @@ pub const AUDIO = .{
 };
 
 pub const DEBUG = .{
-    .OUTPUT_AUDIO_FILES = true,
+    .OUTPUT_AUDIO_FILES = false,
 };

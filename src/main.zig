@@ -334,10 +334,12 @@ const Sdl = struct {
 
             const elapsed_ns = now.since(self.last_audio_render_at);
             const effective_sample_rate = 1_000_000_000 / (elapsed_ns / constants.AUDIO.SAMPLES_BUFFER_LEN);
-            std.debug.print("time since last render = {} ns ({d:.2} Hz)\n", .{
-                elapsed_ns,
-                effective_sample_rate,
-            });
+            if (false and effective_sample_rate < constants.AUDIO.SAMPLE_RATE) {
+                std.debug.print("time since last render = {} ns ({d:.2} Hz)\n", .{
+                    elapsed_ns,
+                    effective_sample_rate,
+                });
+            }
         }
     }
 };

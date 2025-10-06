@@ -13,6 +13,7 @@ const Ppu = @import("ppu/ppu.zig").Ppu;
 const Apu = @import("apu/apu.zig").Apu;
 const ApuReg = @import("apu/apu.zig").ApuReg;
 const Sample = @import("../sample.zig").Sample;
+const syncTime = @import("timing.zig").syncTime;
 
 pub const IoReg = .{
     .JOYP = 0x00,
