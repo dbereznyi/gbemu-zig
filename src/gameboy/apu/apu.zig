@@ -940,6 +940,12 @@ pub const Apu = struct {
                 if (self.ch_on[ch_ix] == 1) "on" else "off",
             });
             try format(writer, "    Current sample: {}\n", .{self.band_limited[ch_ix].buffer[self.band_limited[ch_ix].buffer_ix]});
+            if (ch_ix != CH4) {
+                try format(writer, "    Next sample in {} APU ticks (sample length: {} APU ticks)\n", .{
+                    if (ch_ix < 2) self.pulse[ch_ix].timer else self.ch3.timer,
+                    if (ch_ix < 2) self.pulse[ch_ix].timer_reload else self.ch3.timer_reload,
+                });
+            }
 
             try format(writer, "    Pan: L={} R={} ~ {s}\n", .{
                 self.output_left[ch_ix],
