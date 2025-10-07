@@ -133,6 +133,7 @@ pub fn main() !void {
 
 const Sdl = struct {
     const Self = @This();
+    const FPS_LEN = 10;
 
     gb: ?*Gb,
     window: *c.SDL_Window,
@@ -142,6 +143,8 @@ const Sdl = struct {
     samples_buf: []Sample,
     samples_buf_ix: usize,
     last_vblank_at: std.time.Instant,
+    fps: [FPS_LEN]f32,
+    fps_ix: usize,
     last_audio_render_at: std.time.Instant,
 
     pub fn init(alloc: std.mem.Allocator) !Self {
@@ -204,7 +207,9 @@ const Sdl = struct {
             .audio_device = audio_device,
             .samples_buf = samples_buf,
             .samples_buf_ix = 0,
-            .last_vblank_at = undefined,
+            .last_vblank_at = try std.time.Instant.now(),
+            .fps = [_]f32{0.0} ** FPS_LEN,
+            .fps_ix = 0,
             .last_audio_render_at = try std.time.Instant.now(),
         };
     }
@@ -290,25 +295,40 @@ const Sdl = struct {
     }
 
     pub fn vblankCallback(self: *Self, screen: []Pixel) void {
+        const now = std.time.Instant.now() catch @panic("Could not get current time");
+        defer self.last_vblank_at = now;
+
         _ = c.SDL_UpdateTexture(self.texture, null, @ptrCast(screen), 160 * 3);
         _ = c.SDL_RenderClear(self.renderer);
         _ = c.SDL_RenderCopy(self.renderer, self.texture, null, null);
         c.SDL_RenderPresent(self.renderer);
 
-        {
-            const frame_time_ns = (std.time.Instant.now() catch @panic("Could not get current time")).since(self.last_vblank_at);
-
-            const uncapped_fps = 1_000_000_000 / frame_time_ns;
-            const fps = if (uncapped_fps > 60) 60 else uncapped_fps;
-            var buf: [32]u8 = undefined;
-            const title = std.fmt.bufPrint(&buf, "gameboy (FPS: {})\x00", .{fps}) catch @panic("buffer overflow when trying to write title");
-            const title_cstr: [*:0]const u8 = title.ptr[0 .. title.len - 1 :0];
-            c.SDL_SetWindowTitle(self.window, title_cstr);
-        }
-
-        self.last_vblank_at = std.time.Instant.now() catch @panic("Could not get current time");
-
         self.handleEvents();
+
+        if (constants.DEBUG.DISPLAY_FPS) {
+            const frame_time_ns = now.since(self.last_vblank_at);
+
+            const one_sec_ns: f32 = 1_000_000_000.0;
+            const fps = one_sec_ns / @as(f32, @floatFromInt(frame_time_ns));
+
+            self.fps[self.fps_ix] = fps;
+            self.fps_ix += 1;
+
+            if (self.fps_ix == FPS_LEN) {
+                defer self.fps_ix = 0;
+
+                var avg_fps: f32 = 0.0;
+                for (0..FPS_LEN) |i| {
+                    avg_fps += self.fps[i];
+                }
+                avg_fps /= @floatFromInt(FPS_LEN);
+
+                var buf: [32]u8 = undefined;
+                const title = std.fmt.bufPrint(&buf, "gameboy (FPS: {d:.2})\x00", .{avg_fps}) catch @panic("buffer overflow when trying to write title");
+                const title_cstr: [*:0]const u8 = title.ptr[0 .. title.len - 1 :0];
+                c.SDL_SetWindowTitle(self.window, title_cstr);
+            }
+        }
     }
 
     pub fn audioCallback(self: *Self, sample: Sample) void {
