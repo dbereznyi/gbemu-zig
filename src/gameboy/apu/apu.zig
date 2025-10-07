@@ -180,7 +180,7 @@ const Ch4 = struct {
     lfsr_width: u1,
     clock_divider: u3,
 
-    timer: u8, // TODO check how big this needs to be
+    timer: u9, // TODO check how big this needs to be
 
     pub fn init() Self {
         return .{
@@ -525,7 +525,7 @@ pub const Apu = struct {
         {
             var cycles_rem = cycles;
 
-            const timer_reload = if (self.ch4.clock_divider > 0) self.ch4.clock_divider else 2;
+            const timer_reload = if (self.ch4.clock_divider > 0) (@as(u9, @intCast(self.ch4.clock_divider)) << self.ch4.clock_shift) << 3 else 2;
 
             if (self.ch4.timer == 0) {
                 self.ch4.timer = timer_reload;
@@ -547,9 +547,11 @@ pub const Apu = struct {
                     self.ch4.lfsr &= ~high_bit_mask;
                 }
 
-                const bit_0 = self.ch4.lfsr & 0x0001;
-                const val = if (bit_0 == 0) 0 else self.ch_volume[CH4];
-                self.updateSample(CH4, val, @intCast(cycles - cycles_rem));
+                if (self.ch_on[CH4] != 0) {
+                    const bit_0 = self.ch4.lfsr & 0x0001;
+                    const val = if (bit_0 == 0) 0 else self.ch_volume[CH4];
+                    self.updateSample(CH4, val, @intCast(cycles - cycles_rem));
+                }
             }
 
             if (cycles_rem > 0) {
