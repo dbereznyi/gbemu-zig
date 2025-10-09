@@ -121,7 +121,7 @@ const Ch1 = struct {
     period_sweep_dir: u1,
     period_sweep_individual_step: u3,
     period_sweep_enabled: u1,
-    period_sweep_timer: u4,
+    period_sweep_timer: u3,
     period_sweep_shadow: u11,
 
     pub fn init() Self {
@@ -135,6 +135,7 @@ const Ch1 = struct {
         };
     }
 };
+
 const Ch3 = struct {
     const Self = @This();
 
@@ -171,6 +172,7 @@ const Ch3 = struct {
         self.timer_reload = timer_val;
     }
 };
+
 const Ch4 = struct {
     const Self = @This();
 
@@ -180,7 +182,11 @@ const Ch4 = struct {
     lfsr_width: u1,
     clock_divider: u3,
 
-    timer: u9, // TODO check how big this needs to be
+    timer: u12,
+
+    tick_envelope: bool,
+    counter: u16,
+    envelope_timer: u3,
 
     pub fn init() Self {
         return .{
@@ -190,6 +196,9 @@ const Ch4 = struct {
             .lfsr_width = 0,
             .clock_divider = 0,
             .timer = 0,
+            .tick_envelope = false,
+            .counter = 0,
+            .envelope_timer = 0,
         };
     }
 };
@@ -199,10 +208,11 @@ const PulseChannel = struct {
 
     wave_duty: u2,
     duty_step: u3,
-    // (0b111_1111_1111 - period) * 2
     timer: u13,
-    // (0b111_1111_1111 - period_setting) * 2
     timer_reload: u13,
+
+    tick_envelope: bool,
+    envelope_timer: u3,
 
     pub fn init() Self {
         return .{
@@ -210,12 +220,14 @@ const PulseChannel = struct {
             .duty_step = 0,
             .timer = 0,
             .timer_reload = 0,
+            .tick_envelope = false,
+            .envelope_timer = 0,
         };
     }
 
     pub fn handlePeriodSettingChange(self: *Self, period_setting: u11) void {
         const period_setting_u13: u13 = period_setting;
-        const timer_val = (0b111_1111_1111 - period_setting_u13) * 2;
+        const timer_val = (0b111_1111_1111 - period_setting_u13) << 1;
         self.timer = timer_val;
         self.timer_reload = timer_val;
     }
@@ -262,7 +274,7 @@ pub const Apu = struct {
     audio_callback: ?AudioCallback,
     audio_files: ?[4]std.fs.File,
 
-    div_apu_counter: usize,
+    div_apu_counter: u3,
 
     // This counts 2 MHz cycles
     cycles: i32,
@@ -525,7 +537,8 @@ pub const Apu = struct {
         {
             var cycles_rem = cycles;
 
-            const timer_reload = if (self.ch4.clock_divider > 0) (@as(u9, @intCast(self.ch4.clock_divider)) << self.ch4.clock_shift) << 3 else 2;
+            const divider = @as(u12, @intCast(self.ch4.clock_divider)) << self.ch4.clock_shift << 3;
+            const timer_reload = if (divider > 0) divider else 2;
 
             if (self.ch4.timer == 0) {
                 self.ch4.timer = timer_reload;
@@ -573,78 +586,125 @@ pub const Apu = struct {
             return;
         }
 
-        self.div_apu_counter = (self.div_apu_counter + 1) % 8;
+        defer self.div_apu_counter +%= 1;
 
-        const tick_256hz = self.div_apu_counter / 2 > 0;
-        const tick_128hz = self.div_apu_counter / 4 > 0;
-        const tick_64hz = self.div_apu_counter == 8;
+        const tick_256hz = self.div_apu_counter & 1 == 1;
+        const tick_128hz = self.div_apu_counter & 3 == 3;
+        const tick_64hz = self.div_apu_counter & 7 == 7;
+
+        if (tick_64hz) {
+            for (0..2) |ch_ix| {
+                if (!self.pulse[ch_ix].tick_envelope) {
+                    self.pulse[ch_ix].envelope_timer -%= 1;
+                }
+            }
+
+            if (!self.ch4.tick_envelope) {
+                self.ch4.envelope_timer -%= 1;
+            }
+        }
+
+        for (0..2) |ch_ix| {
+            if (self.pulse[ch_ix].tick_envelope) {
+                if (self.envelope_dir[ch_ix] == 1) {
+                    self.ch_volume[ch_ix] +|= 1;
+                } else {
+                    self.ch_volume[ch_ix] -|= 1;
+                }
+
+                const val = WAVEFORMS[self.pulse[ch_ix].wave_duty][self.pulse[ch_ix].duty_step] * self.ch_volume[ch_ix];
+                self.updateSample(ch_ix, val, @as(usize, @intCast(self.cycles_since_last_render)) % BL_PHASES);
+            }
+        }
+
+        if (self.ch4.tick_envelope) {
+            if (self.envelope_dir[CH4] == 1) {
+                self.ch_volume[CH4] +|= 1;
+            } else {
+                self.ch_volume[CH4] -|= 1;
+            }
+
+            const bit_0 = self.ch4.lfsr & 0x0001;
+            const val = if (bit_0 == 0) 0 else self.ch_volume[CH4];
+            self.updateSample(CH4, val, @as(usize, @intCast(self.cycles_since_last_render)) % BL_PHASES);
+        }
 
         // CH1 period sweep
         if (self.ch1.period_sweep_enabled != 0 and tick_128hz) {
-            const result = calcNewSweepFreqWithOverflowCheck(
-                self.ch1.period_sweep_shadow,
-                self.ch1.period_sweep_dir,
-                self.ch1.period_sweep_individual_step,
-            );
-            if (result[1] == 1) {
-                //std.debug.print("freq overflow in step, turning off\n", .{});
-                self.ch_on[CH1] = 0;
-                self.updateSample(CH1, 0, 0);
-                return;
-            } else {
-                self.ch1.period_sweep_shadow = result[0];
-                self.period[CH1] = self.ch1.period_sweep_shadow;
-                const result2 = calcNewSweepFreqWithOverflowCheck(
+            self.ch1.period_sweep_timer +%= 1;
+
+            if (self.ch1.period_sweep_timer == 7) {
+                const result = calcNewSweepFreqWithOverflowCheck(
                     self.ch1.period_sweep_shadow,
                     self.ch1.period_sweep_dir,
                     self.ch1.period_sweep_individual_step,
                 );
-                if (result2[1] == 1) {
-                    //std.debug.print("freq overflow in step (check #2), turning off\n", .{});
+                if (result[1] == 1) {
+                    //std.debug.print("freq overflow in step, turning off\n", .{});
                     self.ch_on[CH1] = 0;
                     self.updateSample(CH1, 0, 0);
                     return;
+                } else {
+                    self.ch1.period_sweep_shadow = result[0];
+                    self.period[CH1] = self.ch1.period_sweep_shadow;
+                    self.pulse[CH1].handlePeriodSettingChange(self.period[CH1]);
+                    const result2 = calcNewSweepFreqWithOverflowCheck(
+                        self.ch1.period_sweep_shadow,
+                        self.ch1.period_sweep_dir,
+                        self.ch1.period_sweep_individual_step,
+                    );
+                    if (result2[1] == 1) {
+                        //std.debug.print("freq overflow in step (check #2), turning off\n", .{});
+                        self.ch_on[CH1] = 0;
+                        self.updateSample(CH1, 0, 0);
+                        return;
+                    }
                 }
             }
         }
 
-        for (0..4) |ch_ix| {
-            // Length timer
-            if (self.length_enable[ch_ix] == 1 and tick_256hz) {
-                if (ch_ix != CH3) {
-                    const add_result = @addWithOverflow(self.length_timer[ch_ix], 1);
-                    self.length_timer[ch_ix] = add_result[0];
-                    if (add_result[1] == 1) {
-                        //std.debug.print("CH{}: length timer expired, turning off\n", .{ch_ix});
-                        self.ch_on[ch_ix] = 0;
-                        self.updateSample(ch_ix, 0, 0);
-                    }
-                } else {
-                    const add_result = @addWithOverflow(self.ch3.length_timer, 1);
-                    self.ch3.length_timer = add_result[0];
-                    if (add_result[1] == 1) {
-                        self.ch_on[CH3] = 0;
-                        self.updateSample(CH3, 0, 0);
-                    }
-                }
-            }
-
-            // Envelope
-            if (tick_64hz and ch_ix != CH3 and self.envelope_sweep_pace[ch_ix] != 0) {
-                self.envelope_timer[ch_ix] += 1;
-                if (self.envelope_timer[ch_ix] >= self.envelope_sweep_pace[ch_ix]) {
-                    self.envelope_timer[ch_ix] = 0;
-                    if (self.envelope_dir[ch_ix] == 1) {
-                        self.ch_volume[ch_ix] +|= 1;
+        if (tick_256hz) {
+            for (0..4) |ch_ix| {
+                // Length timer
+                if (self.length_enable[ch_ix] == 1 and tick_256hz) {
+                    if (ch_ix != CH3) {
+                        const add_result = @addWithOverflow(self.length_timer[ch_ix], 1);
+                        self.length_timer[ch_ix] = add_result[0];
+                        if (add_result[1] == 1) {
+                            //std.debug.print("CH{}: length timer expired, turning off\n", .{ch_ix});
+                            self.ch_on[ch_ix] = 0;
+                            self.updateSample(ch_ix, 0, 0);
+                        }
                     } else {
-                        //std.debug.print("CH{}: decrementing volume ({} -> {})\n", .{ ch_ix, self.ch_volume[ch_ix], self.ch_volume[ch_ix] -| 1 });
-                        self.ch_volume[ch_ix] -|= 1;
+                        const add_result = @addWithOverflow(self.ch3.length_timer, 1);
+                        self.ch3.length_timer = add_result[0];
+                        if (add_result[1] == 1) {
+                            self.ch_on[CH3] = 0;
+                            self.updateSample(CH3, 0, 0);
+                        }
                     }
-
-                    const val = WAVEFORMS[self.pulse[ch_ix].wave_duty][self.pulse[ch_ix].duty_step] * self.ch_volume[ch_ix];
-                    self.updateSample(ch_ix, val, @as(usize, @intCast(self.cycles_since_last_render)) % BL_PHASES);
                 }
             }
+        }
+    }
+
+    pub fn handleSecondaryDivEvent(self: *Self) void {
+        self.run(true);
+
+        if (self.on == 0) {
+            return;
+        }
+
+        for (0..2) |ch_ix| {
+            if (self.ch_on[ch_ix] != 0 and self.pulse[ch_ix].envelope_timer == 0) {
+                self.pulse[ch_ix].tick_envelope = true;
+                self.pulse[ch_ix].envelope_timer = self.envelope_sweep_pace[ch_ix];
+            }
+        }
+
+        if (self.ch_on[CH4] != 0 and self.ch4.envelope_timer == 0) {
+            self.ch4.tick_envelope = true;
+            self.ch4.envelope_timer = self.envelope_sweep_pace[CH4];
         }
     }
 
@@ -767,6 +827,7 @@ pub const Apu = struct {
                 self.ch_init_volume[CH1] = @truncate((val & 0b1111_0000) >> 4);
                 self.envelope_dir[CH1] = @truncate((val & 0b0000_1000) >> 3);
                 self.envelope_sweep_pace[CH1] = @truncate(val & 0b0000_0111);
+                self.pulse[CH1].envelope_timer = self.envelope_sweep_pace[CH1];
                 if (self.ch_init_volume[CH1] == 0 and self.envelope_dir[CH1] == 0) {
                     // DAC turned off, so turn the channel off as well
                     self.ch_on[CH1] = 0;
@@ -797,6 +858,7 @@ pub const Apu = struct {
                 self.ch_init_volume[CH2] = @truncate((val & 0b1111_0000) >> 4);
                 self.envelope_dir[CH2] = @truncate((val & 0b0000_1000) >> 3);
                 self.envelope_sweep_pace[CH2] = @truncate(val & 0b0000_0111);
+                self.pulse[CH2].envelope_timer = self.envelope_sweep_pace[CH2];
                 if (self.ch_init_volume[CH2] == 0 and self.envelope_dir[CH2] == 0) {
                     // DAC turned off, so turn the channel off as well
                     self.ch_on[CH2] = 0;
@@ -855,6 +917,7 @@ pub const Apu = struct {
                 self.ch_init_volume[CH4] = @truncate((val & 0b1111_0000) >> 4);
                 self.envelope_dir[CH4] = @truncate((val & 0b0000_1000) >> 3);
                 self.envelope_sweep_pace[CH4] = @truncate(val & 0b0000_0111);
+                self.ch4.envelope_timer = self.envelope_sweep_pace[CH4];
                 if (self.ch_init_volume[CH4] == 0 and self.envelope_dir[CH4] == 0) {
                     // DAC turned off, so turn the channel off as well
                     self.ch_on[CH4] = 0;

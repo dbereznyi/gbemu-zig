@@ -9,14 +9,8 @@ pub fn runTimer(gb: *Gb, cycles: usize) void {
     while (rem_cycles >= 4) {
         rem_cycles -= 4;
 
-        const prev_div = gb.io_regs[IoReg.DIV];
         gb.io_regs[IoReg.DIV] = @truncate(gb.timer.system_counter >> 8);
-        gb.timer.system_counter +%= 1;
-
-        // signal a DIV-APU event when bit 4 changes from 0 to 1
-        if (prev_div & 0b0001_0000 == 0 and gb.io_regs[IoReg.DIV] & 0b0001_0000 != 0) {
-            gb.apu.handleDivEvent();
-        }
+        updateSystemCounter(gb, gb.timer.system_counter +% 1);
 
         const tac = gb.io_regs[IoReg.TAC];
         if (tac & TacFlag.ENABLE > 0) {
@@ -61,4 +55,19 @@ pub fn runTimer(gb: *Gb, cycles: usize) void {
     }
 
     gb.timer.odd_cycles = rem_cycles;
+}
+
+fn updateSystemCounter(gb: *Gb, new_value: u16) void {
+    const primary = gb.timer.system_counter & ~new_value;
+
+    if (primary & 0x2000 != 0) {
+        gb.apu.handleDivEvent();
+    } else {
+        const secondary = ~gb.timer.system_counter & new_value;
+        if (secondary & 0x2000 != 0) {
+            gb.apu.handleSecondaryDivEvent();
+        }
+    }
+
+    gb.timer.system_counter = new_value;
 }
