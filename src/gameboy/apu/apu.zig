@@ -144,9 +144,8 @@ const Ch3 = struct {
     wav_ram_ix: u5,
     wav_ram: [32]u4,
 
-    // 0b111_1111_1111 - period
+    // Number of APU cycles until next sample
     timer: u13,
-    // 0b111_1111_1111 - period_setting
     timer_reload: u13,
 
     pub fn init() Self {
@@ -204,15 +203,46 @@ const Ch4 = struct {
     }
 };
 
+const EnvelopeClock = struct {
+    const Self = @This();
+
+    clock: bool,
+    locked: bool,
+    should_lock: bool,
+
+    pub fn init() Self {
+        return .{
+            .clock = false,
+            .locked = false,
+            .should_lock = false,
+        };
+    }
+
+    pub fn set(self: *Self, value: bool, dir: u1, vol: u4) void {
+        if (self.clock == value) {
+            return;
+        }
+
+        if (value) {
+            self.clock = true;
+            self.should_lock = (vol == 0x0f and dir == 1) or (vol == 0x00 and dir == 0);
+        } else {
+            self.clock = false;
+            self.locked = self.locked or self.should_lock;
+        }
+    }
+};
+
 const PulseChannel = struct {
     const Self = @This();
 
     wave_duty: u2,
     duty_step: u3,
+    // Number of APU cycles until next sample
     timer: u13,
     timer_reload: u13,
 
-    tick_envelope: bool,
+    envelope_clock: EnvelopeClock,
     envelope_dir: u1,
     envelope_sweep_pace: u3,
     envelope_timer: u3,
@@ -223,7 +253,7 @@ const PulseChannel = struct {
             .duty_step = 0,
             .timer = 0,
             .timer_reload = 0,
-            .tick_envelope = false,
+            .envelope_clock = EnvelopeClock.init(),
             .envelope_dir = 0,
             .envelope_sweep_pace = 0,
             .envelope_timer = 0,
@@ -250,6 +280,7 @@ pub const Apu = struct {
     volume_left: u3,
     volume_right: u3,
 
+    // Common channel registers
     ch_on: [4]u1,
     output_left: [4]u1,
     output_right: [4]u1,
@@ -497,11 +528,11 @@ pub const Apu = struct {
             var cycles_rem = cycles;
 
             while (cycles_rem > self.pulse[ch_ix].timer) {
-                cycles_rem -= self.pulse[ch_ix].timer + 1;
+                cycles_rem -= self.pulse[ch_ix].timer;
                 self.pulse[ch_ix].timer = self.pulse[ch_ix].timer_reload;
 
                 self.pulse[ch_ix].duty_step +%= 1;
-                const val = WAVEFORMS[self.pulse[ch_ix].wave_duty][self.pulse[ch_ix].duty_step] * self.ch_volume[ch_ix];
+                const val = if (WAVEFORMS[self.pulse[ch_ix].wave_duty][self.pulse[ch_ix].duty_step] != 0) self.ch_volume[ch_ix] else 0;
                 self.updateSample(ch_ix, val, @intCast(cycles - cycles_rem));
             }
 
@@ -515,7 +546,7 @@ pub const Apu = struct {
             var cycles_rem = cycles;
 
             while (cycles_rem > self.ch3.timer) {
-                cycles_rem -= self.ch3.timer + 1;
+                cycles_rem -= self.ch3.timer;
                 self.ch3.timer = self.ch3.timer_reload;
 
                 self.ch3.wav_ram_ix +%= 1;
@@ -587,6 +618,29 @@ pub const Apu = struct {
         }
     }
 
+    fn tickPulseEnvelope(self: *Self, ch_ix: usize) void {
+        self.pulse[ch_ix].envelope_clock.set(false, 0, 0);
+        if (self.pulse[ch_ix].envelope_clock.locked) {
+            return;
+        }
+        if (self.pulse[ch_ix].envelope_sweep_pace == 0) {
+            return;
+        }
+
+        self.pulse[ch_ix].envelope_clock.set(false, 0, 0);
+
+        if (self.pulse[ch_ix].envelope_dir == 1) {
+            self.ch_volume[ch_ix] += 1;
+        } else {
+            self.ch_volume[ch_ix] -= 1;
+        }
+
+        if (self.ch_on[ch_ix] != 0) {
+            const val = if (WAVEFORMS[self.pulse[ch_ix].wave_duty][self.pulse[ch_ix].duty_step] != 0) self.ch_volume[ch_ix] else 0;
+            self.updateSample(ch_ix, val, 0);
+        }
+    }
+
     pub fn handleDivEvent(self: *Self) void {
         self.run(true);
 
@@ -602,7 +656,7 @@ pub const Apu = struct {
 
         if (tick_64hz) {
             for (0..2) |ch_ix| {
-                if (!self.pulse[ch_ix].tick_envelope) {
+                if (!self.pulse[ch_ix].envelope_clock.clock) {
                     self.pulse[ch_ix].envelope_timer -%= 1;
                 }
             }
@@ -613,21 +667,12 @@ pub const Apu = struct {
         }
 
         for (0..2) |ch_ix| {
-            if (self.pulse[ch_ix].tick_envelope) {
-                self.pulse[ch_ix].tick_envelope = false;
-
-                if (self.pulse[ch_ix].envelope_dir == 1) {
-                    self.ch_volume[ch_ix] +|= 1;
-                } else {
-                    self.ch_volume[ch_ix] -|= 1;
-                }
-
-                const val = WAVEFORMS[self.pulse[ch_ix].wave_duty][self.pulse[ch_ix].duty_step] * self.ch_volume[ch_ix];
-                self.updateSample(ch_ix, val, 0);
+            if (self.pulse[ch_ix].envelope_clock.clock) {
+                self.tickPulseEnvelope(ch_ix);
             }
         }
 
-        if (self.ch4.tick_envelope) {
+        if (self.ch4.tick_envelope and self.ch4.envelope_sweep_pace != 0) {
             self.ch4.tick_envelope = false;
 
             if (self.ch4.envelope_dir == 1) {
@@ -649,7 +694,6 @@ pub const Apu = struct {
                         const add_result = @addWithOverflow(self.length_timer[ch_ix], 1);
                         self.length_timer[ch_ix] = add_result[0];
                         if (add_result[1] == 1) {
-                            //std.debug.print("CH{}: length timer expired, turning off\n", .{ch_ix});
                             self.ch_on[ch_ix] = 0;
                             self.updateSample(ch_ix, 0, 0);
                         }
@@ -707,7 +751,11 @@ pub const Apu = struct {
 
         for (0..2) |ch_ix| {
             if (self.ch_on[ch_ix] != 0 and self.pulse[ch_ix].envelope_timer == 0) {
-                self.pulse[ch_ix].tick_envelope = self.pulse[ch_ix].envelope_sweep_pace != 0;
+                self.pulse[ch_ix].envelope_clock.set(
+                    self.pulse[ch_ix].envelope_sweep_pace != 0,
+                    self.pulse[ch_ix].envelope_dir,
+                    self.ch_volume[ch_ix],
+                );
                 self.pulse[ch_ix].envelope_timer = self.pulse[ch_ix].envelope_sweep_pace;
             }
         }
@@ -821,6 +869,8 @@ pub const Apu = struct {
     }
 
     pub fn writeReg(self: *Self, comptime reg: ApuReg, val: u8) void {
+        self.run(true);
+
         switch (reg) {
             // Channel 1
             .NR10 => {
@@ -841,6 +891,7 @@ pub const Apu = struct {
                 if (self.ch_init_volume[CH1] == 0 and self.pulse[CH1].envelope_dir == 0) {
                     // DAC turned off, so turn the channel off as well
                     self.ch_on[CH1] = 0;
+                    self.updateSample(CH1, 0, 0);
                 }
             },
             .NR13 => {
@@ -872,6 +923,7 @@ pub const Apu = struct {
                 if (self.ch_init_volume[CH2] == 0 and self.pulse[CH2].envelope_dir == 0) {
                     // DAC turned off, so turn the channel off as well
                     self.ch_on[CH2] = 0;
+                    self.updateSample(CH2, 0, 0);
                 }
             },
             .NR23 => {
@@ -895,6 +947,7 @@ pub const Apu = struct {
                 if (self.ch3.dac_enabled == 0) {
                     // DAC turned off, so turn the channel off as well
                     self.ch_on[CH3] = 0;
+                    self.updateSample(CH3, 0, 0);
                 }
             },
             .NR31 => {
@@ -931,6 +984,7 @@ pub const Apu = struct {
                 if (self.ch_init_volume[CH4] == 0 and self.ch4.envelope_dir == 0) {
                     // DAC turned off, so turn the channel off as well
                     self.ch_on[CH4] = 0;
+                    self.updateSample(CH4, 0, 0);
                 }
             },
             .NR43 => {
