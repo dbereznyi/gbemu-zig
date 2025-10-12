@@ -9,13 +9,14 @@ pub fn runTimer(gb: *Gb, cycles: usize) void {
     while (rem_cycles >= 4) {
         rem_cycles -= 4;
 
-        gb.io_regs[IoReg.DIV] = @truncate(gb.timer.system_counter >> 8);
-        updateSystemCounter(gb, gb.timer.system_counter +% 1);
+        updateSystemCounter(gb, gb.timer.system_counter +% 4);
 
         const tac = gb.io_regs[IoReg.TAC];
         if (tac & TacFlag.ENABLE > 0) {
             switch (gb.timer.state) {
                 .running => {
+                    // TODO TIMA should increment when a specific bit in the system counter rolls changes from 0 to 1
+
                     const clock_speed: u2 = @as(u2, @truncate(tac & TacFlag.CLOCK_SELECT));
                     const cycles_for_increment: usize = switch (clock_speed) {
                         // 4096Hz (increment every 256 M-cycles)
@@ -60,11 +61,14 @@ pub fn runTimer(gb: *Gb, cycles: usize) void {
 fn updateSystemCounter(gb: *Gb, new_value: u16) void {
     const primary = gb.timer.system_counter & ~new_value;
 
-    if (primary & 0x2000 != 0) {
+    const bitmask = 0x1000;
+    if (primary & bitmask != 0) {
+        // bit changed from 0 to 1
         gb.apu.handleDivEvent();
     } else {
         const secondary = ~gb.timer.system_counter & new_value;
-        if (secondary & 0x2000 != 0) {
+        if (secondary & bitmask != 0) {
+            // bit was 1, changed back to 0
             gb.apu.handleSecondaryDivEvent();
         }
     }

@@ -6,10 +6,7 @@ const Sample = @import("../../sample.zig").Sample;
 const format = std.fmt.format;
 const constants = @import("../../constants.zig");
 
-const NUM_SAMPLES = 512;
-
 const SAMPLES_CLOCK_DIVIDER = @as(f32, @floatFromInt(constants.GB.CLOCK_RATE)) / 2 / @as(f32, @floatFromInt(constants.AUDIO.SAMPLE_RATE));
-const SAMPLES_CLOCK_DIVIDER_LOW: i32 = @floor(SAMPLES_CLOCK_DIVIDER);
 const SAMPLES_CLOCK_DIVIDER_HIGH: i32 = @ceil(SAMPLES_CLOCK_DIVIDER);
 const MAX_CYCLES_PER_SAMPLE = SAMPLES_CLOCK_DIVIDER_HIGH;
 
@@ -182,10 +179,12 @@ const Ch4 = struct {
     lfsr_width: u1,
     clock_divider: u3,
 
-    timer: u12,
+    timer: u5,
+    counter: u16,
 
     tick_envelope: bool,
-    counter: u16,
+    envelope_dir: u1,
+    envelope_sweep_pace: u3,
     envelope_timer: u3,
 
     pub fn init() Self {
@@ -196,8 +195,10 @@ const Ch4 = struct {
             .lfsr_width = 0,
             .clock_divider = 0,
             .timer = 0,
-            .tick_envelope = false,
             .counter = 0,
+            .tick_envelope = false,
+            .envelope_dir = 0,
+            .envelope_sweep_pace = 0,
             .envelope_timer = 0,
         };
     }
@@ -212,6 +213,8 @@ const PulseChannel = struct {
     timer_reload: u13,
 
     tick_envelope: bool,
+    envelope_dir: u1,
+    envelope_sweep_pace: u3,
     envelope_timer: u3,
 
     pub fn init() Self {
@@ -221,6 +224,8 @@ const PulseChannel = struct {
             .timer = 0,
             .timer_reload = 0,
             .tick_envelope = false,
+            .envelope_dir = 0,
+            .envelope_sweep_pace = 0,
             .envelope_timer = 0,
         };
     }
@@ -253,8 +258,6 @@ pub const Apu = struct {
     length_timer: [4]u6,
     ch_init_volume: [4]u4,
     ch_volume: [4]u4,
-    envelope_timer: [4]u4,
-    envelope_dir: [4]u1,
     envelope_sweep_pace: [4]u3,
     period_setting: [4]u11,
     period: [4]u11,
@@ -274,7 +277,7 @@ pub const Apu = struct {
     audio_callback: ?AudioCallback,
     audio_files: ?[4]std.fs.File,
 
-    div_apu_counter: u3,
+    div_apu_counter: u8,
 
     // This counts 2 MHz cycles
     cycles: i32,
@@ -317,8 +320,6 @@ pub const Apu = struct {
             .length_timer = [_]u6{0} ** 4,
             .ch_init_volume = [_]u4{0} ** 4,
             .ch_volume = [_]u4{0} ** 4,
-            .envelope_timer = [_]u4{0} ** 4,
-            .envelope_dir = [_]u1{0} ** 4,
             .envelope_sweep_pace = [_]u3{0} ** 4,
             .period_setting = [_]u11{0} ** 4,
             .period = [_]u11{0} ** 4,
@@ -537,7 +538,7 @@ pub const Apu = struct {
         {
             var cycles_rem = cycles;
 
-            const divider = @as(u12, @intCast(self.ch4.clock_divider)) << self.ch4.clock_shift << 3;
+            const divider = @as(u5, @intCast(self.ch4.clock_divider)) << 2;
             const timer_reload = if (divider > 0) divider else 2;
 
             if (self.ch4.timer == 0) {
@@ -548,22 +549,29 @@ pub const Apu = struct {
                 cycles_rem -= self.ch4.timer;
                 self.ch4.timer = timer_reload;
 
-                const bit0_bit1_xor = self.ch4.lfsr ^ (self.ch4.lfsr >> 1);
-                const next_lfsr_bit = 0x0001 & ~bit0_bit1_xor;
-                self.ch4.lfsr >>= 1;
+                const old_bit = (self.ch4.counter >> self.ch4.clock_shift) & 1;
+                self.ch4.counter +%= 1;
+                self.ch4.counter &= 0x3fff;
+                const new_bit = (self.ch4.counter >> self.ch4.clock_shift) & 1;
 
-                const high_bit_mask: u16 = if (self.ch4.lfsr_width == 1) 0x4040 else 0x4000;
+                if (new_bit == 1 and old_bit == 0) {
+                    const bit0_bit1_xor = self.ch4.lfsr ^ (self.ch4.lfsr >> 1);
+                    const next_lfsr_bit = 0x0001 & ~bit0_bit1_xor;
+                    self.ch4.lfsr >>= 1;
 
-                if (next_lfsr_bit != 0) {
-                    self.ch4.lfsr |= high_bit_mask;
-                } else {
-                    self.ch4.lfsr &= ~high_bit_mask;
-                }
+                    const high_bit_mask: u16 = if (self.ch4.lfsr_width == 1) 0x4040 else 0x4000;
 
-                if (self.ch_on[CH4] != 0) {
-                    const bit_0 = self.ch4.lfsr & 0x0001;
-                    const val = if (bit_0 == 0) 0 else self.ch_volume[CH4];
-                    self.updateSample(CH4, val, @intCast(cycles - cycles_rem));
+                    if (next_lfsr_bit != 0) {
+                        self.ch4.lfsr |= high_bit_mask;
+                    } else {
+                        self.ch4.lfsr &= ~high_bit_mask;
+                    }
+
+                    if (self.ch_on[CH4] != 0) {
+                        const bit_0 = self.ch4.lfsr & 0x0001;
+                        const val = if (bit_0 == 0) 0 else self.ch_volume[CH4];
+                        self.updateSample(CH4, val, @intCast(cycles - cycles_rem));
+                    }
                 }
             }
 
@@ -586,7 +594,7 @@ pub const Apu = struct {
             return;
         }
 
-        defer self.div_apu_counter +%= 1;
+        self.div_apu_counter +%= 1;
 
         const tick_256hz = self.div_apu_counter & 1 == 1;
         const tick_128hz = self.div_apu_counter & 3 == 3;
@@ -606,19 +614,23 @@ pub const Apu = struct {
 
         for (0..2) |ch_ix| {
             if (self.pulse[ch_ix].tick_envelope) {
-                if (self.envelope_dir[ch_ix] == 1) {
+                self.pulse[ch_ix].tick_envelope = false;
+
+                if (self.pulse[ch_ix].envelope_dir == 1) {
                     self.ch_volume[ch_ix] +|= 1;
                 } else {
                     self.ch_volume[ch_ix] -|= 1;
                 }
 
                 const val = WAVEFORMS[self.pulse[ch_ix].wave_duty][self.pulse[ch_ix].duty_step] * self.ch_volume[ch_ix];
-                self.updateSample(ch_ix, val, @as(usize, @intCast(self.cycles_since_last_render)) % BL_PHASES);
+                self.updateSample(ch_ix, val, 0);
             }
         }
 
         if (self.ch4.tick_envelope) {
-            if (self.envelope_dir[CH4] == 1) {
+            self.ch4.tick_envelope = false;
+
+            if (self.ch4.envelope_dir == 1) {
                 self.ch_volume[CH4] +|= 1;
             } else {
                 self.ch_volume[CH4] -|= 1;
@@ -626,41 +638,7 @@ pub const Apu = struct {
 
             const bit_0 = self.ch4.lfsr & 0x0001;
             const val = if (bit_0 == 0) 0 else self.ch_volume[CH4];
-            self.updateSample(CH4, val, @as(usize, @intCast(self.cycles_since_last_render)) % BL_PHASES);
-        }
-
-        // CH1 period sweep
-        if (self.ch1.period_sweep_enabled != 0 and tick_128hz) {
-            self.ch1.period_sweep_timer +%= 1;
-
-            if (self.ch1.period_sweep_timer == 7) {
-                const result = calcNewSweepFreqWithOverflowCheck(
-                    self.ch1.period_sweep_shadow,
-                    self.ch1.period_sweep_dir,
-                    self.ch1.period_sweep_individual_step,
-                );
-                if (result[1] == 1) {
-                    //std.debug.print("freq overflow in step, turning off\n", .{});
-                    self.ch_on[CH1] = 0;
-                    self.updateSample(CH1, 0, 0);
-                    return;
-                } else {
-                    self.ch1.period_sweep_shadow = result[0];
-                    self.period[CH1] = self.ch1.period_sweep_shadow;
-                    self.pulse[CH1].handlePeriodSettingChange(self.period[CH1]);
-                    const result2 = calcNewSweepFreqWithOverflowCheck(
-                        self.ch1.period_sweep_shadow,
-                        self.ch1.period_sweep_dir,
-                        self.ch1.period_sweep_individual_step,
-                    );
-                    if (result2[1] == 1) {
-                        //std.debug.print("freq overflow in step (check #2), turning off\n", .{});
-                        self.ch_on[CH1] = 0;
-                        self.updateSample(CH1, 0, 0);
-                        return;
-                    }
-                }
-            }
+            self.updateSample(CH4, val, 0);
         }
 
         if (tick_256hz) {
@@ -686,6 +664,38 @@ pub const Apu = struct {
                 }
             }
         }
+
+        // CH1 period sweep
+        if (tick_128hz) {
+            self.ch1.period_sweep_timer +%= 1;
+
+            if (self.ch1.period_sweep_enabled != 0 and self.ch1.period_sweep_timer == 7) {
+                const result = calcNewSweepFreqWithOverflowCheck(
+                    self.ch1.period_sweep_shadow,
+                    self.ch1.period_sweep_dir,
+                    self.ch1.period_sweep_individual_step,
+                );
+                if (result[1] == 1) {
+                    self.ch_on[CH1] = 0;
+                    self.updateSample(CH1, 0, 0);
+                    return;
+                } else {
+                    self.ch1.period_sweep_shadow = result[0];
+                    self.period[CH1] = self.ch1.period_sweep_shadow;
+                    self.pulse[CH1].handlePeriodSettingChange(self.period[CH1]);
+                    const result2 = calcNewSweepFreqWithOverflowCheck(
+                        self.ch1.period_sweep_shadow,
+                        self.ch1.period_sweep_dir,
+                        self.ch1.period_sweep_individual_step,
+                    );
+                    if (result2[1] == 1) {
+                        self.ch_on[CH1] = 0;
+                        self.updateSample(CH1, 0, 0);
+                        return;
+                    }
+                }
+            }
+        }
     }
 
     pub fn handleSecondaryDivEvent(self: *Self) void {
@@ -697,14 +707,14 @@ pub const Apu = struct {
 
         for (0..2) |ch_ix| {
             if (self.ch_on[ch_ix] != 0 and self.pulse[ch_ix].envelope_timer == 0) {
-                self.pulse[ch_ix].tick_envelope = true;
-                self.pulse[ch_ix].envelope_timer = self.envelope_sweep_pace[ch_ix];
+                self.pulse[ch_ix].tick_envelope = self.pulse[ch_ix].envelope_sweep_pace != 0;
+                self.pulse[ch_ix].envelope_timer = self.pulse[ch_ix].envelope_sweep_pace;
             }
         }
 
         if (self.ch_on[CH4] != 0 and self.ch4.envelope_timer == 0) {
-            self.ch4.tick_envelope = true;
-            self.ch4.envelope_timer = self.envelope_sweep_pace[CH4];
+            self.ch4.tick_envelope = self.ch4.envelope_sweep_pace != 0;
+            self.ch4.envelope_timer = self.ch4.envelope_sweep_pace;
         }
     }
 
@@ -723,8 +733,8 @@ pub const Apu = struct {
             },
             .NR12 => {
                 const init_volume: u8 = self.ch_init_volume[CH1];
-                const envelope_dir: u8 = self.envelope_dir[CH1];
-                const sweep_pace: u8 = self.envelope_sweep_pace[CH1];
+                const envelope_dir: u8 = self.pulse[CH1].envelope_dir;
+                const sweep_pace: u8 = self.pulse[CH1].envelope_sweep_pace;
                 return (init_volume << 4) | (envelope_dir << 3) | sweep_pace;
             },
             .NR13 => return 0xff,
@@ -739,8 +749,8 @@ pub const Apu = struct {
             },
             .NR22 => {
                 const init_volume: u8 = self.ch_init_volume[CH2];
-                const envelope_dir: u8 = self.envelope_dir[CH2];
-                const sweep_pace: u8 = self.envelope_sweep_pace[CH2];
+                const envelope_dir: u8 = self.pulse[CH2].envelope_dir;
+                const sweep_pace: u8 = self.pulse[CH2].envelope_sweep_pace;
                 return (init_volume << 4) | (envelope_dir << 3) | sweep_pace;
             },
             .NR23 => return 0xff,
@@ -767,8 +777,8 @@ pub const Apu = struct {
             .NR41 => return 0xff,
             .NR42 => {
                 const init_volume: u8 = self.ch_init_volume[CH4];
-                const envelope_dir: u8 = self.envelope_dir[CH4];
-                const sweep_pace: u8 = self.envelope_sweep_pace[CH4];
+                const envelope_dir: u8 = self.ch4.envelope_dir;
+                const sweep_pace: u8 = self.ch4.envelope_sweep_pace;
                 return (init_volume << 4) | (envelope_dir << 3) | sweep_pace;
             },
             .NR43 => {
@@ -825,10 +835,10 @@ pub const Apu = struct {
             .NR12 => {
                 // TODO writes should not take effect until retrigger if the channel is already on
                 self.ch_init_volume[CH1] = @truncate((val & 0b1111_0000) >> 4);
-                self.envelope_dir[CH1] = @truncate((val & 0b0000_1000) >> 3);
-                self.envelope_sweep_pace[CH1] = @truncate(val & 0b0000_0111);
-                self.pulse[CH1].envelope_timer = self.envelope_sweep_pace[CH1];
-                if (self.ch_init_volume[CH1] == 0 and self.envelope_dir[CH1] == 0) {
+                self.pulse[CH1].envelope_dir = @truncate((val & 0b0000_1000) >> 3);
+                self.pulse[CH1].envelope_sweep_pace = @truncate(val & 0b0000_0111);
+                self.pulse[CH1].envelope_timer = self.pulse[CH1].envelope_sweep_pace;
+                if (self.ch_init_volume[CH1] == 0 and self.pulse[CH1].envelope_dir == 0) {
                     // DAC turned off, so turn the channel off as well
                     self.ch_on[CH1] = 0;
                 }
@@ -856,10 +866,10 @@ pub const Apu = struct {
             .NR22 => {
                 // TODO writes should not take effect until retrigger if the channel is already on
                 self.ch_init_volume[CH2] = @truncate((val & 0b1111_0000) >> 4);
-                self.envelope_dir[CH2] = @truncate((val & 0b0000_1000) >> 3);
-                self.envelope_sweep_pace[CH2] = @truncate(val & 0b0000_0111);
-                self.pulse[CH2].envelope_timer = self.envelope_sweep_pace[CH2];
-                if (self.ch_init_volume[CH2] == 0 and self.envelope_dir[CH2] == 0) {
+                self.pulse[CH2].envelope_dir = @truncate((val & 0b0000_1000) >> 3);
+                self.pulse[CH2].envelope_sweep_pace = @truncate(val & 0b0000_0111);
+                self.pulse[CH2].envelope_timer = self.pulse[CH2].envelope_sweep_pace;
+                if (self.ch_init_volume[CH2] == 0 and self.pulse[CH2].envelope_dir == 0) {
                     // DAC turned off, so turn the channel off as well
                     self.ch_on[CH2] = 0;
                 }
@@ -915,10 +925,10 @@ pub const Apu = struct {
             .NR42 => {
                 // TODO writes should not take effect until retrigger if the channel is already on
                 self.ch_init_volume[CH4] = @truncate((val & 0b1111_0000) >> 4);
-                self.envelope_dir[CH4] = @truncate((val & 0b0000_1000) >> 3);
-                self.envelope_sweep_pace[CH4] = @truncate(val & 0b0000_0111);
-                self.ch4.envelope_timer = self.envelope_sweep_pace[CH4];
-                if (self.ch_init_volume[CH4] == 0 and self.envelope_dir[CH4] == 0) {
+                self.ch4.envelope_dir = @truncate((val & 0b0000_1000) >> 3);
+                self.ch4.envelope_sweep_pace = @truncate(val & 0b0000_0111);
+                self.ch4.envelope_timer = self.ch4.envelope_sweep_pace;
+                if (self.ch_init_volume[CH4] == 0 and self.ch4.envelope_dir == 0) {
                     // DAC turned off, so turn the channel off as well
                     self.ch_on[CH4] = 0;
                 }
@@ -1036,13 +1046,15 @@ pub const Apu = struct {
             } else {
                 try format(writer, "    Volume: {}\n", .{self.ch_volume[ch_ix]});
                 try format(writer, "    Initial volume: {}\n", .{self.ch_init_volume[ch_ix]});
+                const envelope_sweep_pace = if (ch_ix == CH4) self.ch4.envelope_sweep_pace else self.pulse[ch_ix].envelope_sweep_pace;
                 try format(writer, "    Envelope: {s}", .{
-                    if (self.envelope_sweep_pace[ch_ix] == 0) "disabled\n" else "",
+                    if (envelope_sweep_pace == 0) "disabled\n" else "",
                 });
-                if (self.envelope_sweep_pace[ch_ix] != 0) {
+                if (envelope_sweep_pace != 0) {
+                    const envelope_dir = if (ch_ix == CH4) self.ch4.envelope_dir else self.pulse[ch_ix].envelope_dir;
                     try format(writer, "{s} every {} ticks\n", .{
-                        if (self.envelope_dir[ch_ix] == 1) "increasing" else "decreasing",
-                        self.envelope_sweep_pace[ch_ix],
+                        if (envelope_dir == 1) "increasing" else "decreasing",
+                        envelope_sweep_pace,
                     });
                 }
             }

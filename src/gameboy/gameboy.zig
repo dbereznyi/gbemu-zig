@@ -333,6 +333,7 @@ pub const Gb = struct {
             0xff00...0xff7f => {
                 const reg_ix = addr - 0xff00;
                 return switch (reg_ix) {
+                    IoReg.DIV => @truncate(gb.timer.system_counter >> 8),
                     IoReg.NR10 => gb.apu.readReg(ApuReg.NR10),
                     IoReg.NR11 => gb.apu.readReg(ApuReg.NR11),
                     IoReg.NR12 => gb.apu.readReg(ApuReg.NR12),
@@ -403,7 +404,6 @@ pub const Gb = struct {
                 const reg_ix = addr - 0xff00;
                 switch (reg_ix) {
                     IoReg.DIV => {
-                        gb.io_regs[reg_ix] = 0;
                         gb.timer.system_counter = 0;
                     },
                     IoReg.NR10 => gb.apu.writeReg(ApuReg.NR10, val),
