@@ -1,5 +1,7 @@
 pub const GB = .{
     .CLOCK_RATE = 4194304,
+    .SCREEN_WIDTH = 160,
+    .SCREEN_HEIGHT = 144,
 };
 
 pub const AUDIO = .{

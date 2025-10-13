@@ -1,6 +1,7 @@
 const std = @import("std");
 const Pixel = @import("../../pixel.zig").Pixel;
 const format = std.fmt.format;
+const constants = @import("../../constants.zig");
 
 pub const Ppu = struct {
     const Self = @This();
@@ -87,7 +88,7 @@ pub const Ppu = struct {
         palette: Palette,
         vblank_callback: ?VblankCallback,
     ) !Ppu {
-        const screen: []Pixel = try alloc.alloc(Pixel, 160 * 144);
+        const screen: []Pixel = try alloc.alloc(Pixel, constants.GB.SCREEN_WIDTH * constants.GB.SCREEN_HEIGHT);
         for (screen) |*pixel| {
             pixel.* = palette.data()[0];
         }

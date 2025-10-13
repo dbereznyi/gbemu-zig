@@ -9,6 +9,7 @@ const Palette = @import("gameboy/ppu/ppu.zig").Ppu.Palette;
 const runDebugger = @import("gameboy/debug/runDebugger.zig").runDebugger;
 const Sample = @import("sample.zig").Sample;
 const constants = @import("constants.zig");
+const renderVramViewer = @import("gameboy/ppu/vram_viewer.zig").renderVramViewer;
 
 const CYCLES_UNTIL_VBLANK: usize = 16416;
 const VBLANK_CYCLES: usize = 1140;
@@ -37,54 +38,6 @@ pub fn main() !void {
         .{ dirname, std.fs.path.sep, std.fs.path.stem(rom_filepath) },
     );
     defer alloc.free(save_data_filepath);
-
-    // VRAM viewer window
-
-    // const VRAM_WINDOW_WIDTH = 16 * 8;
-    // const VRAM_WINDOW_HEIGHT = 3 * 8 * 8;
-
-    // var main_window_x: c_int = undefined;
-    // var main_window_y: c_int = undefined;
-    // c.SDL_GetWindowPosition(window, &main_window_x, &main_window_y);
-    // const vram_window_x = main_window_x + (160 * WINDOW_SCALE);
-    // const vram_window_y = main_window_y - 28;
-
-    // const vram_window = c.SDL_CreateWindow(
-    //     "vram viewer",
-    //     vram_window_x,
-    //     vram_window_y,
-    //     VRAM_WINDOW_WIDTH * WINDOW_SCALE,
-    //     VRAM_WINDOW_HEIGHT * WINDOW_SCALE,
-    //     c.SDL_WINDOW_OPENGL,
-    // ) orelse {
-    //     c.SDL_Log("Unable to create window: %s", c.SDL_GetError());
-    //     return error.SDLInitializationFailed;
-    // };
-    // defer c.SDL_DestroyWindow(window);
-
-    // const vram_renderer = c.SDL_CreateRenderer(vram_window, -1, 0) orelse {
-    //     c.SDL_Log("Unable to create renderer: %s", c.SDL_GetError());
-    //     return error.SDLInitializationFailed;
-    // };
-    // defer c.SDL_DestroyRenderer(renderer);
-
-    // const vram_texture = c.SDL_CreateTexture(
-    //     vram_renderer,
-    //     c.SDL_PIXELFORMAT_RGB24,
-    //     c.SDL_TEXTUREACCESS_STREAMING,
-    //     VRAM_WINDOW_WIDTH,
-    //     VRAM_WINDOW_HEIGHT,
-    // ) orelse {
-    //     c.SDL_Log("Unable to create texture: %s", c.SDL_GetError());
-    //     return error.SDLInitializationFailed;
-    // };
-    // defer c.SDL_DestroyTexture(texture);
-
-    // var vram_pixels = try alloc.alloc(
-    //     Pixel,
-    //     VRAM_WINDOW_HEIGHT * VRAM_WINDOW_WIDTH,
-    // );
-    // defer alloc.free(vram_pixels);
 
     var sdl = try Sdl.init(alloc);
     defer sdl.deinit(alloc);
@@ -131,21 +84,96 @@ pub fn main() !void {
     try gb.cart.persistRam(save_data_filepath);
 }
 
+const Window = struct {
+    const Self = @This();
+
+    pub const Config = struct {
+        title: [*c]const u8,
+        width: c_int,
+        height: c_int,
+        scale: c_int,
+        pos_x: ?c_int,
+        pos_y: ?c_int,
+    };
+
+    window: *c.SDL_Window,
+    renderer: *c.SDL_Renderer,
+    texture: *c.SDL_Texture,
+
+    width: c_int,
+    height: c_int,
+    scale: c_int,
+
+    pub fn init(config: Config) !Self {
+        const window = c.SDL_CreateWindow(
+            config.title,
+            if (config.pos_x) |pos_x| pos_x else c.SDL_WINDOWPOS_UNDEFINED,
+            if (config.pos_y) |pos_y| pos_y else c.SDL_WINDOWPOS_UNDEFINED,
+            config.width * config.scale,
+            config.height * config.scale,
+            c.SDL_WINDOW_OPENGL,
+        ) orelse {
+            c.SDL_Log("Unable to create window: %s", c.SDL_GetError());
+            return error.SDLInitializationFailed;
+        };
+        const renderer = c.SDL_CreateRenderer(window, -1, 0) orelse {
+            c.SDL_Log("Unable to create renderer: %s", c.SDL_GetError());
+            return error.SDLInitializationFailed;
+        };
+        const texture = c.SDL_CreateTexture(
+            renderer,
+            c.SDL_PIXELFORMAT_RGB24,
+            c.SDL_TEXTUREACCESS_STREAMING,
+            config.width,
+            config.height,
+        ) orelse {
+            c.SDL_Log("Unable to create texture: %s", c.SDL_GetError());
+            return error.SDLInitializationFailed;
+        };
+
+        return .{
+            .window = window,
+            .renderer = renderer,
+            .texture = texture,
+            .width = config.width,
+            .height = config.height,
+            .scale = config.scale,
+        };
+    }
+
+    pub fn deinit(self: *const Self) void {
+        c.SDL_DestroyTexture(self.texture);
+        c.SDL_DestroyRenderer(self.renderer);
+        c.SDL_DestroyWindow(self.window);
+    }
+
+    pub fn setPixels(self: *Self, pixels: []Pixel) void {
+        _ = c.SDL_UpdateTexture(self.texture, null, @ptrCast(pixels), self.width * self.scale);
+        _ = c.SDL_RenderClear(self.renderer);
+        _ = c.SDL_RenderCopy(self.renderer, self.texture, null, null);
+        c.SDL_RenderPresent(self.renderer);
+    }
+
+    pub fn setTitle(self: *Self, title: []const u8) void {
+        const title_cstr: [*:0]const u8 = title.ptr[0 .. title.len - 1 :0];
+        c.SDL_SetWindowTitle(self.window, title_cstr);
+    }
+};
+
 const Sdl = struct {
     const Self = @This();
     const FPS_LEN = 10;
 
     gb: ?*Gb,
-    window: *c.SDL_Window,
-    renderer: *c.SDL_Renderer,
-    texture: *c.SDL_Texture,
+    gb_window: Window,
+    vram_pixels: []Pixel,
+    vram_window: Window,
     audio_device: u32,
     samples_buf: []Sample,
     samples_buf_ix: usize,
     last_vblank_at: std.time.Instant,
     fps: [FPS_LEN]f32,
     fps_ix: usize,
-    last_audio_render_at: std.time.Instant,
 
     pub fn init(alloc: std.mem.Allocator) !Self {
         if (c.SDL_Init(c.SDL_INIT_VIDEO | c.SDL_INIT_AUDIO) != 0) {
@@ -153,33 +181,29 @@ const Sdl = struct {
             return error.SDLInitializationFailed;
         }
 
-        const window = c.SDL_CreateWindow(
-            "gameboy",
-            c.SDL_WINDOWPOS_UNDEFINED,
-            c.SDL_WINDOWPOS_UNDEFINED,
-            160 * WINDOW_SCALE,
-            144 * WINDOW_SCALE,
-            c.SDL_WINDOW_OPENGL,
-        ) orelse {
-            c.SDL_Log("Unable to create window: %s", c.SDL_GetError());
-            return error.SDLInitializationFailed;
-        };
+        const gb_window = try Window.init(.{
+            .title = "gameboy",
+            .width = constants.GB.SCREEN_WIDTH,
+            .height = constants.GB.SCREEN_HEIGHT,
+            .scale = WINDOW_SCALE,
+            .pos_x = null,
+            .pos_y = null,
+        });
 
-        const renderer = c.SDL_CreateRenderer(window, -1, 0) orelse {
-            c.SDL_Log("Unable to create renderer: %s", c.SDL_GetError());
-            return error.SDLInitializationFailed;
-        };
+        const VRAM_WINDOW_WIDTH = 16 * 8;
+        const VRAM_WINDOW_HEIGHT = 3 * 8 * 8;
+        var gb_window_x: c_int = undefined;
+        var gb_window_y: c_int = undefined;
+        _ = c.SDL_GetWindowPosition(gb_window.window, &gb_window_x, &gb_window_y);
 
-        const texture = c.SDL_CreateTexture(
-            renderer,
-            c.SDL_PIXELFORMAT_RGB24,
-            c.SDL_TEXTUREACCESS_STREAMING,
-            160,
-            144,
-        ) orelse {
-            c.SDL_Log("Unable to create texture: %s", c.SDL_GetError());
-            return error.SDLInitializationFailed;
-        };
+        const vram_window = try Window.init(.{
+            .title = "vram viewer",
+            .width = VRAM_WINDOW_WIDTH,
+            .height = VRAM_WINDOW_HEIGHT,
+            .scale = WINDOW_SCALE,
+            .pos_x = gb_window_x + (constants.GB.SCREEN_WIDTH * WINDOW_SCALE),
+            .pos_y = gb_window_y,
+        });
 
         var audio_spec = c.SDL_AudioSpec{
             .freq = constants.AUDIO.SAMPLE_RATE,
@@ -196,30 +220,28 @@ const Sdl = struct {
             c.SDL_Log("Unable to open audio device: %s", c.SDL_GetError());
             return error.SDLInitializationFailed;
         }
-
         const samples_buf = try alloc.alloc(Sample, constants.AUDIO.SAMPLES_BUFFER_LEN);
 
         return .{
             .gb = null,
-            .window = window,
-            .renderer = renderer,
-            .texture = texture,
+            .gb_window = gb_window,
+            .vram_pixels = try alloc.alloc(Pixel, VRAM_WINDOW_HEIGHT * VRAM_WINDOW_WIDTH),
+            .vram_window = vram_window,
             .audio_device = audio_device,
             .samples_buf = samples_buf,
             .samples_buf_ix = 0,
             .last_vblank_at = try std.time.Instant.now(),
             .fps = [_]f32{0.0} ** FPS_LEN,
             .fps_ix = 0,
-            .last_audio_render_at = try std.time.Instant.now(),
         };
     }
 
     pub fn deinit(self: *Self, alloc: std.mem.Allocator) void {
         alloc.free(self.samples_buf);
         c.SDL_CloseAudioDevice(self.audio_device);
-        c.SDL_DestroyTexture(self.texture);
-        c.SDL_DestroyRenderer(self.renderer);
-        c.SDL_DestroyWindow(self.window);
+        self.gb_window.deinit();
+        self.vram_window.deinit();
+        alloc.free(self.vram_pixels);
         c.SDL_Quit();
     }
 
@@ -231,7 +253,10 @@ const Sdl = struct {
 
         c.SDL_PauseAudioDevice(self.audio_device, 0);
 
-        _ = c.SDL_UpdateTexture(self.texture, null, @ptrCast(gb.ppu.screen), 160 * 3);
+        self.gb_window.setPixels(gb.ppu.screen);
+
+        renderVramViewer(gb, &self.vram_pixels);
+        self.vram_window.setPixels(self.vram_pixels);
 
         self.last_vblank_at = try std.time.Instant.now();
 
@@ -241,12 +266,6 @@ const Sdl = struct {
             }
 
             runGameboy(gb);
-
-            // renderVramViewer(&gb, &vram_pixels);
-            // _ = c.SDL_UpdateTexture(vram_texture, null, @ptrCast(vram_pixels), VRAM_WINDOW_WIDTH * 3);
-            // _ = c.SDL_RenderClear(vram_renderer);
-            // _ = c.SDL_RenderCopy(vram_renderer, vram_texture, null, null);
-            // c.SDL_RenderPresent(vram_renderer);
         }
     }
 
@@ -279,10 +298,9 @@ const Sdl = struct {
                     },
                     c.SDL_WINDOWEVENT => {
                         if (event.window.event == c.SDL_WINDOWEVENT_CLOSE) {
-                            // if (event.window.windowID == c.SDL_GetWindowID(vram_window)) {
-                            //     c.SDL_HideWindow(self.vram_window);
-                            // } else
-                            if (event.window.windowID == c.SDL_GetWindowID(self.window)) {
+                            if (event.window.windowID == c.SDL_GetWindowID(self.vram_window.window)) {
+                                c.SDL_HideWindow(self.vram_window.window);
+                            } else if (event.window.windowID == c.SDL_GetWindowID(self.gb_window.window)) {
                                 gb.setIsRunning(false);
                             }
                         }
@@ -294,14 +312,17 @@ const Sdl = struct {
         }
     }
 
-    pub fn vblankCallback(self: *Self, screen: []Pixel) void {
+    pub fn vblankCallback(self: *Self, pixels: []Pixel) void {
         const now = std.time.Instant.now() catch @panic("Could not get current time");
         defer self.last_vblank_at = now;
 
-        _ = c.SDL_UpdateTexture(self.texture, null, @ptrCast(screen), 160 * 3);
-        _ = c.SDL_RenderClear(self.renderer);
-        _ = c.SDL_RenderCopy(self.renderer, self.texture, null, null);
-        c.SDL_RenderPresent(self.renderer);
+        self.gb_window.setPixels(pixels);
+
+        if (self.gb) |gb| {
+            // This might be a bit cleaner if done via a separate callback, but works for now
+            renderVramViewer(gb, &self.vram_pixels);
+            self.vram_window.setPixels(self.vram_pixels);
+        }
 
         self.handleEvents();
 
@@ -325,8 +346,7 @@ const Sdl = struct {
 
                 var buf: [32]u8 = undefined;
                 const title = std.fmt.bufPrint(&buf, "gameboy (FPS: {d:.2})\x00", .{avg_fps}) catch @panic("buffer overflow when trying to write title");
-                const title_cstr: [*:0]const u8 = title.ptr[0 .. title.len - 1 :0];
-                c.SDL_SetWindowTitle(self.window, title_cstr);
+                self.gb_window.setTitle(title);
             }
         }
     }
@@ -336,8 +356,6 @@ const Sdl = struct {
         self.samples_buf_ix += 1;
 
         if (self.samples_buf_ix == constants.AUDIO.SAMPLES_BUFFER_LEN) {
-            const now = std.time.Instant.now() catch @panic("...");
-            defer self.last_audio_render_at = now;
             defer self.samples_buf_ix = 0;
 
             const result = c.SDL_QueueAudio(
@@ -350,15 +368,6 @@ const Sdl = struct {
                     "SDL_QueueAudio failed with error: {s}\n",
                     .{c.SDL_GetError()},
                 );
-            }
-
-            const elapsed_ns = now.since(self.last_audio_render_at);
-            const effective_sample_rate = 1_000_000_000 / (elapsed_ns / constants.AUDIO.SAMPLES_BUFFER_LEN);
-            if (false and effective_sample_rate < constants.AUDIO.SAMPLE_RATE) {
-                std.debug.print("time since last render = {} ns ({d:.2} Hz)\n", .{
-                    elapsed_ns,
-                    effective_sample_rate,
-                });
             }
         }
     }
