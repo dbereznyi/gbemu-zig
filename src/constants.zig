@@ -12,5 +12,5 @@ pub const AUDIO = .{
 
 pub const DEBUG = .{
     .DISPLAY_FPS = true,
-    .OUTPUT_AUDIO_FILES = true,
+    .OUTPUT_AUDIO_FILES = false,
 };

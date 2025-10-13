@@ -11,10 +11,6 @@ const Sample = @import("sample.zig").Sample;
 const constants = @import("constants.zig");
 const renderVramViewer = @import("gameboy/ppu/vram_viewer.zig").renderVramViewer;
 
-const CYCLES_UNTIL_VBLANK: usize = 16416;
-const VBLANK_CYCLES: usize = 1140;
-const FRAME_CYCLES: usize = CYCLES_UNTIL_VBLANK + VBLANK_CYCLES;
-
 const WINDOW_SCALE = 3;
 
 pub fn main() !void {
