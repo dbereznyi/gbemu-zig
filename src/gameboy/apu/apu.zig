@@ -146,7 +146,6 @@ const Ch3 = struct {
 
     // Number of APU cycles until next sample
     timer: u13,
-    timer_reload: u13,
 
     pub fn init() Self {
         return .{
@@ -158,14 +157,12 @@ const Ch3 = struct {
             .wav_ram_ix = 0,
             .wav_ram = [_]u4{0} ** 32,
             .timer = 0,
-            .timer_reload = 0,
         };
     }
 
-    pub fn handlePeriodSettingChange(self: *Self, period_setting: u11) void {
+    pub fn loadTimer(self: *Self, period_setting: u11) void {
         const timer_val = 0b111_1111_1111 - period_setting + 1;
         self.timer = timer_val;
-        self.timer_reload = timer_val;
     }
 };
 
@@ -512,7 +509,7 @@ pub const Apu = struct {
 
             while (cycles_rem > self.ch3.timer) {
                 cycles_rem -= self.ch3.timer;
-                self.ch3.timer = self.ch3.timer_reload;
+                self.ch3.loadTimer(self.period_setting[CH3]);
 
                 self.ch3.wav_ram_ix +%= 1;
                 const val_raw = self.ch3.wav_ram[self.ch3.wav_ram_ix];
@@ -925,13 +922,13 @@ pub const Apu = struct {
                 const val_u11: u11 = val;
                 self.period_setting[CH3] = (self.period_setting[CH3] & 0b111_0000_0000) | val_u11;
 
-                self.ch3.handlePeriodSettingChange(self.period_setting[CH3]);
+                self.ch3.loadTimer(self.period_setting[CH3]);
             },
             .NR34 => {
                 self.length_enable[CH3] = @truncate((val & 0b0100_0000) >> 6);
                 const val_u11: u11 = val;
                 self.period_setting[CH3] = (self.period_setting[CH3] & 0b000_1111_1111) | (val_u11 << 8);
-                self.ch3.handlePeriodSettingChange(self.period_setting[CH3]);
+                self.ch3.loadTimer(self.period_setting[CH3]);
                 if (val & 0b1000_0000 > 0) {
                     self.triggerChannel(CH3);
                 }
@@ -1037,7 +1034,7 @@ pub const Apu = struct {
             if (ch_ix != CH4) {
                 try format(writer, "    Next sample in {} APU ticks (sample length: {} APU ticks)\n", .{
                     if (ch_ix < 2) self.pulse[ch_ix].timer else self.ch3.timer,
-                    if (ch_ix < 2) ((0b111_1111_1111 - @as(u13, @intCast(self.period_setting[ch_ix]))) << 1) + 1 else self.ch3.timer_reload,
+                    if (ch_ix < 2) ((0b111_1111_1111 - @as(u13, @intCast(self.period_setting[ch_ix]))) << 1) + 1 else (0b111_1111_1111 - @as(u13, @intCast(self.period_setting[CH3]))) + 1,
                 });
             }
 
