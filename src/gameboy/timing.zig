@@ -8,24 +8,19 @@ const runDma = @import("./dma/run.zig").runDma;
 const constants = @import("../constants.zig");
 
 const LCDC_PERIOD: u64 = 70224;
-// Sleeping for the theoretically correct amount of nanoseconds leads to running just slightly too slow.
-// I think this may be due to the inaccuracy of std.time.sleep (= the OS-dependent implementation of it).
-// As a temporary hack, offsetting the measured lag makes things run more accurately.
-// (Noticeably, removing audio skips.)
-const SLEEP_LAG = 5_000_000;
 
 pub fn syncTime(gb: *Gb) void {
     if (gb.cycles_since_last_sync < LCDC_PERIOD / 3) {
         return;
     }
 
-    const target_ns: i64 = @intCast(gb.cycles_since_last_sync * (1_000_000_000 - SLEEP_LAG) / constants.GB.CLOCK_RATE);
+    const target_ns: i64 = @intCast(gb.cycles_since_last_sync * 1_000_000_000 / constants.GB.CLOCK_RATE);
 
     const now = std.time.Instant.now() catch @panic("Could not get current time");
     const sleep_time_ns: i64 = target_ns - @as(i64, @intCast(now.since(gb.last_sync)));
 
     if (sleep_time_ns > 0 and sleep_time_ns < LCDC_PERIOD * 1_200_000_000 / constants.GB.CLOCK_RATE) {
-        std.time.sleep(@intCast(sleep_time_ns));
+        std.posix.nanosleep(0, @intCast(sleep_time_ns));
 
         // std.debug.print("slept {} ns ({} us), cycles_since_last_sync = {}, target_us = {}, elasped_us = {}\n", .{
         //     sleep_time_ns,
