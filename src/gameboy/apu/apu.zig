@@ -680,6 +680,8 @@ pub const Apu = struct {
             self.ch1.period_sweep_timer +%= 1;
 
             if (self.ch1.period_sweep_enabled != 0 and self.ch1.period_sweep_timer == 7) {
+                self.ch1.period_sweep_timer = 0;
+
                 const result = calcNewSweepFreqWithOverflowCheck(
                     self.ch1.period_sweep_shadow,
                     self.ch1.period_sweep_dir,
@@ -691,8 +693,8 @@ pub const Apu = struct {
                     return;
                 } else {
                     self.ch1.period_sweep_shadow = result[0];
-                    self.period[CH1] = self.ch1.period_sweep_shadow;
-                    self.pulse[CH1].loadTimer(self.period[CH1]);
+                    self.period_setting[CH1] = self.ch1.period_sweep_shadow;
+                    self.pulse[CH1].loadTimer(self.period_setting[CH1]);
                     const result2 = calcNewSweepFreqWithOverflowCheck(
                         self.ch1.period_sweep_shadow,
                         self.ch1.period_sweep_dir,
