@@ -163,7 +163,7 @@ const Ch3 = struct {
     }
 
     pub fn handlePeriodSettingChange(self: *Self, period_setting: u11) void {
-        const timer_val = 0b111_1111_1111 - period_setting;
+        const timer_val = 0b111_1111_1111 - period_setting + 1;
         self.timer = timer_val;
         self.timer_reload = timer_val;
     }
@@ -203,36 +203,6 @@ const Ch4 = struct {
     }
 };
 
-const EnvelopeClock = struct {
-    const Self = @This();
-
-    clock: bool,
-    locked: bool,
-    should_lock: bool,
-
-    pub fn init() Self {
-        return .{
-            .clock = false,
-            .locked = false,
-            .should_lock = false,
-        };
-    }
-
-    pub fn set(self: *Self, value: bool, dir: u1, vol: u4) void {
-        if (self.clock == value) {
-            return;
-        }
-
-        if (value) {
-            self.clock = true;
-            self.should_lock = (vol == 0x0f and dir == 1) or (vol == 0x00 and dir == 0);
-        } else {
-            self.clock = false;
-            self.locked = self.locked or self.should_lock;
-        }
-    }
-};
-
 const PulseChannel = struct {
     const Self = @This();
 
@@ -240,9 +210,8 @@ const PulseChannel = struct {
     duty_step: u3,
     // Number of APU cycles until next sample
     timer: u13,
-    timer_reload: u13,
 
-    envelope_clock: EnvelopeClock,
+    tick_envelope: bool,
     envelope_dir: u1,
     envelope_sweep_pace: u3,
     envelope_timer: u3,
@@ -252,19 +221,17 @@ const PulseChannel = struct {
             .wave_duty = 0,
             .duty_step = 0,
             .timer = 0,
-            .timer_reload = 0,
-            .envelope_clock = EnvelopeClock.init(),
+            .tick_envelope = false,
             .envelope_dir = 0,
             .envelope_sweep_pace = 0,
             .envelope_timer = 0,
         };
     }
 
-    pub fn handlePeriodSettingChange(self: *Self, period_setting: u11) void {
+    pub fn loadTimer(self: *Self, period_setting: u11) void {
         const period_setting_u13: u13 = period_setting;
-        const timer_val = (0b111_1111_1111 - period_setting_u13) << 1;
+        const timer_val = ((0b111_1111_1111 - period_setting_u13) << 1) + 1;
         self.timer = timer_val;
-        self.timer_reload = timer_val;
     }
 };
 
@@ -289,7 +256,6 @@ pub const Apu = struct {
     length_timer: [4]u6,
     ch_init_volume: [4]u4,
     ch_volume: [4]u4,
-    envelope_sweep_pace: [4]u3,
     period_setting: [4]u11,
     period: [4]u11,
 
@@ -351,7 +317,6 @@ pub const Apu = struct {
             .length_timer = [_]u6{0} ** 4,
             .ch_init_volume = [_]u4{0} ** 4,
             .ch_volume = [_]u4{0} ** 4,
-            .envelope_sweep_pace = [_]u3{0} ** 4,
             .period_setting = [_]u11{0} ** 4,
             .period = [_]u11{0} ** 4,
             .ch1 = Ch1.init(),
@@ -528,8 +493,8 @@ pub const Apu = struct {
             var cycles_rem = cycles;
 
             while (cycles_rem > self.pulse[ch_ix].timer) {
-                cycles_rem -= self.pulse[ch_ix].timer;
-                self.pulse[ch_ix].timer = self.pulse[ch_ix].timer_reload;
+                cycles_rem -= self.pulse[ch_ix].timer + 1;
+                self.pulse[ch_ix].loadTimer(self.period_setting[ch_ix]);
 
                 self.pulse[ch_ix].duty_step +%= 1;
                 const val = if (WAVEFORMS[self.pulse[ch_ix].wave_duty][self.pulse[ch_ix].duty_step] != 0) self.ch_volume[ch_ix] else 0;
@@ -619,25 +584,39 @@ pub const Apu = struct {
     }
 
     fn tickPulseEnvelope(self: *Self, ch_ix: usize) void {
-        self.pulse[ch_ix].envelope_clock.set(false, 0, 0);
-        if (self.pulse[ch_ix].envelope_clock.locked) {
-            return;
-        }
+        self.pulse[ch_ix].tick_envelope = false;
         if (self.pulse[ch_ix].envelope_sweep_pace == 0) {
             return;
         }
 
-        self.pulse[ch_ix].envelope_clock.set(false, 0, 0);
-
         if (self.pulse[ch_ix].envelope_dir == 1) {
-            self.ch_volume[ch_ix] += 1;
+            self.ch_volume[ch_ix] +|= 1;
         } else {
-            self.ch_volume[ch_ix] -= 1;
+            self.ch_volume[ch_ix] -|= 1;
         }
 
         if (self.ch_on[ch_ix] != 0) {
             const val = if (WAVEFORMS[self.pulse[ch_ix].wave_duty][self.pulse[ch_ix].duty_step] != 0) self.ch_volume[ch_ix] else 0;
             self.updateSample(ch_ix, val, 0);
+        }
+    }
+
+    fn tickNoiseEnvelope(self: *Self) void {
+        self.ch4.tick_envelope = false;
+        if (self.ch4.envelope_sweep_pace == 0) {
+            return;
+        }
+
+        if (self.ch4.envelope_dir == 1) {
+            self.ch_volume[CH4] +|= 1;
+        } else {
+            self.ch_volume[CH4] -|= 1;
+        }
+
+        if (self.ch_on[CH4] != 0) {
+            const bit_0 = self.ch4.lfsr & 0x0001;
+            const val = if (bit_0 == 0) 0 else self.ch_volume[CH4];
+            self.updateSample(CH4, val, 0);
         }
     }
 
@@ -656,7 +635,7 @@ pub const Apu = struct {
 
         if (tick_64hz) {
             for (0..2) |ch_ix| {
-                if (!self.pulse[ch_ix].envelope_clock.clock) {
+                if (!self.pulse[ch_ix].tick_envelope) {
                     self.pulse[ch_ix].envelope_timer -%= 1;
                 }
             }
@@ -667,23 +646,13 @@ pub const Apu = struct {
         }
 
         for (0..2) |ch_ix| {
-            if (self.pulse[ch_ix].envelope_clock.clock) {
+            if (self.pulse[ch_ix].tick_envelope) {
                 self.tickPulseEnvelope(ch_ix);
             }
         }
 
-        if (self.ch4.tick_envelope and self.ch4.envelope_sweep_pace != 0) {
-            self.ch4.tick_envelope = false;
-
-            if (self.ch4.envelope_dir == 1) {
-                self.ch_volume[CH4] +|= 1;
-            } else {
-                self.ch_volume[CH4] -|= 1;
-            }
-
-            const bit_0 = self.ch4.lfsr & 0x0001;
-            const val = if (bit_0 == 0) 0 else self.ch_volume[CH4];
-            self.updateSample(CH4, val, 0);
+        if (self.ch4.tick_envelope) {
+            self.tickNoiseEnvelope();
         }
 
         if (tick_256hz) {
@@ -726,7 +695,7 @@ pub const Apu = struct {
                 } else {
                     self.ch1.period_sweep_shadow = result[0];
                     self.period[CH1] = self.ch1.period_sweep_shadow;
-                    self.pulse[CH1].handlePeriodSettingChange(self.period[CH1]);
+                    self.pulse[CH1].loadTimer(self.period[CH1]);
                     const result2 = calcNewSweepFreqWithOverflowCheck(
                         self.ch1.period_sweep_shadow,
                         self.ch1.period_sweep_dir,
@@ -751,11 +720,7 @@ pub const Apu = struct {
 
         for (0..2) |ch_ix| {
             if (self.ch_on[ch_ix] != 0 and self.pulse[ch_ix].envelope_timer == 0) {
-                self.pulse[ch_ix].envelope_clock.set(
-                    self.pulse[ch_ix].envelope_sweep_pace != 0,
-                    self.pulse[ch_ix].envelope_dir,
-                    self.ch_volume[ch_ix],
-                );
+                self.pulse[ch_ix].tick_envelope = self.pulse[ch_ix].envelope_sweep_pace != 0;
                 self.pulse[ch_ix].envelope_timer = self.pulse[ch_ix].envelope_sweep_pace;
             }
         }
@@ -898,13 +863,13 @@ pub const Apu = struct {
                 const val_u11: u11 = val;
                 self.period_setting[CH1] = (self.period_setting[CH1] & 0b111_0000_0000) | val_u11;
 
-                self.pulse[CH1].handlePeriodSettingChange(self.period_setting[CH1]);
+                self.pulse[CH1].loadTimer(self.period_setting[CH1]);
             },
             .NR14 => {
                 self.length_enable[CH1] = @truncate((val & 0b0100_0000) >> 6);
                 const val_u11: u11 = val;
                 self.period_setting[CH1] = (self.period_setting[CH1] & 0b000_1111_1111) | (val_u11 << 8);
-                self.pulse[CH1].handlePeriodSettingChange(self.period_setting[CH1]);
+                self.pulse[CH1].loadTimer(self.period_setting[CH1]);
                 if (val & 0b1000_0000 > 0) {
                     self.triggerChannel(CH1);
                 }
@@ -930,13 +895,13 @@ pub const Apu = struct {
                 const val_u11: u11 = val;
                 self.period_setting[CH2] = (self.period_setting[CH2] & 0b111_0000_0000) | val_u11;
 
-                self.pulse[CH2].handlePeriodSettingChange(self.period_setting[CH1]);
+                self.pulse[CH2].loadTimer(self.period_setting[CH1]);
             },
             .NR24 => {
                 self.length_enable[CH2] = @truncate((val & 0b0100_0000) >> 6);
                 const val_u11: u11 = val;
                 self.period_setting[CH2] = (self.period_setting[CH2] & 0b000_1111_1111) | (val_u11 << 8);
-                self.pulse[CH2].handlePeriodSettingChange(self.period_setting[CH2]);
+                self.pulse[CH2].loadTimer(self.period_setting[CH2]);
                 if (val & 0b1000_0000 > 0) {
                     self.triggerChannel(CH2);
                 }
@@ -1072,7 +1037,7 @@ pub const Apu = struct {
             if (ch_ix != CH4) {
                 try format(writer, "    Next sample in {} APU ticks (sample length: {} APU ticks)\n", .{
                     if (ch_ix < 2) self.pulse[ch_ix].timer else self.ch3.timer,
-                    if (ch_ix < 2) self.pulse[ch_ix].timer_reload else self.ch3.timer_reload,
+                    if (ch_ix < 2) ((0b111_1111_1111 - @as(u13, @intCast(self.period_setting[ch_ix]))) << 1) + 1 else self.ch3.timer_reload,
                 });
             }
 
@@ -1104,11 +1069,13 @@ pub const Apu = struct {
                 try format(writer, "    Envelope: {s}", .{
                     if (envelope_sweep_pace == 0) "disabled\n" else "",
                 });
+                const envelope_timer = if (ch_ix == CH4) self.ch4.envelope_timer else self.pulse[ch_ix].envelope_timer;
                 if (envelope_sweep_pace != 0) {
                     const envelope_dir = if (ch_ix == CH4) self.ch4.envelope_dir else self.pulse[ch_ix].envelope_dir;
-                    try format(writer, "{s} every {} ticks\n", .{
+                    try format(writer, "{s} every {} ticks, next change in {} ticks\n", .{
                         if (envelope_dir == 1) "increasing" else "decreasing",
                         envelope_sweep_pace,
+                        envelope_timer,
                     });
                 }
             }
