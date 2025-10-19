@@ -10,6 +10,8 @@ const runDebugger = @import("gameboy/debug/runDebugger.zig").runDebugger;
 const Sample = @import("sample.zig").Sample;
 const constants = @import("constants.zig");
 const renderVramViewer = @import("gameboy/ppu/vram_viewer.zig").renderVramViewer;
+const Bess = @import("bess.zig").Bess;
+const readBess = @import("bess.zig").readBess;
 
 const WINDOW_SCALE = 3;
 
@@ -73,6 +75,30 @@ pub fn main() !void {
         //try gb.debug.breakpoints.append(.{ .bank = 3, .addr = 0x4000 });
         try gb.debug.breakpoints.append(.{ .bank = 0, .addr = 0x028a });
         gb.debug.stack_base = 0xdfff;
+    }
+
+    const bess_data_filepath = "../Pocket_Monsters_-_Red_Version_(J)_(V1.1)_[S].s0";
+    const bess_data: ?[]u8 = read_bess_data: {
+        const data = std.fs.cwd().readFileAlloc(alloc, bess_data_filepath, 128 * 1024) catch |err| switch (err) {
+            error.FileNotFound => break :read_bess_data null,
+            else => {
+                std.log.warn("Failed to read savestate data: {}\n", .{err});
+                break :read_bess_data null;
+            },
+        };
+        break :read_bess_data data;
+    };
+    const bess: ?Bess = if (bess_data) |data| try readBess(alloc, data) else null;
+    defer if (bess) |b| b.deinit(alloc);
+
+    {
+        if (bess) |b| {
+            std.debug.print("bess.core = {}\n", .{.{
+                .pc = b.core.pc,
+                .af = b.core.af,
+                .vram_size = b.core.vram.len,
+            }});
+        }
     }
 
     try sdl.run(&gb);
