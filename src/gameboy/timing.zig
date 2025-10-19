@@ -14,7 +14,7 @@ pub fn syncTime(gb: *Gb) void {
         return;
     }
 
-    const target_ns: i64 = @intCast(gb.cycles_since_last_sync * 1_000_000_000 / constants.GB.CLOCK_RATE);
+    const target_ns: i64 = @intCast(gb.cycles_since_last_sync * (1_000_000_000 - 3_500_000) / constants.GB.CLOCK_RATE);
 
     const now = std.time.Instant.now() catch @panic("Could not get current time");
     const sleep_time_ns: i64 = target_ns - @as(i64, @intCast(now.since(gb.last_sync)));
