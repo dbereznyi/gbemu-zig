@@ -74,6 +74,10 @@ pub fn BoundedStack(comptime T: type, comptime capacity: usize) type {
             }
             return items_buf[0..index];
         }
+
+        pub fn clear(self: *Self) void {
+            self.len = 0;
+        }
     };
 }
 

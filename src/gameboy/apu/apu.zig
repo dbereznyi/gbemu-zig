@@ -105,10 +105,19 @@ const CH3 = 2;
 const CH4 = 3;
 
 const BandLimited = struct {
+    const Self = @This();
+
     buffer: [BL_STEP_WIDTH]Sample,
     buffer_ix: usize,
     output: Sample,
     input: Sample,
+
+    pub fn reset(self: *Self) void {
+        @memset(self.buffer[0..BL_STEP_WIDTH], Sample.init(0, 0));
+        self.buffer_ix = 0;
+        self.output = Sample.init(0, 0);
+        self.input = Sample.init(0, 0);
+    }
 };
 
 const Channel = struct {
@@ -139,6 +148,19 @@ const Channel = struct {
             .period = 0,
         };
     }
+
+    pub fn reset(self: *Self) void {
+        self.on = 0;
+        self.output_left = 0;
+        self.output_right = 0;
+        self.length_enable = 0;
+        self.init_length_timer = 0;
+        self.length_timer = 0;
+        self.init_volume = 0;
+        self.volume = 0;
+        self.period_setting = 0;
+        self.period = 0;
+    }
 };
 
 const Ch1 = struct {
@@ -160,6 +182,15 @@ const Ch1 = struct {
             .period_sweep_timer = 0,
             .period_sweep_shadow = 0,
         };
+    }
+
+    pub fn reset(self: *Self) void {
+        self.period_sweep_pace = 0;
+        self.period_sweep_dir = 0;
+        self.period_sweep_individual_step = 0;
+        self.period_sweep_enabled = 0;
+        self.period_sweep_timer = 0;
+        self.period_sweep_shadow = 0;
     }
 };
 
@@ -193,6 +224,17 @@ const Ch3 = struct {
     pub fn loadTimer(self: *Self, period_setting: u11) void {
         const timer_val = 0b111_1111_1111 - period_setting + 1;
         self.timer = timer_val;
+    }
+
+    pub fn reset(self: *Self) void {
+        self.init_length_timer = 0;
+        self.length_timer = 0;
+        self.init_volume = 0;
+        self.volume = 0;
+        self.dac_enabled = 0;
+        self.wav_ram_ix = 0;
+        @memset(self.wav_ram[0..32], 0);
+        self.timer = 0;
     }
 };
 
@@ -228,6 +270,20 @@ const Ch4 = struct {
             .envelope_timer = 0,
         };
     }
+
+    pub fn reset(self: *Self) void {
+        self.lfsr = 0;
+        self.lfsr_timer = 0;
+        self.clock_shift = 0;
+        self.lfsr_width = 0;
+        self.clock_divider = 0;
+        self.timer = 0;
+        self.counter = 0;
+        self.tick_envelope = false;
+        self.envelope_dir = 0;
+        self.envelope_sweep_pace = 0;
+        self.envelope_timer = 0;
+    }
 };
 
 const PulseChannel = struct {
@@ -260,6 +316,16 @@ const PulseChannel = struct {
         const timer_val = ((0b111_1111_1111 - period_setting_u13) << 1) + 1;
         self.timer = timer_val;
     }
+
+    pub fn reset(self: *Self) void {
+        self.wave_duty = 0;
+        self.duty_step = 0;
+        self.timer = 0;
+        self.tick_envelope = false;
+        self.envelope_dir = 0;
+        self.envelope_sweep_pace = 0;
+        self.envelope_timer = 0;
+    }
 };
 
 pub const Apu = struct {
@@ -289,11 +355,9 @@ pub const Apu = struct {
     audio_files: ?[4]std.fs.File,
 
     div_apu_counter: u8,
-
     // This counts 2 MHz cycles
     cycles: i32,
     sample_cycles: u32,
-
     cycles_since_last_render: i32,
 
     pub fn init(alloc: std.mem.Allocator, audio_callback: ?AudioCallback) !Self {
@@ -1022,7 +1086,7 @@ pub const Apu = struct {
     fn turnOff(self: *Self) void {
         self.on = 0;
 
-        // TODO
+        self.reset(); // TODO may not be accurate
     }
 
     fn turnOn(self: *Self) void {
@@ -1031,6 +1095,33 @@ pub const Apu = struct {
 
     pub fn reset(self: *Self) void {
         self.on = 0;
+        self.volume_left = 0;
+        self.volume_right = 0;
+
+        for (0..4) |i| {
+            self.ch[i].reset();
+        }
+        for (0..2) |i| {
+            self.pulse[i].reset();
+        }
+        self.ch1.reset();
+        self.ch3.reset();
+        self.ch4.reset();
+
+        for (0..4) |i| {
+            @memset(self.ch_samples[i], Sample.init(0, 0));
+        }
+
+        self.ch_samples_ix = 0;
+        for (0..4) |i| {
+            self.band_limited[i].reset();
+        }
+
+        self.div_apu_counter = 0;
+
+        self.cycles = 0;
+        self.sample_cycles = 0;
+        self.cycles_since_last_render = 0;
     }
 
     pub fn printState(self: *const Self, writer: anytype) !void {

@@ -98,4 +98,8 @@ pub const Debug = struct {
             try format(writer, "    rom{d:_>3}::{x:0>4}: {s}\n", .{ item.bank, item.pc, instr_str });
         }
     }
+
+    pub fn reset(debug: *Debug) void {
+        debug.execution_trace.clear();
+    }
 };

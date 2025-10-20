@@ -36,4 +36,13 @@ pub const Dma = struct {
             dma.bytesTransferred,
         });
     }
+
+    pub fn reset(dma: *Dma) void {
+        dma.mode = .idle;
+        dma.transferPending = false;
+        dma.startAddr = 0x0000;
+        dma.bytesTransferred = 0;
+        dma.cycles = 0;
+        dma.cycles_odd = 0;
+    }
 };

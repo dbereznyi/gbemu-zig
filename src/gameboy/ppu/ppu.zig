@@ -115,6 +115,20 @@ pub const Ppu = struct {
         alloc.free(self.screen);
     }
 
+    pub fn reset(self: *Self) void {
+        self.dots = 0;
+        self.y = 0;
+        self.x = 0;
+        self.wy = 0;
+        self.windowY = 0;
+        self.mode = .oam;
+        self.obj_attrs_buf = undefined;
+        self.obj_attrs = undefined;
+        self.scanning_oam = false;
+        self.drawing = false;
+        self.cycles_odd = 0;
+    }
+
     pub fn printState(ppu: *const Ppu, writer: anytype) !void {
         try format(writer, "dots={d:>6} y={d:0>3} x={d:0>3} wy={d:0>3} windowY={d:0>3} mode={s}\n", .{
             ppu.dots,

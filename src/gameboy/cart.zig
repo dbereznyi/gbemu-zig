@@ -264,4 +264,11 @@ pub const Cart = struct {
             else => std.debug.panic("TODO implement RAM read for {}\n", .{cart.mapper}),
         }
     }
+
+    pub fn reset(cart: *Cart) void {
+        cart.mbc1.ram_enable = 0;
+        cart.mbc1.current_rom_bank = 1;
+        cart.mbc1.current_ram_bank = 0;
+        cart.mbc1.banking_mode = 0;
+    }
 };

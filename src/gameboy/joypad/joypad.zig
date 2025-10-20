@@ -66,4 +66,11 @@ pub const Joypad = struct {
         const a: u1 = if (data & @intFromEnum(Button.a) > 0) 1 else 0;
         try format(writer, "U={} D={} L={} R={} ST={} SE={} B={} A={}\n", .{ down, up, left, right, start, select, b, a });
     }
+
+    pub fn reset(joypad: *Joypad) void {
+        joypad.mode = .waiting_for_low_edge;
+        joypad.data = 0;
+        joypad.cycles_since_low_edge_transition = 0;
+        joypad.cycles_odd = 0;
+    }
 };

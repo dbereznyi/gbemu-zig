@@ -286,8 +286,13 @@ pub const Gb = struct {
         @memset(gb.io_regs, 0);
         @memset(gb.hram, 0);
         gb.ie = 0;
+        gb.cart.reset();
+        gb.ppu.reset();
         gb.apu.reset();
+        gb.joypad.reset();
+        gb.dma.reset();
         gb.timer.reset();
+        gb.debug.reset();
         gb.pending_cycles = 0;
         gb.cycles = 0;
     }
@@ -651,6 +656,8 @@ pub const Gb = struct {
         copyMemoryRegion(gb.cart.ram, core.mbc_ram);
         copyMemoryRegion(gb.oam, core.oam);
         copyMemoryRegion(gb.hram, core.hram);
+
+        // TODO mbc regs
     }
 };
 
