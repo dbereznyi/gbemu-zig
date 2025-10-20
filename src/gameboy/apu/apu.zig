@@ -111,6 +111,36 @@ const BandLimited = struct {
     input: Sample,
 };
 
+const Channel = struct {
+    const Self = @This();
+
+    on: u1,
+    output_left: u1,
+    output_right: u1,
+    length_enable: u1,
+    init_length_timer: u6,
+    length_timer: u6,
+    init_volume: u4,
+    volume: u4,
+    period_setting: u11,
+    period: u11,
+
+    pub fn init() Self {
+        return .{
+            .on = 0,
+            .output_left = 0,
+            .output_right = 0,
+            .length_enable = 0,
+            .init_length_timer = 0,
+            .length_timer = 0,
+            .init_volume = 0,
+            .volume = 0,
+            .period_setting = 0,
+            .period = 0,
+        };
+    }
+};
+
 const Ch1 = struct {
     const Self = @This();
 
@@ -244,18 +274,7 @@ pub const Apu = struct {
     volume_left: u3,
     volume_right: u3,
 
-    // Common channel registers
-    ch_on: [4]u1,
-    output_left: [4]u1,
-    output_right: [4]u1,
-    length_enable: [4]u1,
-    init_length_timer: [4]u6,
-    length_timer: [4]u6,
-    ch_init_volume: [4]u4,
-    ch_volume: [4]u4,
-    period_setting: [4]u11,
-    period: [4]u11,
-
+    ch: [4]Channel,
     ch1: Ch1,
     ch3: Ch3,
     ch4: Ch4,
@@ -265,8 +284,6 @@ pub const Apu = struct {
     ch_samples: [4][]Sample,
     ch_samples_ix: usize,
     band_limited: [4]BandLimited,
-    samples_timer: u8,
-    samples_clock_divider_ix: usize,
 
     audio_callback: ?AudioCallback,
     audio_files: ?[4]std.fs.File,
@@ -306,16 +323,7 @@ pub const Apu = struct {
             .on = 0,
             .volume_left = 0,
             .volume_right = 0,
-            .ch_on = [_]u1{0} ** 4,
-            .output_left = [_]u1{0} ** 4,
-            .output_right = [_]u1{0} ** 4,
-            .length_enable = [_]u1{0} ** 4,
-            .init_length_timer = [_]u6{0} ** 4,
-            .length_timer = [_]u6{0} ** 4,
-            .ch_init_volume = [_]u4{0} ** 4,
-            .ch_volume = [_]u4{0} ** 4,
-            .period_setting = [_]u11{0} ** 4,
-            .period = [_]u11{0} ** 4,
+            .ch = [_]Channel{Channel.init()} ** 4,
             .ch1 = Ch1.init(),
             .ch3 = Ch3.init(),
             .ch4 = Ch4.init(),
@@ -330,8 +338,6 @@ pub const Apu = struct {
             }} ** 4,
             .ch_samples = ch_samples,
             .ch_samples_ix = 0,
-            .samples_timer = 0,
-            .samples_clock_divider_ix = 0,
             .div_apu_counter = 0,
             .cycles = 0,
             .sample_cycles = 0,
@@ -344,29 +350,29 @@ pub const Apu = struct {
         if (ch_ix == CH3) {
             return self.ch3.dac_enabled;
         } else {
-            return self.init_volume[ch_ix] != 0 or self.envelope_dir[ch_ix] != 0;
+            return self.ch[ch_ix].init_volume != 0 or self.ch[ch_ix].envelope_dir != 0;
         }
     }
 
     fn triggerChannel(self: *Self, ch_ix: usize) void {
-        self.ch_on[ch_ix] = 1;
+        self.ch[ch_ix].on = 1;
 
         if (ch_ix == CH3) {
             self.ch3.length_timer = self.ch3.init_length_timer;
             self.ch3.volume = self.ch3.init_volume;
         } else {
-            self.length_timer[ch_ix] = self.init_length_timer[ch_ix];
-            self.ch_volume[ch_ix] = self.ch_init_volume[ch_ix];
+            self.ch[ch_ix].length_timer = self.ch[ch_ix].init_length_timer;
+            self.ch[ch_ix].volume = self.ch[ch_ix].init_volume;
         }
 
         if (ch_ix == CH4) {
             self.ch4.lfsr = 0;
         } else {
-            self.period[ch_ix] = self.period_setting[ch_ix];
+            self.ch[ch_ix].period = self.ch[ch_ix].period_setting;
         }
 
         if (ch_ix == CH1) {
-            self.ch1.period_sweep_shadow = self.period[ch_ix];
+            self.ch1.period_sweep_shadow = self.ch[ch_ix].period;
             self.ch1.period_sweep_timer = 0;
             self.ch1.period_sweep_enabled = if (self.ch1.period_sweep_pace != 0 or self.ch1.period_sweep_individual_step != 0) 1 else 0;
             if (self.ch1.period_sweep_individual_step != 0) {
@@ -377,7 +383,7 @@ pub const Apu = struct {
                 );
                 if (result[1] == 1) {
                     std.debug.print("freq overflow in trigger, turning off\n", .{});
-                    self.ch_on[ch_ix] = 0;
+                    self.ch[ch_ix].on = 0;
                 }
             }
         }
@@ -386,8 +392,8 @@ pub const Apu = struct {
     fn updateSample(self: *Self, ch_ix: usize, val: u4, phase: usize) void {
         const val_f32 = toAnalog(val);
         const input = Sample{
-            .left = if (self.output_left[ch_ix] == 1) val_f32 else 0,
-            .right = if (self.output_right[ch_ix] == 1) val_f32 else 0,
+            .left = if (self.ch[ch_ix].output_left == 1) val_f32 else 0,
+            .right = if (self.ch[ch_ix].output_right == 1) val_f32 else 0,
         };
         const bl: *BandLimited = &self.band_limited[ch_ix];
         if (input.equals(bl.input)) {
@@ -483,7 +489,7 @@ pub const Apu = struct {
 
         // Pulse channels
         for (0..2) |ch_ix| {
-            if (self.ch_on[ch_ix] == 0) {
+            if (self.ch[ch_ix].on == 0) {
                 continue;
             }
 
@@ -491,10 +497,10 @@ pub const Apu = struct {
 
             while (cycles_rem > self.pulse[ch_ix].timer) {
                 cycles_rem -= self.pulse[ch_ix].timer + 1;
-                self.pulse[ch_ix].loadTimer(self.period_setting[ch_ix]);
+                self.pulse[ch_ix].loadTimer(self.ch[ch_ix].period_setting);
 
                 self.pulse[ch_ix].duty_step +%= 1;
-                const val = if (WAVEFORMS[self.pulse[ch_ix].wave_duty][self.pulse[ch_ix].duty_step] != 0) self.ch_volume[ch_ix] else 0;
+                const val = if (WAVEFORMS[self.pulse[ch_ix].wave_duty][self.pulse[ch_ix].duty_step] != 0) self.ch[ch_ix].volume else 0;
                 self.updateSample(ch_ix, val, @intCast(cycles - cycles_rem));
             }
 
@@ -504,12 +510,12 @@ pub const Apu = struct {
         }
 
         // Wave channel
-        if (self.ch_on[CH3] != 0) {
+        if (self.ch[CH3].on != 0) {
             var cycles_rem = cycles;
 
             while (cycles_rem > self.ch3.timer) {
                 cycles_rem -= self.ch3.timer;
-                self.ch3.loadTimer(self.period_setting[CH3]);
+                self.ch3.loadTimer(self.ch[CH3].period_setting);
 
                 self.ch3.wav_ram_ix +%= 1;
                 const val_raw = self.ch3.wav_ram[self.ch3.wav_ram_ix];
@@ -560,9 +566,9 @@ pub const Apu = struct {
                         self.ch4.lfsr &= ~high_bit_mask;
                     }
 
-                    if (self.ch_on[CH4] != 0) {
+                    if (self.ch[CH4].on != 0) {
                         const bit_0 = self.ch4.lfsr & 0x0001;
-                        const val = if (bit_0 == 0) 0 else self.ch_volume[CH4];
+                        const val = if (bit_0 == 0) 0 else self.ch[CH4].volume;
                         self.updateSample(CH4, val, @intCast(cycles - cycles_rem));
                     }
                 }
@@ -587,13 +593,13 @@ pub const Apu = struct {
         }
 
         if (self.pulse[ch_ix].envelope_dir == 1) {
-            self.ch_volume[ch_ix] +|= 1;
+            self.ch[ch_ix].volume +|= 1;
         } else {
-            self.ch_volume[ch_ix] -|= 1;
+            self.ch[ch_ix].volume -|= 1;
         }
 
-        if (self.ch_on[ch_ix] != 0) {
-            const val = if (WAVEFORMS[self.pulse[ch_ix].wave_duty][self.pulse[ch_ix].duty_step] != 0) self.ch_volume[ch_ix] else 0;
+        if (self.ch[ch_ix].on != 0) {
+            const val = if (WAVEFORMS[self.pulse[ch_ix].wave_duty][self.pulse[ch_ix].duty_step] != 0) self.ch[ch_ix].volume else 0;
             self.updateSample(ch_ix, val, 0);
         }
     }
@@ -605,14 +611,14 @@ pub const Apu = struct {
         }
 
         if (self.ch4.envelope_dir == 1) {
-            self.ch_volume[CH4] +|= 1;
+            self.ch[CH4].volume +|= 1;
         } else {
-            self.ch_volume[CH4] -|= 1;
+            self.ch[CH4].volume -|= 1;
         }
 
-        if (self.ch_on[CH4] != 0) {
+        if (self.ch[CH4].on != 0) {
             const bit_0 = self.ch4.lfsr & 0x0001;
-            const val = if (bit_0 == 0) 0 else self.ch_volume[CH4];
+            const val = if (bit_0 == 0) 0 else self.ch[CH4].volume;
             self.updateSample(CH4, val, 0);
         }
     }
@@ -655,19 +661,19 @@ pub const Apu = struct {
         if (tick_256hz) {
             for (0..4) |ch_ix| {
                 // Length timer
-                if (self.length_enable[ch_ix] == 1 and tick_256hz) {
+                if (self.ch[ch_ix].length_enable == 1 and tick_256hz) {
                     if (ch_ix != CH3) {
-                        const add_result = @addWithOverflow(self.length_timer[ch_ix], 1);
-                        self.length_timer[ch_ix] = add_result[0];
+                        const add_result = @addWithOverflow(self.ch[ch_ix].length_timer, 1);
+                        self.ch[ch_ix].length_timer = add_result[0];
                         if (add_result[1] == 1) {
-                            self.ch_on[ch_ix] = 0;
+                            self.ch[ch_ix].on = 0;
                             self.updateSample(ch_ix, 0, 0);
                         }
                     } else {
                         const add_result = @addWithOverflow(self.ch3.length_timer, 1);
                         self.ch3.length_timer = add_result[0];
                         if (add_result[1] == 1) {
-                            self.ch_on[CH3] = 0;
+                            self.ch[CH3].on = 0;
                             self.updateSample(CH3, 0, 0);
                         }
                     }
@@ -688,19 +694,19 @@ pub const Apu = struct {
                     self.ch1.period_sweep_individual_step,
                 );
                 if (result[1] == 1) {
-                    self.ch_on[CH1] = 0;
+                    self.ch[CH1].on = 0;
                     self.updateSample(CH1, 0, 0);
                     return;
                 } else {
                     self.ch1.period_sweep_shadow = result[0];
-                    self.period_setting[CH1] = self.ch1.period_sweep_shadow;
+                    self.ch[CH1].period_setting = self.ch1.period_sweep_shadow;
                     const result2 = calcNewSweepFreqWithOverflowCheck(
                         self.ch1.period_sweep_shadow,
                         self.ch1.period_sweep_dir,
                         self.ch1.period_sweep_individual_step,
                     );
                     if (result2[1] == 1) {
-                        self.ch_on[CH1] = 0;
+                        self.ch[CH1].on = 0;
                         self.updateSample(CH1, 0, 0);
                         return;
                     }
@@ -717,13 +723,13 @@ pub const Apu = struct {
         }
 
         for (0..2) |ch_ix| {
-            if (self.ch_on[ch_ix] != 0 and self.pulse[ch_ix].envelope_timer == 0) {
+            if (self.ch[ch_ix].on != 0 and self.pulse[ch_ix].envelope_timer == 0) {
                 self.pulse[ch_ix].tick_envelope = self.pulse[ch_ix].envelope_sweep_pace != 0;
                 self.pulse[ch_ix].envelope_timer = self.pulse[ch_ix].envelope_sweep_pace;
             }
         }
 
-        if (self.ch_on[CH4] != 0 and self.ch4.envelope_timer == 0) {
+        if (self.ch[CH4].on != 0 and self.ch4.envelope_timer == 0) {
             self.ch4.tick_envelope = self.ch4.envelope_sweep_pace != 0;
             self.ch4.envelope_timer = self.ch4.envelope_sweep_pace;
         }
@@ -743,14 +749,14 @@ pub const Apu = struct {
                 return wave_duty << 6;
             },
             .NR12 => {
-                const init_volume: u8 = self.ch_init_volume[CH1];
+                const init_volume: u8 = self.ch[CH1].init_volume;
                 const envelope_dir: u8 = self.pulse[CH1].envelope_dir;
                 const sweep_pace: u8 = self.pulse[CH1].envelope_sweep_pace;
                 return (init_volume << 4) | (envelope_dir << 3) | sweep_pace;
             },
             .NR13 => return 0xff,
             .NR14 => {
-                const length_enable: u8 = self.length_enable[CH1];
+                const length_enable: u8 = self.ch[CH1].length_enable;
                 return length_enable << 6;
             },
             // Channel 2
@@ -759,14 +765,14 @@ pub const Apu = struct {
                 return wave_duty << 6;
             },
             .NR22 => {
-                const init_volume: u8 = self.ch_init_volume[CH2];
+                const init_volume: u8 = self.ch[CH2].init_volume;
                 const envelope_dir: u8 = self.pulse[CH2].envelope_dir;
                 const sweep_pace: u8 = self.pulse[CH2].envelope_sweep_pace;
                 return (init_volume << 4) | (envelope_dir << 3) | sweep_pace;
             },
             .NR23 => return 0xff,
             .NR24 => {
-                const length_enable: u8 = self.length_enable[CH2];
+                const length_enable: u8 = self.ch[CH2].length_enable;
                 return length_enable << 6;
             },
             // Channel 3
@@ -781,13 +787,13 @@ pub const Apu = struct {
             },
             .NR33 => return 0xff,
             .NR34 => {
-                const length_enable: u8 = self.length_enable[CH3];
+                const length_enable: u8 = self.ch[CH3].length_enable;
                 return length_enable << 6;
             },
             // Channel 4
             .NR41 => return 0xff,
             .NR42 => {
-                const init_volume: u8 = self.ch_init_volume[CH4];
+                const init_volume: u8 = self.ch[CH4].init_volume;
                 const envelope_dir: u8 = self.ch4.envelope_dir;
                 const sweep_pace: u8 = self.ch4.envelope_sweep_pace;
                 return (init_volume << 4) | (envelope_dir << 3) | sweep_pace;
@@ -799,7 +805,7 @@ pub const Apu = struct {
                 return (clock_shift << 4) | (lfsr_width << 3) | clock_divider;
             },
             .NR44 => {
-                const length_enable: u8 = self.length_enable[CH4];
+                const length_enable: u8 = self.ch[CH4].length_enable;
                 return length_enable << 6;
             },
             // Global
@@ -811,8 +817,8 @@ pub const Apu = struct {
             .NR51 => {
                 var result: u8 = 0;
                 for (0..4) |ch_ix| {
-                    const left: u8 = self.output_left[ch_ix];
-                    const right: u8 = self.output_right[ch_ix];
+                    const left: u8 = self.ch[ch_ix].output_left;
+                    const right: u8 = self.ch[ch_ix].output_right;
                     const shift: u3 = @truncate(ch_ix);
                     result |= left << (shift + 4);
                     result |= right << shift;
@@ -823,7 +829,7 @@ pub const Apu = struct {
                 const apu_on: u8 = self.on;
                 var channel_on: u8 = 0;
                 for (0..4) |ch_ix| {
-                    const on: u8 = self.ch_on[ch_ix];
+                    const on: u8 = self.ch[ch_ix].on;
                     channel_on |= on << @truncate(ch_ix);
                 }
                 return (apu_on << 7) | channel_on;
@@ -843,31 +849,31 @@ pub const Apu = struct {
             },
             .NR11 => {
                 self.pulse[CH1].wave_duty = @truncate((val & 0b1100_0000) >> 6);
-                self.init_length_timer[CH1] = @truncate(val & 0b0011_1111);
+                self.ch[CH1].init_length_timer = @truncate(val & 0b0011_1111);
             },
             .NR12 => {
                 // TODO writes should not take effect until retrigger if the channel is already on
-                self.ch_init_volume[CH1] = @truncate((val & 0b1111_0000) >> 4);
+                self.ch[CH1].init_volume = @truncate((val & 0b1111_0000) >> 4);
                 self.pulse[CH1].envelope_dir = @truncate((val & 0b0000_1000) >> 3);
                 self.pulse[CH1].envelope_sweep_pace = @truncate(val & 0b0000_0111);
                 self.pulse[CH1].envelope_timer = self.pulse[CH1].envelope_sweep_pace;
-                if (self.ch_init_volume[CH1] == 0 and self.pulse[CH1].envelope_dir == 0) {
+                if (self.ch[CH1].init_volume == 0 and self.pulse[CH1].envelope_dir == 0) {
                     // DAC turned off, so turn the channel off as well
-                    self.ch_on[CH1] = 0;
+                    self.ch[CH1].on = 0;
                     self.updateSample(CH1, 0, 0);
                 }
             },
             .NR13 => {
                 const val_u11: u11 = val;
-                self.period_setting[CH1] = (self.period_setting[CH1] & 0b111_0000_0000) | val_u11;
+                self.ch[CH1].period_setting = (self.ch[CH1].period_setting & 0b111_0000_0000) | val_u11;
 
-                self.pulse[CH1].loadTimer(self.period_setting[CH1]);
+                self.pulse[CH1].loadTimer(self.ch[CH1].period_setting);
             },
             .NR14 => {
-                self.length_enable[CH1] = @truncate((val & 0b0100_0000) >> 6);
+                self.ch[CH1].length_enable = @truncate((val & 0b0100_0000) >> 6);
                 const val_u11: u11 = val;
-                self.period_setting[CH1] = (self.period_setting[CH1] & 0b000_1111_1111) | (val_u11 << 8);
-                self.pulse[CH1].loadTimer(self.period_setting[CH1]);
+                self.ch[CH1].period_setting = (self.ch[CH1].period_setting & 0b000_1111_1111) | (val_u11 << 8);
+                self.pulse[CH1].loadTimer(self.ch[CH1].period_setting);
                 if (val & 0b1000_0000 > 0) {
                     self.triggerChannel(CH1);
                 }
@@ -875,31 +881,31 @@ pub const Apu = struct {
             // Channel 2
             .NR21 => {
                 self.pulse[CH2].wave_duty = @truncate((val & 0b1100_0000) >> 6);
-                self.init_length_timer[CH2] = @truncate(val & 0b0011_1111);
+                self.ch[CH2].init_length_timer = @truncate(val & 0b0011_1111);
             },
             .NR22 => {
                 // TODO writes should not take effect until retrigger if the channel is already on
-                self.ch_init_volume[CH2] = @truncate((val & 0b1111_0000) >> 4);
+                self.ch[CH2].init_volume = @truncate((val & 0b1111_0000) >> 4);
                 self.pulse[CH2].envelope_dir = @truncate((val & 0b0000_1000) >> 3);
                 self.pulse[CH2].envelope_sweep_pace = @truncate(val & 0b0000_0111);
                 self.pulse[CH2].envelope_timer = self.pulse[CH2].envelope_sweep_pace;
-                if (self.ch_init_volume[CH2] == 0 and self.pulse[CH2].envelope_dir == 0) {
+                if (self.ch[CH2].init_volume == 0 and self.pulse[CH2].envelope_dir == 0) {
                     // DAC turned off, so turn the channel off as well
-                    self.ch_on[CH2] = 0;
+                    self.ch[CH2].on = 0;
                     self.updateSample(CH2, 0, 0);
                 }
             },
             .NR23 => {
                 const val_u11: u11 = val;
-                self.period_setting[CH2] = (self.period_setting[CH2] & 0b111_0000_0000) | val_u11;
+                self.ch[CH2].period_setting = (self.ch[CH2].period_setting & 0b111_0000_0000) | val_u11;
 
-                self.pulse[CH2].loadTimer(self.period_setting[CH1]);
+                self.pulse[CH2].loadTimer(self.ch[CH2].period_setting);
             },
             .NR24 => {
-                self.length_enable[CH2] = @truncate((val & 0b0100_0000) >> 6);
+                self.ch[CH2].length_enable = @truncate((val & 0b0100_0000) >> 6);
                 const val_u11: u11 = val;
-                self.period_setting[CH2] = (self.period_setting[CH2] & 0b000_1111_1111) | (val_u11 << 8);
-                self.pulse[CH2].loadTimer(self.period_setting[CH2]);
+                self.ch[CH2].period_setting = (self.ch[CH2].period_setting & 0b000_1111_1111) | (val_u11 << 8);
+                self.pulse[CH2].loadTimer(self.ch[CH2].period_setting);
                 if (val & 0b1000_0000 > 0) {
                     self.triggerChannel(CH2);
                 }
@@ -909,7 +915,7 @@ pub const Apu = struct {
                 self.ch3.dac_enabled = @truncate(val >> 7);
                 if (self.ch3.dac_enabled == 0) {
                     // DAC turned off, so turn the channel off as well
-                    self.ch_on[CH3] = 0;
+                    self.ch[CH3].on = 0;
                     self.updateSample(CH3, 0, 0);
                 }
             },
@@ -921,32 +927,32 @@ pub const Apu = struct {
             },
             .NR33 => {
                 const val_u11: u11 = val;
-                self.period_setting[CH3] = (self.period_setting[CH3] & 0b111_0000_0000) | val_u11;
+                self.ch[CH3].period_setting = (self.ch[CH3].period_setting & 0b111_0000_0000) | val_u11;
 
-                self.ch3.loadTimer(self.period_setting[CH3]);
+                self.ch3.loadTimer(self.ch[CH3].period_setting);
             },
             .NR34 => {
-                self.length_enable[CH3] = @truncate((val & 0b0100_0000) >> 6);
+                self.ch[CH3].length_enable = @truncate((val & 0b0100_0000) >> 6);
                 const val_u11: u11 = val;
-                self.period_setting[CH3] = (self.period_setting[CH3] & 0b000_1111_1111) | (val_u11 << 8);
-                self.ch3.loadTimer(self.period_setting[CH3]);
+                self.ch[CH3].period_setting = (self.ch[CH3].period_setting & 0b000_1111_1111) | (val_u11 << 8);
+                self.ch3.loadTimer(self.ch[CH3].period_setting);
                 if (val & 0b1000_0000 > 0) {
                     self.triggerChannel(CH3);
                 }
             },
             // Channel 4
             .NR41 => {
-                self.init_length_timer[CH4] = @truncate(val);
+                self.ch[CH4].init_length_timer = @truncate(val);
             },
             .NR42 => {
                 // TODO writes should not take effect until retrigger if the channel is already on
-                self.ch_init_volume[CH4] = @truncate((val & 0b1111_0000) >> 4);
+                self.ch[CH4].init_volume = @truncate((val & 0b1111_0000) >> 4);
                 self.ch4.envelope_dir = @truncate((val & 0b0000_1000) >> 3);
                 self.ch4.envelope_sweep_pace = @truncate(val & 0b0000_0111);
                 self.ch4.envelope_timer = self.ch4.envelope_sweep_pace;
-                if (self.ch_init_volume[CH4] == 0 and self.ch4.envelope_dir == 0) {
+                if (self.ch[CH4].init_volume == 0 and self.ch4.envelope_dir == 0) {
                     // DAC turned off, so turn the channel off as well
-                    self.ch_on[CH4] = 0;
+                    self.ch[CH4].on = 0;
                     self.updateSample(CH4, 0, 0);
                 }
             },
@@ -956,7 +962,7 @@ pub const Apu = struct {
                 self.ch4.clock_divider = @truncate(val);
             },
             .NR44 => {
-                self.length_enable[CH4] = @truncate((val & 0b0100_0000) >> 6);
+                self.ch[CH4].length_enable = @truncate((val & 0b0100_0000) >> 6);
 
                 if (val & 0b1000_0000 > 0) {
                     self.triggerChannel(CH4);
@@ -971,9 +977,9 @@ pub const Apu = struct {
                 for (0..4) |ch_ix| {
                     const shift: u3 = @truncate(ch_ix);
                     const mask_left = @as(u8, 1) << (shift + 4);
-                    self.output_left[ch_ix] = @truncate((val & mask_left) >> (shift + 4));
+                    self.ch[ch_ix].output_left = @truncate((val & mask_left) >> (shift + 4));
                     const mask_right = @as(u8, 1) << shift;
-                    self.output_right[ch_ix] = @truncate((val & mask_right) >> shift);
+                    self.ch[ch_ix].output_right = @truncate((val & mask_right) >> shift);
                 }
             },
             .NR52 => {
@@ -989,7 +995,7 @@ pub const Apu = struct {
     pub fn readWavRam(self: *const Self, ix: usize) u8 {
         std.debug.assert(ix < 16);
 
-        if (self.ch_on[CH3] == 1) {
+        if (self.ch[CH3].on == 1) {
             // TODO if this is the cycle that CH3 is accessing WAV RAM, allow the read
             return 0xff;
         }
@@ -1003,7 +1009,7 @@ pub const Apu = struct {
     pub fn writeWavRam(self: *Self, ix: usize, val: u8) void {
         std.debug.assert(ix < 16);
 
-        if (self.ch_on[CH3] == 1) {
+        if (self.ch[CH3].on == 1) {
             // TODO if this is the cycle that CH3 is accessing WAV RAM, allow the write
             return;
         }
@@ -1023,26 +1029,30 @@ pub const Apu = struct {
         self.on = 1;
     }
 
+    pub fn reset(self: *Self) void {
+        self.on = 0;
+    }
+
     pub fn printState(self: *const Self, writer: anytype) !void {
         try format(writer, "APU is {s}\n", .{if (self.on == 1) "on" else "off"});
 
         for (0..4) |ch_ix| {
             try format(writer, "CH{} is {s}\n", .{
                 ch_ix + 1,
-                if (self.ch_on[ch_ix] == 1) "on" else "off",
+                if (self.ch[ch_ix].on == 1) "on" else "off",
             });
             try format(writer, "    Current sample: {}\n", .{self.band_limited[ch_ix].buffer[self.band_limited[ch_ix].buffer_ix]});
             if (ch_ix != CH4) {
                 try format(writer, "    Next sample in {} APU ticks (sample length: {} APU ticks)\n", .{
                     if (ch_ix < 2) self.pulse[ch_ix].timer else self.ch3.timer,
-                    if (ch_ix < 2) ((0b111_1111_1111 - @as(u13, @intCast(self.period_setting[ch_ix]))) << 1) + 1 else (0b111_1111_1111 - @as(u13, @intCast(self.period_setting[CH3]))) + 1,
+                    if (ch_ix < 2) ((0b111_1111_1111 - @as(u13, @intCast(self.ch[ch_ix].period_setting))) << 1) + 1 else (0b111_1111_1111 - @as(u13, @intCast(self.ch[CH3].period_setting))) + 1,
                 });
             }
 
             try format(writer, "    Pan: L={} R={} ~ {s}\n", .{
-                self.output_left[ch_ix],
-                self.output_right[ch_ix],
-                if (self.output_left[ch_ix] == 1 and self.output_right[ch_ix] == 1) "center" else if (self.output_left[ch_ix] == 1) "left" else if (self.output_right[ch_ix] == 1) "right" else "muted",
+                self.ch[ch_ix].output_left,
+                self.ch[ch_ix].output_right,
+                if (self.ch[ch_ix].output_left == 1 and self.ch[ch_ix].output_right == 1) "center" else if (self.ch[ch_ix].output_left == 1) "left" else if (self.ch[ch_ix].output_right == 1) "right" else "muted",
             });
 
             if (ch_ix == CH3) {
@@ -1061,8 +1071,8 @@ pub const Apu = struct {
                 try format(writer, "\n", .{});
                 try format(writer, "    Current position: {}\n", .{self.ch3.wav_ram_ix});
             } else {
-                try format(writer, "    Volume: {}\n", .{self.ch_volume[ch_ix]});
-                try format(writer, "    Initial volume: {}\n", .{self.ch_init_volume[ch_ix]});
+                try format(writer, "    Volume: {}\n", .{self.ch[ch_ix].volume});
+                try format(writer, "    Initial volume: {}\n", .{self.ch[ch_ix].init_volume});
                 const envelope_sweep_pace = if (ch_ix == CH4) self.ch4.envelope_sweep_pace else self.pulse[ch_ix].envelope_sweep_pace;
                 try format(writer, "    Envelope: {s}", .{
                     if (envelope_sweep_pace == 0) "disabled\n" else "",
@@ -1079,12 +1089,12 @@ pub const Apu = struct {
             }
 
             try format(writer, "    Length timer: {s}", .{
-                if (self.length_enable[ch_ix] == 0) "disabled\n" else "",
+                if (self.ch[ch_ix].length_enable == 0) "disabled\n" else "",
             });
-            if (self.length_enable[ch_ix] == 1) {
+            if (self.ch[ch_ix].length_enable == 1) {
                 try format(writer, "set to {}; will expire in {} ticks\n", .{
-                    self.init_length_timer[ch_ix],
-                    0b11_1111 - self.length_timer[ch_ix],
+                    self.ch[ch_ix].init_length_timer,
+                    0b11_1111 - self.ch[ch_ix].length_timer,
                 });
             }
 
@@ -1109,13 +1119,12 @@ pub const Apu = struct {
                 try format(writer, "    LFSR: {b:0>16}\n", .{self.ch4.lfsr});
                 try format(writer, "    LFSR width: {}\n", .{if (self.ch4.lfsr_width == 1) @as(usize, 7) else 15});
             } else {
-                const period_setting: usize = self.period_setting[ch_ix];
+                const period_setting: usize = self.ch[ch_ix].period_setting;
                 try format(writer, "    Period setting: ${x} (sample rate: {} Hz, tone: {} Hz)\n", .{
-                    self.period_setting[ch_ix],
+                    period_setting,
                     if (ch_ix == CH3) 2097152 / (2048 - period_setting) else 1048576 / (2048 - period_setting),
                     if (ch_ix == CH3) 65536 / (2048 - period_setting) else 131072 / (2048 - period_setting),
                 });
-                try format(writer, "    Current period value: ${x}\n", .{self.period[ch_ix]});
             }
 
             if (ch_ix == CH1) {

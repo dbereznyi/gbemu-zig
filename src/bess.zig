@@ -169,6 +169,11 @@ const BessCore = struct {
         i.* += 2;
         const minor = u16LE(data[i.* .. i.* + 2]);
         i.* += 2;
+
+        if (major != 1 or minor != 1) {
+            return error.UnsupportedVersion;
+        }
+
         const model = data[i.* .. i.* + 4];
         i.* += 4;
         const pc = u16LE(data[i.* .. i.* + 2]);
@@ -357,8 +362,6 @@ pub fn readBess(alloc: std.mem.Allocator, data: []const u8) !Bess {
     var mbc: ?BessMbc = null;
     var rtc: ?BessRtc = null;
     var has_end = false;
-
-    std.debug.print("first_block_start = {}\n", .{first_block_start});
 
     var i = first_block_start;
     while (i < data.len) {

@@ -2,6 +2,8 @@ const std = @import("std");
 const format = std.fmt.format;
 
 pub const Timer = struct {
+    const Self = @This();
+
     const State = enum {
         running,
         reloading_tima,
@@ -14,8 +16,8 @@ pub const Timer = struct {
 
     odd_cycles: usize,
 
-    pub fn init() Timer {
-        return Timer{
+    pub fn init() Self {
+        return Self{
             .system_counter = 0,
             .cycles_elapsed = 0,
             .state = .running,
@@ -23,7 +25,7 @@ pub const Timer = struct {
         };
     }
 
-    pub fn printState(timer: *const Timer, writer: anytype) !void {
+    pub fn printState(timer: *const Self, writer: anytype) !void {
         try format(writer, "state={s} cycles_elapsed={} system_counter={x:0>4}\n", .{
             switch (timer.state) {
                 .running => "running",
@@ -33,5 +35,12 @@ pub const Timer = struct {
             timer.cycles_elapsed,
             timer.system_counter,
         });
+    }
+
+    pub fn reset(self: *Self) void {
+        self.system_counter = 0;
+        self.cycles_elapsed = 0;
+        self.state = .running;
+        self.odd_cycles = 0;
     }
 };

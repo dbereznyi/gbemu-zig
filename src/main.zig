@@ -20,6 +20,15 @@ pub fn main() !void {
     defer arena.deinit();
     const alloc = arena.allocator();
 
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer {
+        const check = gpa.deinit();
+        if (check == .leak) {
+            @panic("leak detected");
+        }
+    }
+    const alloc_gpa = gpa.allocator();
+
     const args = try std.process.argsAlloc(alloc);
     defer std.process.argsFree(alloc, args);
 
@@ -30,15 +39,21 @@ pub fn main() !void {
 
     const rom_filepath = args[1];
     const dirname = std.fs.path.dirname(rom_filepath) orelse "";
+    const rom_filepath_noext = try std.fmt.allocPrint(
+        alloc,
+        "{s}{c}{s}",
+        .{ dirname, std.fs.path.sep, std.fs.path.stem(rom_filepath) },
+    );
+    defer alloc.free(rom_filepath_noext);
     const save_data_filepath = try std.fmt.allocPrint(
         alloc,
-        "{s}{c}{s}.sav",
-        .{ dirname, std.fs.path.sep, std.fs.path.stem(rom_filepath) },
+        "{s}.sav",
+        .{rom_filepath_noext},
     );
     defer alloc.free(save_data_filepath);
 
-    var sdl = try Sdl.init(alloc);
-    defer sdl.deinit(alloc);
+    var sdl = try Sdl.init(alloc_gpa, rom_filepath_noext);
+    defer sdl.deinit(alloc_gpa);
 
     const rom = try std.fs.cwd().readFileAlloc(alloc, rom_filepath, 1024 * 1024 * 1024);
     defer alloc.free(rom);
@@ -75,30 +90,6 @@ pub fn main() !void {
         //try gb.debug.breakpoints.append(.{ .bank = 3, .addr = 0x4000 });
         try gb.debug.breakpoints.append(.{ .bank = 0, .addr = 0x028a });
         gb.debug.stack_base = 0xdfff;
-    }
-
-    const bess_data_filepath = "../Pocket_Monsters_-_Red_Version_(J)_(V1.1)_[S].s0";
-    const bess_data: ?[]u8 = read_bess_data: {
-        const data = std.fs.cwd().readFileAlloc(alloc, bess_data_filepath, 128 * 1024) catch |err| switch (err) {
-            error.FileNotFound => break :read_bess_data null,
-            else => {
-                std.log.warn("Failed to read savestate data: {}\n", .{err});
-                break :read_bess_data null;
-            },
-        };
-        break :read_bess_data data;
-    };
-    const bess: ?Bess = if (bess_data) |data| try readBess(alloc, data) else null;
-    defer if (bess) |b| b.deinit(alloc);
-
-    {
-        if (bess) |b| {
-            std.debug.print("bess.core = {}\n", .{.{
-                .pc = b.core.pc,
-                .af = b.core.af,
-                .vram_size = b.core.vram.len,
-            }});
-        }
     }
 
     try sdl.run(&gb);
@@ -186,6 +177,8 @@ const Sdl = struct {
     const Self = @This();
     const FPS_LEN = 10;
 
+    alloc: std.mem.Allocator,
+
     gb: ?*Gb,
     gb_window: Window,
     vram_pixels: []Pixel,
@@ -197,7 +190,9 @@ const Sdl = struct {
     fps: [FPS_LEN]f32,
     fps_ix: usize,
 
-    pub fn init(alloc: std.mem.Allocator) !Self {
+    rom_filepath_noext: []const u8,
+
+    pub fn init(alloc: std.mem.Allocator, rom_filepath_noext: []const u8) !Self {
         if (c.SDL_Init(c.SDL_INIT_VIDEO | c.SDL_INIT_AUDIO) != 0) {
             c.SDL_Log("Unable to initialize SDL: %s", c.SDL_GetError());
             return error.SDLInitializationFailed;
@@ -245,6 +240,7 @@ const Sdl = struct {
         const samples_buf = try alloc.alloc(Sample, constants.AUDIO.SAMPLES_BUFFER_LEN);
 
         return .{
+            .alloc = alloc,
             .gb = null,
             .gb_window = gb_window,
             .vram_pixels = try alloc.alloc(Pixel, VRAM_WINDOW_HEIGHT * VRAM_WINDOW_WIDTH),
@@ -255,6 +251,7 @@ const Sdl = struct {
             .last_vblank_at = try std.time.Instant.now(),
             .fps = [_]f32{0.0} ** FPS_LEN,
             .fps_ix = 0,
+            .rom_filepath_noext = rom_filepath_noext,
         };
     }
 
@@ -305,6 +302,40 @@ const Sdl = struct {
                         c.SDLK_LEFT => gb.joypad.releaseButton(.left),
                         c.SDLK_UP => gb.joypad.releaseButton(.up),
                         c.SDLK_DOWN => gb.joypad.releaseButton(.down),
+                        c.SDLK_0, c.SDLK_1, c.SDLK_2, c.SDLK_3, c.SDLK_4, c.SDLK_6, c.SDLK_7, c.SDLK_8, c.SDLK_9 => {
+                            const slot = event.key.keysym.sym - c.SDLK_0;
+
+                            std.debug.print("Reading savestate in slot #{}\n", .{slot});
+
+                            const bess_filepath = std.fmt.allocPrint(
+                                self.alloc,
+                                "{s}.s{}",
+                                .{ self.rom_filepath_noext, slot },
+                            ) catch @panic("Out of memory");
+                            defer self.alloc.free(bess_filepath);
+
+                            const bess_data: ?[]u8 = read_bess_data: {
+                                const data = std.fs.cwd().readFileAlloc(self.alloc, bess_filepath, 128 * 1024) catch |err| switch (err) {
+                                    error.FileNotFound => break :read_bess_data null,
+                                    else => {
+                                        std.log.warn("Failed to read savestate data: {}\n", .{err});
+                                        break :read_bess_data null;
+                                    },
+                                };
+                                break :read_bess_data data;
+                            };
+                            const bess: ?Bess = blk: {
+                                if (bess_data) |data| {
+                                    break :blk readBess(self.alloc, data) catch null;
+                                } else {
+                                    break :blk null;
+                                }
+                            };
+
+                            defer if (bess) |b| b.deinit(self.alloc);
+
+                            if (bess) |b| gb.loadBess(b);
+                        },
                         else => {},
                     },
                     c.SDL_KEYDOWN => switch (event.key.keysym.sym) {

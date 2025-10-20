@@ -12,8 +12,7 @@ const Joypad = @import("joypad/joypad.zig").Joypad;
 const Ppu = @import("ppu/ppu.zig").Ppu;
 const Apu = @import("apu/apu.zig").Apu;
 const ApuReg = @import("apu/apu.zig").ApuReg;
-const Sample = @import("../sample.zig").Sample;
-const syncTime = @import("timing.zig").syncTime;
+const Bess = @import("../bess.zig").Bess;
 
 pub const IoReg = .{
     .JOYP = 0x00,
@@ -260,6 +259,37 @@ pub const Gb = struct {
         gb.cart.deinit(alloc);
         gb.debug.deinit();
         gb.ppu.deinit(alloc);
+    }
+
+    pub fn reset(gb: *Gb) void {
+        gb.stopped = false;
+        gb.halted = false;
+        gb.halt_bug = false;
+        gb.toggle_ime = false;
+        gb.pc = 0x0100;
+        gb.sp = 0xfffe;
+        gb.a = 0;
+        gb.b = 0;
+        gb.c = 0;
+        gb.d = 0;
+        gb.e = 0;
+        gb.h = 0;
+        gb.l = 0;
+        gb.zero = false;
+        gb.negative = false;
+        gb.halfCarry = false;
+        gb.carry = false;
+        gb.ime = false;
+        @memset(gb.vram, 0);
+        @memset(gb.wram, 0);
+        @memset(gb.oam, 0);
+        @memset(gb.io_regs, 0);
+        @memset(gb.hram, 0);
+        gb.ie = 0;
+        gb.apu.reset();
+        gb.timer.reset();
+        gb.pending_cycles = 0;
+        gb.cycles = 0;
     }
 
     pub fn isRunning(gb: *Gb) bool {
@@ -544,4 +574,90 @@ pub const Gb = struct {
             pc_offset += instr.size();
         }
     }
+
+    pub fn loadBess(gb: *Gb, bess: Bess) void {
+        gb.reset();
+
+        const core = bess.core;
+
+        gb.pc = core.pc;
+        gb.sp = core.sp;
+        gb.a = @truncate(core.af >> 8);
+        gb.zero = core.af & 0b1000_0000 != 0;
+        gb.negative = core.af & 0b0100_0000 != 0;
+        gb.halfCarry = core.af & 0b0010_0000 != 0;
+        gb.carry = core.af & 0b0001_0000 != 0;
+        gb.b = @truncate(core.bc >> 8);
+        gb.c = @truncate(core.bc);
+        gb.d = @truncate(core.de >> 8);
+        gb.e = @truncate(core.de);
+        gb.h = @truncate(core.hl >> 8);
+        gb.l = @truncate(core.hl);
+        gb.ime = core.ime == 1;
+        gb.ie = core.ie;
+        gb.halted = core.state == .halted;
+        gb.stopped = core.state == .stopped;
+
+        gb.io_regs[IoReg.JOYP] = core.mm_regs[IoReg.JOYP];
+        gb.timer.system_counter = @as(u16, @intCast(core.mm_regs[IoReg.DIV])) << 8;
+        gb.io_regs[IoReg.TIMA] = core.mm_regs[IoReg.TIMA];
+        gb.io_regs[IoReg.TMA] = core.mm_regs[IoReg.TMA];
+        gb.io_regs[IoReg.TAC] = core.mm_regs[IoReg.TAC];
+        gb.io_regs[IoReg.IF] = core.mm_regs[IoReg.IF];
+        gb.apu.writeReg(ApuReg.NR52, core.mm_regs[IoReg.NR52]);
+        gb.apu.writeReg(ApuReg.NR51, core.mm_regs[IoReg.NR51]);
+        gb.apu.writeReg(ApuReg.NR50, core.mm_regs[IoReg.NR50]);
+
+        gb.apu.writeReg(ApuReg.NR10, core.mm_regs[IoReg.NR10]);
+        gb.apu.writeReg(ApuReg.NR11, core.mm_regs[IoReg.NR11]);
+        gb.apu.writeReg(ApuReg.NR12, core.mm_regs[IoReg.NR12]);
+        gb.apu.writeReg(ApuReg.NR13, core.mm_regs[IoReg.NR13]);
+        gb.apu.writeReg(ApuReg.NR14, core.mm_regs[IoReg.NR14]);
+
+        gb.apu.writeReg(ApuReg.NR21, core.mm_regs[IoReg.NR21]);
+        gb.apu.writeReg(ApuReg.NR22, core.mm_regs[IoReg.NR22]);
+        gb.apu.writeReg(ApuReg.NR23, core.mm_regs[IoReg.NR23]);
+        gb.apu.writeReg(ApuReg.NR24, core.mm_regs[IoReg.NR24]);
+
+        gb.apu.writeReg(ApuReg.NR30, core.mm_regs[IoReg.NR30]);
+        gb.apu.writeReg(ApuReg.NR31, core.mm_regs[IoReg.NR31]);
+        gb.apu.writeReg(ApuReg.NR32, core.mm_regs[IoReg.NR32]);
+        gb.apu.writeReg(ApuReg.NR33, core.mm_regs[IoReg.NR33]);
+        gb.apu.writeReg(ApuReg.NR34, core.mm_regs[IoReg.NR34]);
+
+        gb.apu.writeReg(ApuReg.NR41, core.mm_regs[IoReg.NR41]);
+        gb.apu.writeReg(ApuReg.NR42, core.mm_regs[IoReg.NR42]);
+        gb.apu.writeReg(ApuReg.NR43, core.mm_regs[IoReg.NR43]);
+        gb.apu.writeReg(ApuReg.NR44, core.mm_regs[IoReg.NR44]);
+
+        for (0x30..0x40) |i| {
+            gb.apu.writeWavRam(i - 0x30, core.mm_regs[i]);
+        }
+
+        gb.io_regs[IoReg.LCDC] = core.mm_regs[IoReg.LCDC];
+        gb.io_regs[IoReg.STAT] = core.mm_regs[IoReg.STAT];
+        gb.io_regs[IoReg.SCY] = core.mm_regs[IoReg.SCY];
+        gb.io_regs[IoReg.SCX] = core.mm_regs[IoReg.SCX];
+        gb.io_regs[IoReg.LY] = core.mm_regs[IoReg.LY];
+        gb.io_regs[IoReg.LYC] = core.mm_regs[IoReg.LYC];
+        gb.io_regs[IoReg.DMA] = core.mm_regs[IoReg.DMA];
+        gb.io_regs[IoReg.OBP0] = core.mm_regs[IoReg.OBP0];
+        gb.io_regs[IoReg.OBP1] = core.mm_regs[IoReg.OBP1];
+        gb.io_regs[IoReg.WY] = core.mm_regs[IoReg.WY];
+        gb.io_regs[IoReg.WX] = core.mm_regs[IoReg.WX];
+
+        copyMemoryRegion(gb.wram, core.ram);
+        copyMemoryRegion(gb.vram, core.vram);
+        copyMemoryRegion(gb.cart.ram, core.mbc_ram);
+        copyMemoryRegion(gb.oam, core.oam);
+        copyMemoryRegion(gb.hram, core.hram);
+    }
 };
+
+fn copyMemoryRegion(dst: []u8, src: []const u8) void {
+    const copy_end = if (src.len > dst.len) dst.len else src.len;
+    @memcpy(dst[0..copy_end], src[0..copy_end]);
+    if (dst.len > src.len) {
+        @memset(dst[dst.len - src.len .. dst.len], 0);
+    }
+}
