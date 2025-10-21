@@ -207,7 +207,11 @@ fn stepPpu(gb: *Gb) void {
     gb.ppu.dots = (gb.ppu.dots + 4) % VBLANK_END;
 }
 
-fn readObjectAttributesForLine(y: usize, selected_objs_buf: *[10]Ppu.ObjectAttribute, gb: *Gb) []Ppu.ObjectAttribute {
+fn readObjectAttributesForLine(
+    y: usize,
+    selected_objs_buf: *[10]Ppu.ObjectAttribute,
+    gb: *Gb,
+) []Ppu.ObjectAttribute {
     var obj_attrs: [40]Ppu.ObjectAttribute = undefined;
     var obj_attrs_index: usize = 0;
     var oam_index: usize = 0;

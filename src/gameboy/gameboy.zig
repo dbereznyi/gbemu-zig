@@ -172,7 +172,6 @@ pub const Gb = struct {
 
     running: std.atomic.Value(bool),
 
-    // This is in T-cycles! TODO: need to make everything else in T-cycles
     pending_cycles: usize,
     cycles: u64,
 
@@ -643,8 +642,8 @@ pub const Gb = struct {
         gb.io_regs[IoReg.STAT] = core.mm_regs[IoReg.STAT];
         gb.io_regs[IoReg.SCY] = core.mm_regs[IoReg.SCY];
         gb.io_regs[IoReg.SCX] = core.mm_regs[IoReg.SCX];
-        gb.io_regs[IoReg.LY] = core.mm_regs[IoReg.LY];
-        gb.io_regs[IoReg.LYC] = core.mm_regs[IoReg.LYC];
+        // gb.io_regs[IoReg.LY] = core.mm_regs[IoReg.LY];
+        // gb.io_regs[IoReg.LYC] = core.mm_regs[IoReg.LYC];
         gb.io_regs[IoReg.DMA] = core.mm_regs[IoReg.DMA];
         gb.io_regs[IoReg.OBP0] = core.mm_regs[IoReg.OBP0];
         gb.io_regs[IoReg.OBP1] = core.mm_regs[IoReg.OBP1];
@@ -657,14 +656,20 @@ pub const Gb = struct {
         copyMemoryRegion(gb.oam, core.oam);
         copyMemoryRegion(gb.hram, core.hram);
 
-        // TODO mbc regs
+        if (bess.mbc) |mbc| {
+            for (mbc.regs) |reg| {
+                gb.write(reg.addr, reg.val);
+            }
+        }
     }
 };
 
+// Handles copying memory regions of possibly differing sizes.
+// When the destination is larger than the source, the remaining space is set to 0s.
 fn copyMemoryRegion(dst: []u8, src: []const u8) void {
-    const copy_end = if (src.len > dst.len) dst.len else src.len;
+    const copy_end = @min(dst.len, src.len);
     @memcpy(dst[0..copy_end], src[0..copy_end]);
     if (dst.len > src.len) {
-        @memset(dst[dst.len - src.len .. dst.len], 0);
+        @memset(dst[copy_end..dst.len], 0);
     }
 }
