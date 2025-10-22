@@ -10,8 +10,9 @@ const runDebugger = @import("gameboy/debug/runDebugger.zig").runDebugger;
 const Sample = @import("sample.zig").Sample;
 const constants = @import("constants.zig");
 const renderVramViewer = @import("gameboy/ppu/vram_viewer.zig").renderVramViewer;
-const Bess = @import("bess.zig").Bess;
-const readBess = @import("bess.zig").readBess;
+const Bess = @import("gameboy/bess.zig").Bess;
+const readBess = @import("gameboy/bess.zig").readBess;
+const loadBess = @import("gameboy/bess.zig").loadBess;
 
 const WINDOW_SCALE = 3;
 
@@ -52,9 +53,6 @@ pub fn main() !void {
     );
     defer alloc.free(save_data_filepath);
 
-    var sdl = try Sdl.init(alloc_gpa, rom_filepath_noext);
-    defer sdl.deinit(alloc_gpa);
-
     const rom = try std.fs.cwd().readFileAlloc(alloc, rom_filepath, 1024 * 1024 * 1024);
     defer alloc.free(rom);
 
@@ -75,16 +73,20 @@ pub fn main() !void {
         rom,
         save_data,
         Palette.green,
-        .{
-            .context = @ptrCast(&sdl),
-            .callback = @ptrCast(&Sdl.vblankCallback),
-        },
-        .{
-            .context = @ptrCast(&sdl),
-            .callback = @ptrCast(&Sdl.audioCallback),
-        },
     );
     defer gb.deinit(alloc);
+
+    var sdl = try Sdl.init(alloc_gpa, rom_filepath_noext, &gb);
+    defer sdl.deinit(alloc_gpa);
+
+    gb.setVblankCallback(.{
+        .context = @ptrCast(&sdl),
+        .callback = @ptrCast(&Sdl.vblankCallback),
+    });
+    gb.setAudioCallback(.{
+        .context = @ptrCast(&sdl),
+        .callback = @ptrCast(&Sdl.audioCallback),
+    });
 
     if (false) {
         //try gb.debug.breakpoints.append(.{ .bank = 3, .addr = 0x4000 });
@@ -92,7 +94,7 @@ pub fn main() !void {
         gb.debug.stack_base = 0xdfff;
     }
 
-    try sdl.run(&gb);
+    try sdl.run();
 
     try gb.cart.persistRam(save_data_filepath);
 }
@@ -179,7 +181,7 @@ const Sdl = struct {
 
     alloc: std.mem.Allocator,
 
-    gb: ?*Gb,
+    gb: *Gb,
     gb_window: Window,
     vram_pixels: []Pixel,
     vram_window: Window,
@@ -192,7 +194,7 @@ const Sdl = struct {
 
     rom_filepath_noext: []const u8,
 
-    pub fn init(alloc: std.mem.Allocator, rom_filepath_noext: []const u8) !Self {
+    pub fn init(alloc: std.mem.Allocator, rom_filepath_noext: []const u8, gb: *Gb) !Self {
         if (c.SDL_Init(c.SDL_INIT_VIDEO | c.SDL_INIT_AUDIO) != 0) {
             c.SDL_Log("Unable to initialize SDL: %s", c.SDL_GetError());
             return error.SDLInitializationFailed;
@@ -241,7 +243,7 @@ const Sdl = struct {
 
         return .{
             .alloc = alloc,
-            .gb = null,
+            .gb = gb,
             .gb_window = gb_window,
             .vram_pixels = try alloc.alloc(Pixel, VRAM_WINDOW_HEIGHT * VRAM_WINDOW_WIDTH),
             .vram_window = vram_window,
@@ -264,103 +266,101 @@ const Sdl = struct {
         c.SDL_Quit();
     }
 
-    pub fn run(self: *Self, gb: *Gb) !void {
-        self.gb = gb;
-
-        const debugger_thread = try std.Thread.spawn(.{}, runDebugger, .{gb});
+    pub fn run(self: *Self) !void {
+        const debugger_thread = try std.Thread.spawn(.{}, runDebugger, .{self.gb});
         debugger_thread.detach();
 
         c.SDL_PauseAudioDevice(self.audio_device, 0);
 
-        self.gb_window.setPixels(gb.ppu.screen);
+        self.gb_window.setPixels(self.gb.ppu.screen);
 
-        renderVramViewer(gb, &self.vram_pixels);
+        renderVramViewer(self.gb, &self.vram_pixels);
         self.vram_window.setPixels(self.vram_pixels);
 
         self.last_vblank_at = try std.time.Instant.now();
 
-        while (gb.isRunning()) {
-            if (gb.debug.isPaused()) {
+        while (self.gb.isRunning()) {
+            if (self.gb.debug.isPaused()) {
                 self.handleEvents();
             }
 
-            runGameboy(gb);
+            runGameboy(self.gb);
         }
     }
 
     fn handleEvents(self: *Self) void {
-        if (self.gb) |gb| {
-            var event: c.SDL_Event = undefined;
-            while (c.SDL_PollEvent(&event) != 0) {
-                switch (event.type) {
-                    c.SDL_KEYUP => switch (event.key.keysym.sym) {
-                        c.SDLK_a => gb.joypad.releaseButton(.start),
-                        c.SDLK_s => gb.joypad.releaseButton(.select),
-                        c.SDLK_x => gb.joypad.releaseButton(.a),
-                        c.SDLK_z => gb.joypad.releaseButton(.b),
-                        c.SDLK_RIGHT => gb.joypad.releaseButton(.right),
-                        c.SDLK_LEFT => gb.joypad.releaseButton(.left),
-                        c.SDLK_UP => gb.joypad.releaseButton(.up),
-                        c.SDLK_DOWN => gb.joypad.releaseButton(.down),
-                        c.SDLK_0, c.SDLK_1, c.SDLK_2, c.SDLK_3, c.SDLK_4, c.SDLK_6, c.SDLK_7, c.SDLK_8, c.SDLK_9 => {
-                            const slot = event.key.keysym.sym - c.SDLK_0;
+        var event: c.SDL_Event = undefined;
+        while (c.SDL_PollEvent(&event) != 0) {
+            switch (event.type) {
+                c.SDL_KEYUP => switch (event.key.keysym.sym) {
+                    c.SDLK_a => self.gb.joypad.releaseButton(.start),
+                    c.SDLK_s => self.gb.joypad.releaseButton(.select),
+                    c.SDLK_x => self.gb.joypad.releaseButton(.a),
+                    c.SDLK_z => self.gb.joypad.releaseButton(.b),
+                    c.SDLK_RIGHT => self.gb.joypad.releaseButton(.right),
+                    c.SDLK_LEFT => self.gb.joypad.releaseButton(.left),
+                    c.SDLK_UP => self.gb.joypad.releaseButton(.up),
+                    c.SDLK_DOWN => self.gb.joypad.releaseButton(.down),
+                    c.SDLK_0, c.SDLK_1, c.SDLK_2, c.SDLK_3, c.SDLK_4, c.SDLK_6, c.SDLK_7, c.SDLK_8, c.SDLK_9 => {
+                        const slot = event.key.keysym.sym - c.SDLK_0;
 
-                            std.debug.print("Reading savestate in slot #{}\n", .{slot});
+                        const bess_filepath = std.fmt.allocPrint(
+                            self.alloc,
+                            "{s}.s{}",
+                            .{ self.rom_filepath_noext, slot },
+                        ) catch @panic("Out of memory");
+                        defer self.alloc.free(bess_filepath);
 
-                            const bess_filepath = std.fmt.allocPrint(
-                                self.alloc,
-                                "{s}.s{}",
-                                .{ self.rom_filepath_noext, slot },
-                            ) catch @panic("Out of memory");
-                            defer self.alloc.free(bess_filepath);
-
-                            const bess_data: ?[]u8 = read_bess_data: {
-                                const data = std.fs.cwd().readFileAlloc(self.alloc, bess_filepath, 128 * 1024) catch |err| switch (err) {
-                                    error.FileNotFound => break :read_bess_data null,
-                                    else => {
-                                        std.log.warn("Failed to read savestate data: {}\n", .{err});
-                                        break :read_bess_data null;
-                                    },
-                                };
-                                break :read_bess_data data;
+                        const bess_data: ?[]u8 = read_bess_data: {
+                            const data = std.fs.cwd().readFileAlloc(self.alloc, bess_filepath, 128 * 1024) catch |err| switch (err) {
+                                error.FileNotFound => break :read_bess_data null,
+                                else => {
+                                    std.log.warn("Failed to read savestate data: {}\n", .{err});
+                                    break :read_bess_data null;
+                                },
                             };
-                            const bess: ?Bess = blk: {
-                                if (bess_data) |data| {
-                                    break :blk readBess(self.alloc, data) catch null;
-                                } else {
-                                    break :blk null;
-                                }
-                            };
-
-                            defer if (bess) |b| b.deinit(self.alloc);
-
-                            if (bess) |b| gb.loadBess(b);
-                        },
-                        else => {},
-                    },
-                    c.SDL_KEYDOWN => switch (event.key.keysym.sym) {
-                        c.SDLK_a => gb.joypad.pressButton(.start),
-                        c.SDLK_s => gb.joypad.pressButton(.select),
-                        c.SDLK_x => gb.joypad.pressButton(.a),
-                        c.SDLK_z => gb.joypad.pressButton(.b),
-                        c.SDLK_RIGHT => gb.joypad.pressButton(.right),
-                        c.SDLK_LEFT => gb.joypad.pressButton(.left),
-                        c.SDLK_UP => gb.joypad.pressButton(.up),
-                        c.SDLK_DOWN => gb.joypad.pressButton(.down),
-                        else => {},
-                    },
-                    c.SDL_WINDOWEVENT => {
-                        if (event.window.event == c.SDL_WINDOWEVENT_CLOSE) {
-                            if (event.window.windowID == c.SDL_GetWindowID(self.vram_window.window)) {
-                                c.SDL_HideWindow(self.vram_window.window);
-                            } else if (event.window.windowID == c.SDL_GetWindowID(self.gb_window.window)) {
-                                gb.setIsRunning(false);
+                            break :read_bess_data data;
+                        };
+                        defer if (bess_data) |data| self.alloc.free(data);
+                        const bess: ?Bess = blk: {
+                            if (bess_data) |data| {
+                                break :blk readBess(self.alloc, data) catch null;
+                            } else {
+                                break :blk null;
                             }
+                        };
+
+                        defer if (bess) |b| b.deinit(self.alloc);
+
+                        if (bess) |b| {
+                            std.debug.print("Loading savestate in slot #{}\n", .{slot});
+                            loadBess(self.gb, b);
                         }
                     },
-                    c.SDL_QUIT => gb.setIsRunning(false),
                     else => {},
-                }
+                },
+                c.SDL_KEYDOWN => switch (event.key.keysym.sym) {
+                    c.SDLK_a => self.gb.joypad.pressButton(.start),
+                    c.SDLK_s => self.gb.joypad.pressButton(.select),
+                    c.SDLK_x => self.gb.joypad.pressButton(.a),
+                    c.SDLK_z => self.gb.joypad.pressButton(.b),
+                    c.SDLK_RIGHT => self.gb.joypad.pressButton(.right),
+                    c.SDLK_LEFT => self.gb.joypad.pressButton(.left),
+                    c.SDLK_UP => self.gb.joypad.pressButton(.up),
+                    c.SDLK_DOWN => self.gb.joypad.pressButton(.down),
+                    else => {},
+                },
+                c.SDL_WINDOWEVENT => {
+                    if (event.window.event == c.SDL_WINDOWEVENT_CLOSE) {
+                        if (event.window.windowID == c.SDL_GetWindowID(self.vram_window.window)) {
+                            c.SDL_HideWindow(self.vram_window.window);
+                        } else if (event.window.windowID == c.SDL_GetWindowID(self.gb_window.window)) {
+                            self.gb.setIsRunning(false);
+                        }
+                    }
+                },
+                c.SDL_QUIT => self.gb.setIsRunning(false),
+                else => {},
             }
         }
     }
@@ -371,11 +371,9 @@ const Sdl = struct {
 
         self.gb_window.setPixels(pixels);
 
-        if (self.gb) |gb| {
-            // This might be a bit cleaner if done via a separate callback, but works for now
-            renderVramViewer(gb, &self.vram_pixels);
-            self.vram_window.setPixels(self.vram_pixels);
-        }
+        // This might be a bit cleaner if done via a separate callback, but works for now
+        renderVramViewer(self.gb, &self.vram_pixels);
+        self.vram_window.setPixels(self.vram_pixels);
 
         self.handleEvents();
 

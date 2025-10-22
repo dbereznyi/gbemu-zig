@@ -86,7 +86,6 @@ pub const Ppu = struct {
     pub fn init(
         alloc: std.mem.Allocator,
         palette: Palette,
-        vblank_callback: ?VblankCallback,
     ) !Ppu {
         const screen: []Pixel = try alloc.alloc(Pixel, constants.GB.SCREEN_WIDTH * constants.GB.SCREEN_HEIGHT);
         for (screen) |*pixel| {
@@ -106,7 +105,7 @@ pub const Ppu = struct {
             .scanning_oam = false,
             .drawing = false,
             .screen = screen,
-            .vblank_callback = vblank_callback,
+            .vblank_callback = null,
             .cycles_odd = 0,
         };
     }
@@ -126,6 +125,10 @@ pub const Ppu = struct {
         self.scanning_oam = false;
         self.drawing = false;
         self.cycles_odd = 0;
+    }
+
+    pub fn setVblankCallback(self: *Self, vblank_callback: VblankCallback) void {
+        self.vblank_callback = vblank_callback;
     }
 
     pub fn printState(ppu: *const Ppu, writer: anytype) !void {

@@ -360,7 +360,7 @@ pub const Apu = struct {
     sample_cycles: u32,
     cycles_since_last_render: i32,
 
-    pub fn init(alloc: std.mem.Allocator, audio_callback: ?AudioCallback) !Self {
+    pub fn init(alloc: std.mem.Allocator) !Self {
         const ch_samples = [_][]Sample{
             try alloc.alloc(Sample, constants.AUDIO.SAMPLES_BUFFER_LEN),
             try alloc.alloc(Sample, constants.AUDIO.SAMPLES_BUFFER_LEN),
@@ -392,7 +392,7 @@ pub const Apu = struct {
             .ch3 = Ch3.init(),
             .ch4 = Ch4.init(),
             .pulse = [_]PulseChannel{PulseChannel.init()} ** 2,
-            .audio_callback = audio_callback,
+            .audio_callback = null,
             .band_limited_steps = try initBandLimitedSteps(alloc),
             .band_limited = [_]BandLimited{.{
                 .buffer = [_]Sample{Sample.init(0, 0)} ** BL_STEP_WIDTH,
@@ -408,6 +408,17 @@ pub const Apu = struct {
             .cycles_since_last_render = 0,
             .audio_files = audio_files,
         };
+    }
+
+    pub fn deinit(self: *const Self, alloc: std.mem.Allocator) void {
+        alloc.free(self.band_limited_steps);
+        for (0..4) |i| {
+            alloc.free(self.ch_samples[i]);
+        }
+    }
+
+    pub fn setAudioCallback(self: *Self, audio_callback: AudioCallback) void {
+        self.audio_callback = audio_callback;
     }
 
     fn isDacOn(self: *const Self, ch_ix: usize) bool {
