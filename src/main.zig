@@ -13,6 +13,7 @@ const renderVramViewer = @import("gameboy/ppu/vram_viewer.zig").renderVramViewer
 const Bess = @import("gameboy/bess.zig").Bess;
 const readBess = @import("gameboy/bess.zig").readBess;
 const loadBess = @import("gameboy/bess.zig").loadBess;
+const writeBess = @import("gameboy/bess.zig").writeBess;
 
 const WINDOW_SCALE = 3;
 
@@ -311,30 +312,54 @@ const Sdl = struct {
                         ) catch @panic("Out of memory");
                         defer self.alloc.free(bess_filepath);
 
-                        const bess_data: ?[]u8 = read_bess_data: {
-                            const data = std.fs.cwd().readFileAlloc(self.alloc, bess_filepath, 128 * 1024) catch |err| switch (err) {
-                                error.FileNotFound => break :read_bess_data null,
-                                else => {
-                                    std.log.warn("Failed to read savestate data: {}\n", .{err});
-                                    break :read_bess_data null;
-                                },
+                        if (event.key.keysym.mod & c.KMOD_CTRL != 0 and event.key.keysym.mod & c.KMOD_SHIFT == 0) {
+                            const bess_data: ?[]u8 = read_bess_data: {
+                                const data = std.fs.cwd().readFileAlloc(self.alloc, bess_filepath, 128 * 1024) catch |err| switch (err) {
+                                    error.FileNotFound => {
+                                        std.log.warn("No savestate data found in slot {}.\n", .{slot});
+                                        break :read_bess_data null;
+                                    },
+                                    else => {
+                                        std.log.err("Failed to read savestate data: {}\n", .{err});
+                                        break :read_bess_data null;
+                                    },
+                                };
+                                break :read_bess_data data;
                             };
-                            break :read_bess_data data;
-                        };
-                        defer if (bess_data) |data| self.alloc.free(data);
-                        const bess: ?Bess = blk: {
-                            if (bess_data) |data| {
-                                break :blk readBess(self.alloc, data) catch null;
-                            } else {
-                                break :blk null;
+                            defer if (bess_data) |data| self.alloc.free(data);
+                            const bess: ?Bess = blk: {
+                                if (bess_data) |data| {
+                                    break :blk readBess(self.alloc, data) catch |err| {
+                                        std.log.err("Failed to parse savestate file: {}\n", .{err});
+                                        break :blk null;
+                                    };
+                                } else {
+                                    break :blk null;
+                                }
+                            };
+
+                            defer if (bess) |b| b.deinit(self.alloc);
+
+                            if (bess) |b| {
+                                std.debug.print("Loading savestate in slot #{}\n", .{slot});
+                                loadBess(self.gb, b);
                             }
-                        };
+                        } else if (event.key.keysym.mod & c.KMOD_CTRL != 0 and event.key.keysym.mod & c.KMOD_SHIFT != 0) {
+                            const bess_file: ?std.fs.File = blk: {
+                                const file = std.fs.cwd().createFile(bess_filepath, .{}) catch |err| {
+                                    std.log.err("Failed to open savestate file for writing: {}\n", .{err});
+                                    break :blk null;
+                                };
+                                break :blk file;
+                            };
+                            defer if (bess_file) |file| file.close();
 
-                        defer if (bess) |b| b.deinit(self.alloc);
-
-                        if (bess) |b| {
-                            std.debug.print("Loading savestate in slot #{}\n", .{slot});
-                            loadBess(self.gb, b);
+                            if (bess_file) |file| {
+                                std.debug.print("Creating savestate in slot #{}\n", .{slot});
+                                writeBess(self.gb, file.writer()) catch |err| {
+                                    std.log.err("Failed to create savestate: {}\n", .{err});
+                                };
+                            }
                         }
                     },
                     else => {},

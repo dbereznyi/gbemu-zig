@@ -1,6 +1,11 @@
 const std = @import("std");
 const format = std.fmt.format;
 
+pub const MbcReg = struct {
+    addr: u16,
+    val: u8,
+};
+
 pub const Cart = struct {
     const Mapper = enum {
         none,
@@ -16,6 +21,7 @@ pub const Cart = struct {
         huc3,
         huc1,
     };
+
     const Mbc1Registers = struct {
         ram_enable: u1,
         current_rom_bank: u5,
@@ -23,6 +29,7 @@ pub const Cart = struct {
         banking_mode: u1,
     };
 
+    rom_title: []const u8,
     rom: []const u8,
     ram: []u8,
     mapper: Cart.Mapper,
@@ -30,10 +37,12 @@ pub const Cart = struct {
     has_battery: bool,
     rom_size: u32,
     ram_size: u32,
+    global_checksum: u16,
 
     mbc1: Mbc1Registers,
 
     pub fn init(rom: []const u8, save_data: ?[]const u8, alloc: std.mem.Allocator) !Cart {
+        const rom_title = rom[0x0134..0x0144];
         const cart_type = rom[0x0147];
         const cart_info = switch (cart_type) {
             0x00 => .{ Mapper.none, false, false },
@@ -89,7 +98,10 @@ pub const Cart = struct {
             }
         }
 
+        const global_checksum = std.mem.readInt(u16, rom[0x014e..0x0150], .big);
+
         return Cart{
+            .rom_title = rom_title,
             .rom = rom,
             .ram = ram,
             .mapper = cart_info[0],
@@ -103,6 +115,7 @@ pub const Cart = struct {
             },
             .rom_size = rom_size,
             .ram_size = ram_size,
+            .global_checksum = global_checksum,
         };
     }
 
@@ -270,5 +283,24 @@ pub const Cart = struct {
         cart.mbc1.current_rom_bank = 1;
         cart.mbc1.current_ram_bank = 0;
         cart.mbc1.banking_mode = 0;
+    }
+
+    pub fn getMbcRegisters(
+        cart: *Cart,
+        buf: *[16]MbcReg,
+    ) []MbcReg {
+        switch (cart.mapper) {
+            .none => {
+                return buf[0..0];
+            },
+            .mbc1 => {
+                buf[0] = .{ .addr = 0x0000, .val = if (cart.mbc1.ram_enable == 1) 0x0a else 0x00 };
+                buf[1] = .{ .addr = 0x2000, .val = @intCast(cart.mbc1.current_rom_bank) };
+                buf[2] = .{ .addr = 0x4000, .val = @intCast(cart.mbc1.current_ram_bank) };
+                buf[3] = .{ .addr = 0x6000, .val = @intCast(cart.mbc1.banking_mode) };
+                return buf[0..4];
+            },
+            else => std.debug.panic("TODO implement for {}\n", .{cart.mapper}),
+        }
     }
 };

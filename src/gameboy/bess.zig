@@ -2,6 +2,7 @@ const std = @import("std");
 const Gb = @import("gameboy.zig").Gb;
 const IoReg = @import("gameboy.zig").IoReg;
 const ApuReg = @import("apu/apu.zig").ApuReg;
+const MbcReg = @import("cart.zig").MbcReg;
 
 inline fn u16LE(bytes: []const u8) u16 {
     return std.mem.readVarInt(u16, bytes, .little);
@@ -78,6 +79,8 @@ const BessBlock = union(BessBlockTag) {
 
         const block_start = i;
 
+        std.debug.print("parsing block {s}, len = {}\n", .{ block_name, block_len });
+
         if (block_start.* + block_len > data.len) {
             return error.InvalidBlockLength;
         }
@@ -120,14 +123,11 @@ const BessName = struct {
         };
     }
 
-    pub fn write(buf: []u8, i: *usize) !void {
+    pub fn write(writer: anytype) !void {
         const name = "dbereznyi/gbemu";
-        @memcpy(buf[i.* .. i.* + 4], "NAME");
-        i.* += 4;
-        std.mem.writeInt(u8, buf[i.* .. i.* + 4], @as(u32, @intCast(name.len)));
-        i.* += 4;
-        @memcpy(buf[i.* .. i.* + name.len], name);
-        i.* += name.len;
+        try writer.writeAll("NAME");
+        try writer.writeInt(u32, name.len, .little);
+        try writer.writeAll(name);
     }
 };
 
@@ -146,6 +146,17 @@ const BessInfo = struct {
             .title = data[i.* .. i.* + 16],
             .checksum = u16LE(data[i.* + 16 .. i.* + 16 + 2]),
         };
+    }
+
+    pub fn write(writer: anytype, title: []const u8, checksum: u16) !void {
+        if (title.len != 16) {
+            return error.InfoBlockInvalidTitleLength;
+        }
+
+        try writer.writeAll("INFO");
+        try writer.writeInt(u32, 18, .little);
+        try writer.writeAll(title[0..16]);
+        try writer.writeInt(u16, checksum, .little);
     }
 };
 
@@ -256,13 +267,62 @@ const BessCore = struct {
             .hram = hram,
         };
     }
+
+    pub fn write(
+        writer: anytype,
+        gb: *Gb,
+        ram_start: usize,
+        vram_start: usize,
+        mbc_ram_start: usize,
+        oam_start: usize,
+        hram_start: usize,
+    ) !void {
+        try writer.writeAll("CORE");
+        try writer.writeInt(u32, 208, .little);
+
+        try writer.writeInt(u16, 1, .little);
+        try writer.writeInt(u16, 1, .little);
+
+        try writer.writeAll("GD  ");
+
+        try writer.writeInt(u16, gb.pc, .little);
+        const af = @as(u16, @intCast(gb.a)) << 8 | @as(u16, @intCast(gb.readFlags()));
+        try writer.writeInt(u16, af, .little);
+        const bc = @as(u16, @intCast(gb.b)) << 8 | @as(u16, gb.c);
+        try writer.writeInt(u16, bc, .little);
+        const de = @as(u16, @intCast(gb.d)) << 8 | @as(u16, gb.e);
+        try writer.writeInt(u16, de, .little);
+        const hl = @as(u16, @intCast(gb.h)) << 8 | @as(u16, gb.l);
+        try writer.writeInt(u16, hl, .little);
+        try writer.writeInt(u16, gb.sp, .little);
+        try writer.writeByte(if (gb.ime) 1 else 0);
+        try writer.writeByte(gb.ie);
+        try writer.writeByte(if (gb.stopped) 2 else if (gb.halted) 1 else 0);
+        try writer.writeByte(0);
+        for (gb.io_regs) |reg_val| {
+            try writer.writeByte(reg_val);
+        }
+
+        try writer.writeInt(u32, @truncate(gb.wram.len), .little);
+        try writer.writeInt(u32, @truncate(ram_start), .little);
+        try writer.writeInt(u32, @truncate(gb.vram.len), .little);
+        try writer.writeInt(u32, @truncate(vram_start), .little);
+        try writer.writeInt(u32, @truncate(gb.cart.ram.len), .little);
+        try writer.writeInt(u32, @truncate(mbc_ram_start), .little);
+        try writer.writeInt(u32, @truncate(gb.oam.len), .little);
+        try writer.writeInt(u32, @truncate(oam_start), .little);
+        try writer.writeInt(u32, @truncate(gb.hram.len), .little);
+        try writer.writeInt(u32, @truncate(hram_start), .little);
+        // BGP palettes
+        try writer.writeInt(u32, 0, .little);
+        try writer.writeInt(u32, 0, .little);
+        // OBJ palettes
+        try writer.writeInt(u32, 0, .little);
+        try writer.writeInt(u32, 0, .little);
+    }
 };
 
 const BessMbc = struct {
-    const MbcReg = struct {
-        addr: u16,
-        val: u8,
-    };
     regs: []MbcReg,
 
     pub fn init(alloc: std.mem.Allocator, data: []const u8, i: *usize, len: usize) !BessMbc {
@@ -297,6 +357,19 @@ const BessMbc = struct {
 
     pub fn deinit(self: *const BessMbc, alloc: std.mem.Allocator) void {
         alloc.free(self.regs);
+    }
+
+    pub fn write(writer: anytype, gb: *Gb) !void {
+        try writer.writeAll("MBC ");
+
+        var buf: [16]MbcReg = undefined;
+        const regs = gb.cart.getMbcRegisters(&buf);
+        try writer.writeInt(u32, @truncate(regs.len * 3), .little);
+
+        for (regs) |reg| {
+            try writer.writeInt(u16, reg.addr, .little);
+            try writer.writeByte(reg.val);
+        }
     }
 };
 
@@ -354,6 +427,13 @@ const BessRtc = struct {
             .latched_overflow = latched_overflow,
             .unix_timestamp = unix_timestamp,
         };
+    }
+};
+
+const BessEnd = struct {
+    pub fn write(writer: anytype) !void {
+        try writer.writeAll("END ");
+        try writer.writeInt(u32, 0, .little);
     }
 };
 
@@ -521,4 +601,44 @@ fn copyMemoryRegion(dst: []u8, src: []const u8) void {
     }
 }
 
-pub fn writeBess(_: *Gb, _: []const u8) !void {}
+pub fn writeBess(gb: *Gb, writer: anytype) !void {
+    var i: usize = 0;
+
+    const ram_start = i;
+    try writer.writeAll(gb.wram);
+    i += gb.wram.len;
+
+    const vram_start = i;
+    try writer.writeAll(gb.vram);
+    i += gb.vram.len;
+
+    const mbc_ram_start = i;
+    try writer.writeAll(gb.cart.ram);
+    i += gb.cart.ram.len;
+
+    const oam_start = i;
+    try writer.writeAll(gb.oam);
+    i += gb.oam.len;
+
+    const hram_start = i;
+    try writer.writeAll(gb.hram);
+    i += gb.hram.len;
+
+    const first_block_start = i;
+    try BessName.write(writer);
+    try BessInfo.write(writer, gb.cart.rom_title, gb.cart.global_checksum);
+    try BessCore.write(
+        writer,
+        gb,
+        ram_start,
+        vram_start,
+        mbc_ram_start,
+        oam_start,
+        hram_start,
+    );
+    try BessMbc.write(writer, gb);
+    try BessEnd.write(writer);
+
+    try writer.writeInt(u32, @truncate(first_block_start), .little);
+    try writer.writeAll("BESS");
+}
