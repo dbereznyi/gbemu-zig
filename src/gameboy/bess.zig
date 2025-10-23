@@ -299,8 +299,68 @@ const BessCore = struct {
         try writer.writeByte(gb.ie);
         try writer.writeByte(if (gb.stopped) 2 else if (gb.halted) 1 else 0);
         try writer.writeByte(0);
-        for (gb.io_regs) |reg_val| {
-            try writer.writeByte(reg_val);
+
+        try writer.writeByte(gb.io_regs[IoReg.JOYP]); // 0x00
+        try writer.writeByte(0); // 0x01
+        try writer.writeByte(0); // 0x02
+        try writer.writeByte(0); // 0x03
+        try writer.writeByte(@truncate(gb.timer.system_counter >> 8)); // 0x04
+        try writer.writeByte(gb.io_regs[IoReg.TIMA]); // 0x05
+        try writer.writeByte(gb.io_regs[IoReg.TMA]); // 0x06
+        try writer.writeByte(gb.io_regs[IoReg.TAC]); // 0x07
+        for (0x08..0x0f) |_| {
+            try writer.writeByte(0);
+        }
+        try writer.writeByte(gb.io_regs[IoReg.IF]); // 0x0f
+        try writer.writeByte(gb.apu.readReg(ApuReg.NR10)); // 0x10
+        try writer.writeByte(gb.apu.readReg(ApuReg.NR11)); // 0x11
+        try writer.writeByte(gb.apu.readReg(ApuReg.NR12)); // 0x12
+        try writer.writeByte(gb.apu.readReg(ApuReg.NR13)); // 0x13
+        try writer.writeByte(gb.apu.readReg(ApuReg.NR14)); // 0x14
+        try writer.writeByte(0); // 0x15
+        try writer.writeByte(gb.apu.readReg(ApuReg.NR21)); // 0x16
+        try writer.writeByte(gb.apu.readReg(ApuReg.NR22)); // 0x17
+        try writer.writeByte(gb.apu.readReg(ApuReg.NR23)); // 0x18
+        try writer.writeByte(gb.apu.readReg(ApuReg.NR24)); // 0x19
+        try writer.writeByte(gb.apu.readReg(ApuReg.NR30)); // 0x1a
+        try writer.writeByte(gb.apu.readReg(ApuReg.NR31)); // 0x1b
+        try writer.writeByte(gb.apu.readReg(ApuReg.NR32)); // 0x1c
+        try writer.writeByte(gb.apu.readReg(ApuReg.NR33)); // 0x1d
+        try writer.writeByte(gb.apu.readReg(ApuReg.NR34)); // 0x1e
+        try writer.writeByte(0); // 0x1f
+        try writer.writeByte(gb.apu.readReg(ApuReg.NR41)); // 0x20
+        try writer.writeByte(gb.apu.readReg(ApuReg.NR42)); // 0x21
+        try writer.writeByte(gb.apu.readReg(ApuReg.NR43)); // 0x22
+        try writer.writeByte(gb.apu.readReg(ApuReg.NR44)); // 0x23
+        try writer.writeByte(gb.apu.readReg(ApuReg.NR50)); // 0x24
+        try writer.writeByte(gb.apu.readReg(ApuReg.NR51)); // 0x25
+        try writer.writeByte(gb.apu.readReg(ApuReg.NR52)); // 0x26
+        for (0x27..0x30) |_| {
+            try writer.writeByte(0);
+        }
+        {
+            const wav_ram = gb.apu.ch3.wav_ram;
+            var i: usize = 0;
+            while (i < 32) : (i += 2) {
+                const upper: u8 = wav_ram[i];
+                const lower: u8 = wav_ram[i + 1];
+                try writer.writeByte((upper << 4) | lower);
+            }
+        }
+        try writer.writeByte(gb.io_regs[IoReg.LCDC]); // 0x40
+        try writer.writeByte(gb.io_regs[IoReg.STAT]); // 0x41
+        try writer.writeByte(gb.io_regs[IoReg.SCY]); // 0x42
+        try writer.writeByte(gb.io_regs[IoReg.SCX]); // 0x43
+        try writer.writeByte(gb.io_regs[IoReg.LY]); // 0x44
+        try writer.writeByte(gb.io_regs[IoReg.LYC]); // 0x45
+        try writer.writeByte(gb.io_regs[IoReg.DMA]); // 0x46
+        try writer.writeByte(gb.io_regs[IoReg.BGP]); // 0x47
+        try writer.writeByte(gb.io_regs[IoReg.OBP0]); // 0x48
+        try writer.writeByte(gb.io_regs[IoReg.OBP1]); // 0x49
+        try writer.writeByte(gb.io_regs[IoReg.WY]); // 0x4a
+        try writer.writeByte(gb.io_regs[IoReg.WX]); // 0x4b
+        for (0x4c..0x80) |_| {
+            try writer.writeByte(0);
         }
 
         try writer.writeInt(u32, @truncate(gb.wram.len), .little);

@@ -222,7 +222,7 @@ const Ch3 = struct {
     }
 
     pub fn loadTimer(self: *Self, period_setting: u11) void {
-        const timer_val = 0b111_1111_1111 - period_setting + 1;
+        const timer_val = 0b111_1111_1111 - period_setting;
         self.timer = timer_val;
     }
 
@@ -313,7 +313,7 @@ const PulseChannel = struct {
 
     pub fn loadTimer(self: *Self, period_setting: u11) void {
         const period_setting_u13: u13 = period_setting;
-        const timer_val = ((0b111_1111_1111 - period_setting_u13) << 1) + 1;
+        const timer_val = (0b111_1111_1111 - period_setting_u13) << 1;
         self.timer = timer_val;
     }
 
