@@ -79,8 +79,6 @@ const BessBlock = union(BessBlockTag) {
 
         const block_start = i;
 
-        std.debug.print("parsing block {s}, len = {}\n", .{ block_name, block_len });
-
         if (block_start.* + block_len > data.len) {
             return error.InvalidBlockLength;
         }
