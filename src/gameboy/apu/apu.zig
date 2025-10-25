@@ -448,7 +448,7 @@ pub const Apu = struct {
 
         if (ch_ix == CH1) {
             self.ch1.period_sweep_shadow = self.ch[ch_ix].period;
-            self.ch1.period_sweep_timer = 0;
+            self.ch1.period_sweep_timer = self.ch1.period_sweep_pace ^ 0b111;
             self.ch1.period_sweep_enabled = if (self.ch1.period_sweep_pace != 0 or self.ch1.period_sweep_individual_step != 0) 1 else 0;
             if (self.ch1.period_sweep_individual_step != 0) {
                 const result = calcNewSweepFreqWithOverflowCheck(
@@ -457,7 +457,6 @@ pub const Apu = struct {
                     self.ch1.period_sweep_individual_step,
                 );
                 if (result[1] == 1) {
-                    std.debug.print("freq overflow in trigger, turning off\n", .{});
                     self.ch[ch_ix].on = 0;
                 }
             }
@@ -761,7 +760,7 @@ pub const Apu = struct {
             self.ch1.period_sweep_timer +%= 1;
 
             if (self.ch1.period_sweep_enabled != 0 and self.ch1.period_sweep_timer == 7) {
-                self.ch1.period_sweep_timer = 0;
+                self.ch1.period_sweep_timer = self.ch1.period_sweep_pace ^ 0b111;
 
                 const result = calcNewSweepFreqWithOverflowCheck(
                     self.ch1.period_sweep_shadow,
@@ -775,6 +774,7 @@ pub const Apu = struct {
                 } else {
                     self.ch1.period_sweep_shadow = result[0];
                     self.ch[CH1].period_setting = self.ch1.period_sweep_shadow;
+                    self.pulse[CH1].loadTimer(self.ch[CH1].period_setting);
                     const result2 = calcNewSweepFreqWithOverflowCheck(
                         self.ch1.period_sweep_shadow,
                         self.ch1.period_sweep_dir,
