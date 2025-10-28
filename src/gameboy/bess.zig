@@ -628,6 +628,7 @@ pub fn loadBess(gb: *Gb, bess: Bess) void {
     gb.io_regs[IoReg.STAT] = core.mm_regs[IoReg.STAT];
     gb.io_regs[IoReg.SCY] = core.mm_regs[IoReg.SCY];
     gb.io_regs[IoReg.SCX] = core.mm_regs[IoReg.SCX];
+    // Since we just start drawing a new frame anyway, we don't reload these.
     // gb.io_regs[IoReg.LY] = core.mm_regs[IoReg.LY];
     // gb.io_regs[IoReg.LYC] = core.mm_regs[IoReg.LYC];
     gb.io_regs[IoReg.DMA] = core.mm_regs[IoReg.DMA];
