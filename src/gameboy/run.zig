@@ -18,3 +18,10 @@ fn processDebugCommand(gb: *Gb) void {
     executeDebugCmd(debugCmd, gb) catch {}; // TODO do something better on error
     gb.debug.acknowledgeCommand();
 }
+
+pub fn runGameboyForNumCycles(gb: *Gb, cycles: usize) void {
+    const start_cycles = gb.cycles;
+    while (gb.cycles - start_cycles < cycles) {
+        runCpu(gb);
+    }
+}

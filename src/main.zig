@@ -73,7 +73,6 @@ pub fn main() !void {
         alloc,
         rom,
         save_data,
-        Palette.green,
     );
     defer gb.deinit(alloc);
 
@@ -282,14 +281,14 @@ const Sdl = struct {
 
         while (self.gb.isRunning()) {
             if (self.gb.debug.isPaused()) {
-                self.handleEvents();
+                try self.handleEvents();
             }
 
             runGameboy(self.gb);
         }
     }
 
-    fn handleEvents(self: *Self) void {
+    fn handleEvents(self: *Self) !void {
         var event: c.SDL_Event = undefined;
         while (c.SDL_PollEvent(&event) != 0) {
             switch (event.type) {
@@ -305,11 +304,11 @@ const Sdl = struct {
                     c.SDLK_0, c.SDLK_1, c.SDLK_2, c.SDLK_3, c.SDLK_4, c.SDLK_6, c.SDLK_7, c.SDLK_8, c.SDLK_9 => {
                         const slot = event.key.keysym.sym - c.SDLK_0;
 
-                        const bess_filepath = std.fmt.allocPrint(
+                        const bess_filepath = try std.fmt.allocPrint(
                             self.alloc,
                             "{s}.s{}",
                             .{ self.rom_filepath_noext, slot },
-                        ) catch @panic("Out of memory");
+                        );
                         defer self.alloc.free(bess_filepath);
 
                         if (event.key.keysym.mod & c.KMOD_CTRL != 0 and event.key.keysym.mod & c.KMOD_SHIFT == 0) {
@@ -400,7 +399,7 @@ const Sdl = struct {
         renderVramViewer(self.gb, &self.vram_pixels);
         self.vram_window.setPixels(self.vram_pixels);
 
-        self.handleEvents();
+        self.handleEvents() catch @panic("Error while handling SDL events");
 
         if (constants.DEBUG.DISPLAY_FPS) {
             const frame_time_ns = now.since(self.last_vblank_at);

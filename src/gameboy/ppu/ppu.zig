@@ -83,10 +83,9 @@ pub const Ppu = struct {
 
     cycles_odd: usize,
 
-    pub fn init(
-        alloc: std.mem.Allocator,
-        palette: Palette,
-    ) !Ppu {
+    pub fn init(alloc: std.mem.Allocator) !Ppu {
+        const palette = Palette.green;
+
         const screen: []Pixel = try alloc.alloc(Pixel, constants.GB.SCREEN_WIDTH * constants.GB.SCREEN_HEIGHT);
         for (screen) |*pixel| {
             pixel.* = palette.data()[0];
@@ -125,6 +124,7 @@ pub const Ppu = struct {
         self.scanning_oam = false;
         self.drawing = false;
         self.cycles_odd = 0;
+        @memset(self.screen, self.palette.data()[0]);
     }
 
     pub fn setVblankCallback(self: *Self, vblank_callback: VblankCallback) void {

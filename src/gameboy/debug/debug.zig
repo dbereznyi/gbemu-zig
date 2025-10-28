@@ -55,9 +55,10 @@ pub const Debug = struct {
         };
     }
 
-    pub fn deinit(debug: *const Debug) void {
+    pub fn deinit(debug: *const Debug, alloc: std.mem.Allocator) void {
         debug.breakpoints.deinit();
         debug.pending_result.deinit();
+        alloc.destroy(debug.execution_trace);
     }
 
     pub fn isPaused(debug: *Debug) bool {

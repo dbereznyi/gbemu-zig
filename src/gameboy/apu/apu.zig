@@ -17,6 +17,7 @@ const HIGH_PASS: f32 = 0.990;
 
 fn initBandLimitedSteps(alloc: std.mem.Allocator) !*[BL_PHASES][BL_STEP_WIDTH]f32 {
     const master = try alloc.alloc(f32, BL_PHASES * BL_STEP_WIDTH);
+    defer alloc.free(master);
     @memset(master, 0.5);
 
     {

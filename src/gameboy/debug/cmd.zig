@@ -151,7 +151,7 @@ pub const DebugCmd = union(DebugCmdTag) {
 
                         _ = p.until(Parser.isNumeral) orelse break :m DebugCmd{ .view_memory = .{ .start = addr, .end = addr +% 1 } };
                         const num_bytes_str = p.toEnd() orelse break :m null;
-                        const num_bytes = std.fmt.parseInt(u8, num_bytes_str, 10) catch break :blk null;
+                        const num_bytes = std.fmt.parseInt(u16, num_bytes_str, 10) catch break :blk null;
 
                         break :m DebugCmd{ .view_memory = .{ .start = addr, .end = addr +% num_bytes } };
                     },

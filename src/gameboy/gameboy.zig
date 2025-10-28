@@ -178,7 +178,6 @@ pub const Gb = struct {
         alloc: std.mem.Allocator,
         rom: []const u8,
         save_data: ?[]const u8,
-        palette: Ppu.Palette,
     ) !Gb {
         const vram = try alloc.alloc(u8, 8 * 1024);
         for (vram, 0..) |_, i| {
@@ -234,7 +233,7 @@ pub const Gb = struct {
             .hram = hram,
             .ie = 0,
             .cart = try Cart.init(rom, save_data, alloc),
-            .ppu = try Ppu.init(alloc, palette),
+            .ppu = try Ppu.init(alloc),
             .apu = try Apu.init(alloc),
             .joypad = Joypad.init(),
             .dma = Dma.init(),
@@ -253,8 +252,9 @@ pub const Gb = struct {
         alloc.free(gb.io_regs);
         alloc.free(gb.hram);
         gb.cart.deinit(alloc);
-        gb.debug.deinit();
+        gb.debug.deinit(alloc);
         gb.ppu.deinit(alloc);
+        gb.apu.deinit(alloc);
     }
 
     pub fn reset(gb: *Gb) void {
@@ -280,6 +280,7 @@ pub const Gb = struct {
         @memset(gb.wram, 0);
         @memset(gb.oam, 0);
         @memset(gb.io_regs, 0);
+        gb.io_regs[IoReg.JOYP] = 0xff;
         @memset(gb.hram, 0);
         gb.ie = 0;
         gb.cart.reset();
