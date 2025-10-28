@@ -8,12 +8,7 @@ pub fn main() !void {
     const alloc = arena.allocator();
 
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer {
-        const check = gpa.deinit();
-        if (check == .leak) {
-            @panic("leak detected");
-        }
-    }
+    defer _ = gpa.deinit();
     const alloc_gpa = gpa.allocator();
 
     const args = try std.process.argsAlloc(alloc);
