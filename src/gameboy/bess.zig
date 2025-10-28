@@ -334,7 +334,7 @@ const BessCore = struct {
         try writer.writeByte(gb.apu.readReg(ApuReg.NR51)); // 0x25
         try writer.writeByte(gb.apu.readReg(ApuReg.NR52)); // 0x26
         for (0x27..0x30) |_| {
-            try writer.writeByte(0);
+            try writer.writeByte(0); // 0x27-0x2f
         }
         {
             const wav_ram = gb.apu.ch3.wav_ram;
@@ -342,7 +342,7 @@ const BessCore = struct {
             while (i < 32) : (i += 2) {
                 const upper: u8 = wav_ram[i];
                 const lower: u8 = wav_ram[i + 1];
-                try writer.writeByte((upper << 4) | lower);
+                try writer.writeByte((upper << 4) | lower); // 0x30-0x3f
             }
         }
         try writer.writeByte(gb.io_regs[IoReg.LCDC]); // 0x40
@@ -631,6 +631,7 @@ pub fn loadBess(gb: *Gb, bess: Bess) void {
     // gb.io_regs[IoReg.LY] = core.mm_regs[IoReg.LY];
     // gb.io_regs[IoReg.LYC] = core.mm_regs[IoReg.LYC];
     gb.io_regs[IoReg.DMA] = core.mm_regs[IoReg.DMA];
+    gb.io_regs[IoReg.BGP] = core.mm_regs[IoReg.BGP];
     gb.io_regs[IoReg.OBP0] = core.mm_regs[IoReg.OBP0];
     gb.io_regs[IoReg.OBP1] = core.mm_regs[IoReg.OBP1];
     gb.io_regs[IoReg.WY] = core.mm_regs[IoReg.WY];
