@@ -345,8 +345,6 @@ pub const Gb = struct {
                     const val = gb.vram[addr - 0x8000];
                     break :blk val;
                 } else {
-                    // garbage data is returned when VRAM is in use by the PPU
-                    std.log.warn("Attempted to read from VRAM while in use (${x})\n", .{addr});
                     break :blk 0xff;
                 }
             },
@@ -362,13 +360,14 @@ pub const Gb = struct {
                     const val = gb.oam[addr - 0xfe00];
                     break :blk val;
                 } else {
-                    // garbage data is returned when ORAM is in use by the PPU
-                    std.log.warn("Attempted to read from OAM while in use (${x})\n", .{addr});
                     break :blk 0xff;
                 }
             },
             // Not useable
-            0xfea0...0xfeff => gb.panic("Attempted to read from prohibited memory at ${x}\n", .{addr}),
+            0xfea0...0xfeff => blk: {
+                std.log.warn("Attempted to read from prohibited memory at ${x}\n", .{addr});
+                break :blk 0xff;
+            },
             // I/O Registers
             0xff00...0xff7f => {
                 const reg_ix = addr - 0xff00;
@@ -414,8 +413,6 @@ pub const Gb = struct {
             0x8000...0x9fff => {
                 if (!gb.isVramInUse() or gb.debug.isPaused()) {
                     gb.vram[addr - 0x8000] = val;
-                } else {
-                    //std.log.warn("Attempted to write to VRAM while in use (${x} -> {x})\n", .{ val, addr });
                 }
             },
             // External RAM
@@ -426,19 +423,16 @@ pub const Gb = struct {
             },
             // Echo RAM
             0xe000...0xfdff => {
-                std.log.warn("Writing to Echo RAM (${x} -> {x})\n", .{ val, addr });
                 gb.wram[addr - 0xe000] = val;
             },
             // OAM
             0xfe00...0xfe9f => {
                 if (!gb.isLcdOn() or !gb.ppu.scanning_oam or gb.debug.isPaused()) {
                     gb.oam[addr - 0xfe00] = val;
-                } else {
-                    std.log.warn("Attempted to write to OAM while in use (${x} -> {x})\n", .{ val, addr });
                 }
             },
             // Not useable
-            0xfea0...0xfeff => gb.panic("Attempted to write to prohibited memory (${x} -> ${x})\n", .{ val, addr }),
+            0xfea0...0xfeff => std.log.warn("Attempted to write to prohibited memory (${x} -> ${x})\n", .{ val, addr }),
             // I/O Registers
             0xff00...0xff7f => {
                 const reg_ix = addr - 0xff00;
