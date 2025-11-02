@@ -24,6 +24,7 @@ const DebugCmdTag = enum {
     view_cart,
     view_apu,
     view_execution_trace,
+    write_memory,
     joypad_press,
     joypad_release,
     ticks,
@@ -56,6 +57,10 @@ pub const DebugCmd = union(DebugCmdTag) {
     view_cart: void,
     view_apu: void,
     view_execution_trace: void,
+    write_memory: struct {
+        addr: u16,
+        val: u8,
+    },
     joypad_press: Button,
     joypad_release: Button,
     ticks: struct { keep: bool },
@@ -164,6 +169,26 @@ pub const DebugCmd = union(DebugCmdTag) {
                     'c' => .view_cart,
                     'a' => .view_apu,
                     'e' => .view_execution_trace,
+                    else => null,
+                };
+            },
+            'w' => blk: {
+                const modifier = p.pop() orelse break :blk null;
+
+                _ = p.until(Parser.isNonWhitespace);
+
+                break :blk switch (modifier) {
+                    'm' => m: {
+                        _ = p.until(Parser.isHexNumeral);
+                        const addr_str = p.untilByte(' ') orelse (p.toEnd() orelse break :m null);
+                        const addr = std.fmt.parseInt(u16, addr_str, 16) catch break :m null;
+
+                        _ = p.until(Parser.isHexNumeral) orelse break :m null;
+                        const val_str = p.toEnd() orelse break :m null;
+                        const val = std.fmt.parseInt(u8, val_str, 16) catch break :blk null;
+
+                        break :m DebugCmd{ .write_memory = .{ .addr = addr, .val = val } };
+                    },
                     else => null,
                 };
             },

@@ -32,6 +32,8 @@ const HELP_MESSAGE =
     "    (v)iew (c)artridge\n" ++
     "    (v)iew (a)pu\n" ++
     "    (v)iew (e)xecution trace\n" ++
+    "  writing to internal state/regions of memory\n" ++
+    "    (w)rite (m)emory <address (hex)> <value (hex)>\n" ++
     "  simulating joypad button presses/releases\n" ++
     "    (j)oypad (p)ress <button to press: a,b,st,se,u,l,r,d>\n" ++
     "    (j)oypad (r)elease <button to release: a,b,st,se,u,l,r,d>\n" ++
@@ -138,6 +140,9 @@ pub fn executeCmd(cmd: DebugCmd, gb: *Gb) !void {
         .view_cart => try gb.cart.printState(writer),
         .view_apu => try gb.apu.printState(writer),
         .view_execution_trace => try gb.debug.printExecutionTrace(writer, MAX_TRACE_LENGTH),
+        .write_memory => |args| {
+            gb.write(args.addr, args.val);
+        },
         .joypad_press => |button| gb.joypad.pressButton(button),
         .joypad_release => |button| gb.joypad.releaseButton(button),
         .ticks => |args| {
