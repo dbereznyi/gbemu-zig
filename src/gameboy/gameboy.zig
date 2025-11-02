@@ -365,7 +365,7 @@ pub const Gb = struct {
             },
             // Not useable
             0xfea0...0xfeff => blk: {
-                std.log.warn("Attempted to read from prohibited memory at ${x}\n", .{addr});
+                //std.log.warn("Attempted to read from prohibited memory at ${x}\n", .{addr});
                 break :blk 0xff;
             },
             // I/O Registers
@@ -432,7 +432,9 @@ pub const Gb = struct {
                 }
             },
             // Not useable
-            0xfea0...0xfeff => std.log.warn("Attempted to write to prohibited memory (${x} -> ${x})\n", .{ val, addr }),
+            0xfea0...0xfeff => {
+                //std.log.warn("Attempted to write to prohibited memory (${x} -> ${x})\n", .{ val, addr });
+            },
             // I/O Registers
             0xff00...0xff7f => {
                 const reg_ix = addr - 0xff00;
