@@ -35,6 +35,7 @@ const Window = struct {
     width: c_int,
     height: c_int,
     scale: c_int,
+    is_visible: bool,
 
     pub fn init(config: Config) !Self {
         const window = c.SDL_CreateWindow(
@@ -70,6 +71,7 @@ const Window = struct {
             .width = config.width,
             .height = config.height,
             .scale = config.scale,
+            .is_visible = true,
         };
     }
 
@@ -89,6 +91,34 @@ const Window = struct {
     pub fn setTitle(self: *Self, title: []const u8) void {
         const title_cstr: [*:0]const u8 = title.ptr[0 .. title.len - 1 :0];
         c.SDL_SetWindowTitle(self.window, title_cstr);
+    }
+
+    pub fn getPosition(self: *const Self) struct { x: c_int, y: c_int } {
+        var x: c_int = undefined;
+        var y: c_int = undefined;
+        _ = c.SDL_GetWindowPosition(self.window, &x, &y);
+        return .{ .x = x, .y = y };
+    }
+
+    pub fn setPosition(self: *Self, x: c_int, y: c_int) void {
+        c.SDL_SetWindowPosition(self.window, x, y);
+    }
+
+    pub fn toggleVisible(self: *Self) void {
+        if (self.is_visible) {
+            c.SDL_HideWindow(self.window);
+        } else {
+            c.SDL_ShowWindow(self.window);
+        }
+
+        self.is_visible = !self.is_visible;
+    }
+
+    pub fn hide(self: *Self) void {
+        if (self.is_visible) {
+            c.SDL_HideWindow(self.window);
+            self.is_visible = false;
+        }
     }
 };
 
@@ -289,12 +319,26 @@ pub const Sdl = struct {
                     c.SDLK_LEFT => self.gb.joypad.pressButton(.left),
                     c.SDLK_UP => self.gb.joypad.pressButton(.up),
                     c.SDLK_DOWN => self.gb.joypad.pressButton(.down),
+                    c.SDLK_v => {
+                        if (event.key.keysym.mod & c.KMOD_CTRL != 0) {
+                            if (!self.vram_window.is_visible) {
+                                // Reset window position to be next to the GB window
+                                const gb_pos = self.gb_window.getPosition();
+                                self.vram_window.setPosition(
+                                    gb_pos.x + (constants.GB.SCREEN_WIDTH * WINDOW_SCALE),
+                                    gb_pos.y,
+                                );
+                            }
+
+                            self.vram_window.toggleVisible();
+                        }
+                    },
                     else => {},
                 },
                 c.SDL_WINDOWEVENT => {
                     if (event.window.event == c.SDL_WINDOWEVENT_CLOSE) {
                         if (event.window.windowID == c.SDL_GetWindowID(self.vram_window.window)) {
-                            c.SDL_HideWindow(self.vram_window.window);
+                            self.vram_window.hide();
                         } else if (event.window.windowID == c.SDL_GetWindowID(self.gb_window.window)) {
                             self.gb.setIsRunning(false);
                         }
