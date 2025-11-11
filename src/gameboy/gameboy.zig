@@ -546,7 +546,7 @@ pub const Gb = struct {
     }
 
     pub fn printDebugTrace(gb: *Gb) !void {
-        const PRINT_INSTR_BYTES = false;
+        const PRINT_INSTR_BYTES = true;
 
         try gb.debug.printExecutionTrace(std.io.getStdOut().writer(), 5);
 
@@ -558,6 +558,7 @@ pub const Gb = struct {
             const bank = gb.cart.getBank(gb.pc + pc_offset);
 
             const instr_str = try instr.toStr(&instrStrBuf);
+            // TODO display correct address space for non-ROM addresses
             std.debug.print("{s} rom{d:_>3}::{x:0>4}: {s} ", .{
                 if (instr_offset == 0) "==>" else "   ",
                 bank,

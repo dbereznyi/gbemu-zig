@@ -14,7 +14,7 @@ pub const Debug = struct {
         bank: u8,
         addr: u16,
     };
-    pub const MAX_TRACE_LENGTH = 256;
+    pub const MAX_TRACE_LENGTH = 1024;
 
     paused: std.atomic.Value(bool),
     break_next_inst: bool,

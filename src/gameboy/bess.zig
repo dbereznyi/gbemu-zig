@@ -1,4 +1,5 @@
 const std = @import("std");
+const format = std.fmt.format;
 const Gb = @import("gameboy.zig").Gb;
 const IoReg = @import("gameboy.zig").IoReg;
 const ApuReg = @import("apu/apu.zig").ApuReg;
@@ -44,6 +45,14 @@ pub const Bess = struct {
 
     pub fn deinit(self: *const Self, alloc: std.mem.Allocator) void {
         if (self.mbc) |mbc| mbc.deinit(alloc);
+    }
+
+    pub fn print(self: *const Self, writer: anytype) !void {
+        if (self.name) |name| try name.print(writer);
+        if (self.info) |info| try info.print(writer);
+        try self.core.print(writer);
+        if (self.mbc) |mbc| try mbc.print(writer);
+        if (self.rtc) |rtc| try rtc.print(writer);
     }
 };
 
@@ -107,6 +116,8 @@ const BessBlock = union(BessBlockTag) {
 };
 
 const BessName = struct {
+    const Self = @This();
+
     name: []const u8,
 
     pub fn init(data: []const u8, i: *usize, len: usize) !BessName {
@@ -127,9 +138,16 @@ const BessName = struct {
         try writer.writeInt(u32, name.len, .little);
         try writer.writeAll(name);
     }
+
+    pub fn print(self: *const Self, writer: anytype) !void {
+        try format(writer, "NAME\n", .{});
+        try format(writer, "  name: {s}\n", .{self.name});
+    }
 };
 
 const BessInfo = struct {
+    const Self = @This();
+
     title: []const u8,
     checksum: u16,
 
@@ -156,9 +174,17 @@ const BessInfo = struct {
         try writer.writeAll(title[0..16]);
         try writer.writeInt(u16, checksum, .little);
     }
+
+    pub fn print(self: *const Self, writer: anytype) !void {
+        try format(writer, "INFO\n", .{});
+        try format(writer, "  title: {s}\n", .{self.title});
+        try format(writer, "  checksum: ${x:0>2}\n", .{self.checksum});
+    }
 };
 
 const BessCore = struct {
+    const Self = @This();
+
     const ExecutionState = enum {
         running,
         halted,
@@ -378,9 +404,22 @@ const BessCore = struct {
         try writer.writeInt(u32, 0, .little);
         try writer.writeInt(u32, 0, .little);
     }
+
+    pub fn print(self: *const Self, writer: anytype) !void {
+        try format(writer, "CORE\n", .{});
+        try format(writer, "  major: {} minor: {}\n", .{ self.major, self.minor });
+        try format(writer, "  model: {s}\n", .{self.model});
+        try format(writer, "  PC: ${x:0>4} SP: ${x:0>4}\n", .{ self.pc, self.sp });
+        try format(writer, "  AF: ${x:0>4} BC: ${x:0>4}\n", .{ self.af, self.bc });
+        try format(writer, "  DE: ${x:0>4} HL: ${x:0>4}\n", .{ self.de, self.hl });
+        try format(writer, "  IME: {} IE: ${x:0>2}\n", .{ self.ime, self.ie });
+        try format(writer, "  state: {}\n", .{self.state});
+    }
 };
 
 const BessMbc = struct {
+    const Self = @This();
+
     regs: []MbcReg,
 
     pub fn init(alloc: std.mem.Allocator, data: []const u8, i: *usize, len: usize) !BessMbc {
@@ -429,9 +468,18 @@ const BessMbc = struct {
             try writer.writeByte(reg.val);
         }
     }
+
+    pub fn print(self: *const Self, writer: anytype) !void {
+        try format(writer, "MBC\n", .{});
+        for (self.regs) |reg| {
+            try format(writer, "  ${x:0>4}: ${x:0>2}\n", .{ reg.addr, reg.val });
+        }
+    }
 };
 
 const BessRtc = struct {
+    const Self = @This();
+
     seconds: u8,
     minutes: u8,
     hours: u8,
@@ -485,6 +533,16 @@ const BessRtc = struct {
             .latched_overflow = latched_overflow,
             .unix_timestamp = unix_timestamp,
         };
+    }
+
+    pub fn print(self: *const Self, writer: anytype) !void {
+        try format(writer, "RTC\n", .{});
+        try format(writer, "  Seconds : ${x:0>2} Seconds  (latched): ${x:0>2}\n", .{ self.seconds, self.latched_seconds });
+        try format(writer, "  Minutes : ${x:0>2} Minutes  (latched): ${x:0>2}\n", .{ self.minutes, self.latched_minutes });
+        try format(writer, "  Hours   : ${x:0>2} Hours    (latched): ${x:0>2}\n", .{ self.hours, self.latched_hours });
+        try format(writer, "  Days    : ${x:0>2} Days     (latched): ${x:0>2}\n", .{ self.days, self.latched_days });
+        try format(writer, "  Overflow: ${x:0>2} Overflow (latched): ${x:0>2}\n", .{ self.overflow, self.latched_overflow });
+        try format(writer, "  Unix timestamp: {}\n", .{self.unix_timestamp});
     }
 };
 
@@ -649,6 +707,11 @@ pub fn loadBess(gb: *Gb, bess: Bess) void {
             gb.write(reg.addr, reg.val);
         }
     }
+
+    bess.print(std.io.getStdOut().writer()) catch {};
+
+    gb.printDebugState(std.io.getStdOut().writer()) catch {};
+    gb.printDebugTrace() catch {};
 }
 
 // Handles copying memory regions of possibly differing sizes.
