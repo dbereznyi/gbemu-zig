@@ -8,7 +8,7 @@ const executeDebugCmd = @import("debug/executeCmd.zig").executeCmd;
 pub fn runGameboy(gb: *Gb) void {
     processDebugCommand(gb);
 
-    if (!gb.debug.isPaused()) {
+    if (!gb.debug.paused) {
         runCpu(gb);
     }
 }

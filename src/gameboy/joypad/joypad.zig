@@ -1,5 +1,4 @@
 const std = @import("std");
-const format = std.fmt.format;
 
 pub const Joypad = struct {
     pub const Button = enum(u8) {

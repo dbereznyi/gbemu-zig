@@ -1,5 +1,4 @@
 const std = @import("std");
-const format = std.fmt.format;
 
 pub const MbcReg = struct {
     addr: u16,

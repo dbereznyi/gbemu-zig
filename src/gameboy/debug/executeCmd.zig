@@ -1,7 +1,6 @@
 const std = @import("std");
 const Gb = @import("../gameboy.zig").Gb;
 const DebugCmd = @import("cmd.zig").DebugCmd;
-const format = std.fmt.format;
 const MAX_TRACE_LENGTH = @import("debug.zig").Debug.MAX_TRACE_LENGTH;
 
 const HELP_MESSAGE =
@@ -45,6 +44,7 @@ const HELP_MESSAGE =
 
 pub fn executeCmd(cmd: DebugCmd, gb: *Gb) !void {
     var allocating_writer = std.Io.Writer.Allocating.fromArrayList(gb.debug.alloc, &gb.debug.pending_result);
+    defer gb.debug.pending_result = allocating_writer.toArrayList();
     const writer = &allocating_writer.writer;
 
     switch (cmd) {

@@ -227,7 +227,7 @@ pub const Sdl = struct {
         self.last_vblank_at = try std.time.Instant.now();
 
         while (self.gb.isRunning()) {
-            if (self.gb.debug.isPaused()) {
+            if (self.gb.debug.paused) {
                 try self.handleEvents();
             }
 

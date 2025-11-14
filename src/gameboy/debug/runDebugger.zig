@@ -9,17 +9,21 @@ pub fn runDebugger(gb: *Gb) !void {
     gb.debug.std_out_mutex.unlock();
 
     while (true) {
-        var input_buf: [128]u8 = undefined;
-        const stdin = std.fs.File.stdin();
-        const input_len = try stdin.read(&input_buf);
+        var input_buf: [1024]u8 = undefined;
+        var stdin_reader = std.fs.File.stdin().reader(&input_buf);
+        const stdin_io_reader = &stdin_reader.interface;
+        var line_writer = std.Io.Writer.Allocating.init(gb.debug.alloc);
+        defer line_writer.deinit();
+        _ = try stdin_io_reader.streamDelimiter(&line_writer.writer, '\n');
+        const line = line_writer.written();
 
         gb.debug.std_out_mutex.lock();
         defer std.debug.print("> ", .{});
         defer gb.debug.std_out_mutex.unlock();
 
         var cmd: DebugCmd = undefined;
-        if (input_len > 1) {
-            cmd = DebugCmd.parse(input_buf[0..input_len]) orelse {
+        if (line.len > 0) {
+            cmd = DebugCmd.parse(line) orelse {
                 std.debug.print("Invalid command\n\n", .{});
                 continue;
             };

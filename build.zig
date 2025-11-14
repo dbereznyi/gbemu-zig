@@ -33,12 +33,15 @@ pub fn build(b: *std.Build) void {
     b.installArtifact(lib);
 
     const exe = b.addExecutable(.{
-        .name = "test",
+        .name = "gbemu",
         .root_module = b.createModule(.{
             .root_source_file = b.path("src/main.zig"),
             .target = target,
             .optimize = optimize,
         }),
+        // In the current Zig version (0.15.2) the self-hosted compiler leads to
+        // massive performance slowdowns, so temporarily falling back to LLVM builds.
+        .use_llvm = true,
     });
     exe.linkSystemLibrary("SDL2");
     exe.linkLibC();

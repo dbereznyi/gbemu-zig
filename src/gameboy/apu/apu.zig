@@ -3,7 +3,6 @@ const c = @cImport({
     @cInclude("SDL2/SDL.h");
 });
 const Sample = @import("../../sample.zig").Sample;
-const format = std.fmt.format;
 const constants = @import("../../constants.zig");
 
 const SAMPLES_CLOCK_DIVIDER = @as(f32, @floatFromInt(constants.GB.CLOCK_RATE)) / 2 / @as(f32, @floatFromInt(constants.AUDIO.SAMPLE_RATE));

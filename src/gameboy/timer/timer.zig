@@ -1,5 +1,4 @@
 const std = @import("std");
-const format = std.fmt.format;
 
 pub const Timer = struct {
     const Self = @This();

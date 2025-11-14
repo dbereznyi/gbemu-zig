@@ -16,7 +16,7 @@ pub const Debug = struct {
     };
     pub const MAX_TRACE_LENGTH = 1024;
 
-    paused: std.atomic.Value(bool),
+    paused: bool,
     break_next_inst: bool,
     breakpoints: std.ArrayList(Breakpoint),
     stack_base: u16,
@@ -41,7 +41,7 @@ pub const Debug = struct {
         const pending_result = try std.ArrayList(u8).initCapacity(alloc, 8 * 1024);
 
         return Debug{
-            .paused = std.atomic.Value(bool).init(false),
+            .paused = false,
             .break_next_inst = false,
             .breakpoints = breakpoints,
             .stack_base = 0xfffe,
@@ -63,12 +63,12 @@ pub const Debug = struct {
         debug.alloc.destroy(debug.execution_trace);
     }
 
-    pub fn isPaused(debug: *Debug) bool {
-        return debug.paused.load(.monotonic);
+    pub fn isPaused(debug: *const Debug) bool {
+        return debug.paused;
     }
 
     pub fn setPaused(debug: *Debug, val: bool) void {
-        debug.paused.store(val, .monotonic);
+        debug.paused = val;
     }
 
     pub fn sendCommand(debug: *Debug, cmd: DebugCmd) void {
