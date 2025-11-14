@@ -270,8 +270,9 @@ pub const Cart = struct {
                     return;
                 }
                 const actual_addr = (@as(usize, @intCast(addr)) - 0xa000) + (0x2000 * @as(usize, @intCast(cart.mbc1.current_ram_bank)));
-                std.debug.assert(actual_addr < cart.ram.len);
-                cart.ram[actual_addr] = val;
+                if (actual_addr < cart.ram.len) {
+                    cart.ram[actual_addr] = val;
+                }
             },
             else => std.debug.panic("TODO implement RAM read for {}\n", .{cart.mapper}),
         }
