@@ -25,8 +25,8 @@ pub const Timer = struct {
         };
     }
 
-    pub fn printState(timer: *const Self, writer: anytype) !void {
-        try format(writer, "state={s} cycles_elapsed={} system_counter={x:0>4}\n", .{
+    pub fn printState(timer: *const Self, writer: *std.Io.Writer) !void {
+        try writer.print("state={s} cycles_elapsed={} system_counter={x:0>4}\n", .{
             switch (timer.state) {
                 .running => "running",
                 .reloading_tima => "reloading_tima",

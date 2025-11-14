@@ -19,10 +19,14 @@ pub fn incAs16(high: u8, low: u8, new_high: *u8, new_low: *u8) void {
 pub fn BoundedStack(comptime T: type, comptime capacity: usize) type {
     return struct {
         const Self = @This();
-        const L = std.DoublyLinkedList(T);
+        const L = std.DoublyLinkedList;
+        const Node = struct {
+            data: T,
+            node: L.Node = .{},
+        };
 
         list: L,
-        nodes: [capacity]L.Node,
+        nodes: [capacity]Node,
         len: usize,
 
         pub fn init() Self {
@@ -35,13 +39,14 @@ pub fn BoundedStack(comptime T: type, comptime capacity: usize) type {
 
         pub fn push(self: *Self, value: T) void {
             if (self.len < capacity) {
-                self.nodes[self.len] = L.Node{ .data = value };
-                self.list.prepend(&self.nodes[self.len]);
+                self.nodes[self.len] = Node{ .data = value };
+                self.list.prepend(&self.nodes[self.len].node);
                 self.len += 1;
             } else {
                 const last = self.list.last orelse unreachable;
                 self.list.remove(last);
-                last.*.data = value;
+                var node: *Node = @fieldParentPtr("node", last);
+                node.data = value;
                 self.list.prepend(last);
             }
         }
@@ -69,7 +74,8 @@ pub fn BoundedStack(comptime T: type, comptime capacity: usize) type {
             var it = self.list.last;
             var index: usize = 0;
             while (it) |node| : (it = node.prev) {
-                items_buf[index] = node.data;
+                const node_with_data: *Node = @fieldParentPtr("node", node);
+                items_buf[index] = node_with_data.data;
                 index += 1;
             }
             return items_buf[0..index];
@@ -77,8 +83,9 @@ pub fn BoundedStack(comptime T: type, comptime capacity: usize) type {
 
         pub fn clear(self: *Self) void {
             self.len = 0;
-            while (self.list.len > 0) {
+            while (self.len > 0) {
                 _ = self.list.pop();
+                self.len -= 1;
             }
         }
     };

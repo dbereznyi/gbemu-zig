@@ -1,5 +1,4 @@
 const std = @import("std");
-const format = std.fmt.format;
 const Gb = @import("gameboy.zig").Gb;
 const IoReg = @import("gameboy.zig").IoReg;
 const ApuReg = @import("apu/apu.zig").ApuReg;
@@ -47,7 +46,7 @@ pub const Bess = struct {
         if (self.mbc) |mbc| mbc.deinit(alloc);
     }
 
-    pub fn print(self: *const Self, writer: anytype) !void {
+    pub fn print(self: *const Self, writer: *std.Io.Writer) !void {
         if (self.name) |name| try name.print(writer);
         if (self.info) |info| try info.print(writer);
         try self.core.print(writer);
@@ -139,9 +138,9 @@ const BessName = struct {
         try writer.writeAll(name);
     }
 
-    pub fn print(self: *const Self, writer: anytype) !void {
-        try format(writer, "NAME\n", .{});
-        try format(writer, "  name: {s}\n", .{self.name});
+    pub fn print(self: *const Self, writer: *std.Io.Writer) !void {
+        try writer.print("NAME\n", .{});
+        try writer.print("  name: {s}\n", .{self.name});
     }
 };
 
@@ -175,10 +174,10 @@ const BessInfo = struct {
         try writer.writeInt(u16, checksum, .little);
     }
 
-    pub fn print(self: *const Self, writer: anytype) !void {
-        try format(writer, "INFO\n", .{});
-        try format(writer, "  title: {s}\n", .{self.title});
-        try format(writer, "  checksum: ${x:0>2}\n", .{self.checksum});
+    pub fn print(self: *const Self, writer: *std.Io.Writer) !void {
+        try writer.print("INFO\n", .{});
+        try writer.print("  title: {s}\n", .{self.title});
+        try writer.print("  checksum: ${x:0>2}\n", .{self.checksum});
     }
 };
 
@@ -405,15 +404,17 @@ const BessCore = struct {
         try writer.writeInt(u32, 0, .little);
     }
 
-    pub fn print(self: *const Self, writer: anytype) !void {
-        try format(writer, "CORE\n", .{});
-        try format(writer, "  major: {} minor: {}\n", .{ self.major, self.minor });
-        try format(writer, "  model: {s}\n", .{self.model});
-        try format(writer, "  PC: ${x:0>4} SP: ${x:0>4}\n", .{ self.pc, self.sp });
-        try format(writer, "  AF: ${x:0>4} BC: ${x:0>4}\n", .{ self.af, self.bc });
-        try format(writer, "  DE: ${x:0>4} HL: ${x:0>4}\n", .{ self.de, self.hl });
-        try format(writer, "  IME: {} IE: ${x:0>2}\n", .{ self.ime, self.ie });
-        try format(writer, "  state: {}\n", .{self.state});
+    pub fn print(self: *const Self, writer: *std.Io.Writer) !void {
+        try writer.print("CORE\n", .{});
+        try writer.print("  major: {} minor: {}\n", .{ self.major, self.minor });
+        try writer.print("  model: {s}\n", .{self.model});
+        try writer.print("  PC: ${x:0>4} SP: ${x:0>4}\n", .{ self.pc, self.sp });
+        try writer.print("  AF: ${x:0>4} BC: ${x:0>4}\n", .{ self.af, self.bc });
+        try writer.print("  DE: ${x:0>4} HL: ${x:0>4}\n", .{ self.de, self.hl });
+        try writer.print("  IME: {} IE: ${x:0>2}\n", .{ self.ime, self.ie });
+        try writer.print("  state: {}\n", .{self.state});
+        try writer.print("  wram size: {} vram size: {} sram size: {}\n", .{ self.ram.len, self.vram.len, self.mbc_ram.len });
+        try writer.print("  oam size: {} hram size: {}\n", .{ self.oam.len, self.hram.len });
     }
 };
 
@@ -469,10 +470,10 @@ const BessMbc = struct {
         }
     }
 
-    pub fn print(self: *const Self, writer: anytype) !void {
-        try format(writer, "MBC\n", .{});
+    pub fn print(self: *const Self, writer: *std.Io.Writer) !void {
+        try writer.print("MBC\n", .{});
         for (self.regs) |reg| {
-            try format(writer, "  ${x:0>4}: ${x:0>2}\n", .{ reg.addr, reg.val });
+            try writer.print("  ${x:0>4}: ${x:0>2}\n", .{ reg.addr, reg.val });
         }
     }
 };
@@ -535,14 +536,14 @@ const BessRtc = struct {
         };
     }
 
-    pub fn print(self: *const Self, writer: anytype) !void {
-        try format(writer, "RTC\n", .{});
-        try format(writer, "  Seconds : ${x:0>2} Seconds  (latched): ${x:0>2}\n", .{ self.seconds, self.latched_seconds });
-        try format(writer, "  Minutes : ${x:0>2} Minutes  (latched): ${x:0>2}\n", .{ self.minutes, self.latched_minutes });
-        try format(writer, "  Hours   : ${x:0>2} Hours    (latched): ${x:0>2}\n", .{ self.hours, self.latched_hours });
-        try format(writer, "  Days    : ${x:0>2} Days     (latched): ${x:0>2}\n", .{ self.days, self.latched_days });
-        try format(writer, "  Overflow: ${x:0>2} Overflow (latched): ${x:0>2}\n", .{ self.overflow, self.latched_overflow });
-        try format(writer, "  Unix timestamp: {}\n", .{self.unix_timestamp});
+    pub fn print(self: *const Self, writer: *std.Io.Writer) !void {
+        try writer.print("RTC\n", .{});
+        try writer.print("  Seconds : ${x:0>2} Seconds  (latched): ${x:0>2}\n", .{ self.seconds, self.latched_seconds });
+        try writer.print("  Minutes : ${x:0>2} Minutes  (latched): ${x:0>2}\n", .{ self.minutes, self.latched_minutes });
+        try writer.print("  Hours   : ${x:0>2} Hours    (latched): ${x:0>2}\n", .{ self.hours, self.latched_hours });
+        try writer.print("  Days    : ${x:0>2} Days     (latched): ${x:0>2}\n", .{ self.days, self.latched_days });
+        try writer.print("  Overflow: ${x:0>2} Overflow (latched): ${x:0>2}\n", .{ self.overflow, self.latched_overflow });
+        try writer.print("  Unix timestamp: {}\n", .{self.unix_timestamp});
     }
 };
 
@@ -708,10 +709,12 @@ pub fn loadBess(gb: *Gb, bess: Bess) void {
         }
     }
 
-    bess.print(std.io.getStdOut().writer()) catch {};
+    var stdout_writer = std.fs.File.stdout().writerStreaming(&.{}).interface;
 
-    gb.printDebugState(std.io.getStdOut().writer()) catch {};
-    gb.printDebugTrace() catch {};
+    bess.print(&stdout_writer) catch {};
+    gb.printDebugState(&stdout_writer) catch {};
+    gb.ppu.printState(&stdout_writer) catch {};
+    //gb.printDebugTrace() catch {};
 }
 
 // Handles copying memory regions of possibly differing sizes.
@@ -724,7 +727,11 @@ fn copyMemoryRegion(dst: []u8, src: []const u8) void {
     }
 }
 
-pub fn writeBess(gb: *Gb, writer: anytype) !void {
+pub fn writeBess(gb: *Gb, writer: *std.Io.Writer) !void {
+    var stdout_writer = std.fs.File.stdout().writerStreaming(&.{}).interface;
+    gb.printDebugState(&stdout_writer) catch {};
+    gb.ppu.printState(&stdout_writer) catch {};
+
     var i: usize = 0;
 
     const ram_start = i;

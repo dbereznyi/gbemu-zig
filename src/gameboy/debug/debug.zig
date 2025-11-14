@@ -27,6 +27,7 @@ pub const Debug = struct {
     pending_result: std.ArrayList(u8),
     pending_result_sem: std.Thread.Semaphore,
 
+    alloc: std.mem.Allocator,
     std_out_mutex: std.Thread.Mutex,
 
     pub fn init(alloc: std.mem.Allocator) !Debug {
@@ -51,14 +52,15 @@ pub const Debug = struct {
             .pending_result = pending_result,
             .pending_result_sem = std.Thread.Semaphore{},
 
+            .alloc = alloc,
             .std_out_mutex = std.Thread.Mutex{},
         };
     }
 
-    pub fn deinit(debug: *const Debug, alloc: std.mem.Allocator) void {
-        debug.breakpoints.deinit();
-        debug.pending_result.deinit();
-        alloc.destroy(debug.execution_trace);
+    pub fn deinit(debug: *Debug) void {
+        debug.breakpoints.deinit(debug.alloc);
+        debug.pending_result.deinit(debug.alloc);
+        debug.alloc.destroy(debug.execution_trace);
     }
 
     pub fn isPaused(debug: *Debug) bool {
@@ -86,7 +88,7 @@ pub const Debug = struct {
         debug.execution_trace.push(.{ .bank = bank, .pc = pc, .instr = instr });
     }
 
-    pub fn printExecutionTrace(debug: *const Debug, writer: anytype, count: usize) !void {
+    pub fn printExecutionTrace(debug: *const Debug, writer: *std.Io.Writer, count: usize) !void {
         std.debug.assert(count <= MAX_TRACE_LENGTH);
 
         var items_buf: [MAX_TRACE_LENGTH]TraceLine = undefined;
@@ -96,7 +98,7 @@ pub const Debug = struct {
             const item = items[i];
             var instr_str_buf: [64]u8 = undefined;
             const instr_str = item.instr.toStr(&instr_str_buf) catch "?";
-            try format(writer, "    rom{d:_>3}::{x:0>4}: {s}\n", .{ item.bank, item.pc, instr_str });
+            try writer.print("    rom{d:_>3}::{x:0>4}: {s}\n", .{ item.bank, item.pc, instr_str });
         }
     }
 

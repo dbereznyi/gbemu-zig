@@ -25,8 +25,8 @@ pub const Dma = struct {
         };
     }
 
-    pub fn printState(dma: *const Dma, writer: anytype) !void {
-        try format(writer, "mode={s} transferPending={} startAddr={x:0>4} bytesTransferred={}\n", .{
+    pub fn printState(dma: *const Dma, writer: *std.Io.Writer) !void {
+        try writer.print("mode={s} transferPending={} startAddr={x:0>4} bytesTransferred={}\n", .{
             switch (dma.mode) {
                 .idle => "idle",
                 .transfer => "transfer",

@@ -123,7 +123,7 @@ pub const Cart = struct {
         alloc.free(cart.ram);
     }
 
-    pub fn printState(cart: *const Cart, writer: anytype) !void {
+    pub fn printState(cart: *const Cart, writer: *std.Io.Writer) !void {
         const mapper_str = switch (cart.mapper) {
             .none => "none",
             .mbc1 => "mbc1",
@@ -138,11 +138,11 @@ pub const Cart = struct {
             .huc3 => "huc3",
             .huc1 => "huc1",
         };
-        try format(writer, "mapper={s} has_ram={d} has_battery={d} rom_size={} ram_size={}\n", .{ mapper_str, if (cart.has_ram) @as(u1, 1) else @as(u1, 0), if (cart.has_battery) @as(u1, 1) else @as(u1, 0), cart.rom_size, cart.ram_size });
+        try writer.print("mapper={s} has_ram={d} has_battery={d} rom_size={} ram_size={}\n", .{ mapper_str, if (cart.has_ram) @as(u1, 1) else @as(u1, 0), if (cart.has_battery) @as(u1, 1) else @as(u1, 0), cart.rom_size, cart.ram_size });
 
         switch (cart.mapper) {
             .mbc1 => {
-                try format(writer, "rom_bank={} ram_bank={} ram_enable={} banking_mode={}\n", .{ cart.mbc1.current_rom_bank, cart.mbc1.current_ram_bank, cart.mbc1.ram_enable, cart.mbc1.banking_mode });
+                try writer.print("rom_bank={} ram_bank={} ram_enable={} banking_mode={}\n", .{ cart.mbc1.current_rom_bank, cart.mbc1.current_ram_bank, cart.mbc1.ram_enable, cart.mbc1.banking_mode });
             },
             else => {},
         }

@@ -10,7 +10,8 @@ pub fn runDebugger(gb: *Gb) !void {
 
     while (true) {
         var input_buf: [128]u8 = undefined;
-        const input_len = try std.io.getStdIn().read(&input_buf);
+        const stdin = std.fs.File.stdin();
+        const input_len = try stdin.read(&input_buf);
 
         gb.debug.std_out_mutex.lock();
         defer std.debug.print("> ", .{});

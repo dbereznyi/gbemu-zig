@@ -15,7 +15,8 @@ pub fn main() !void {
     defer std.process.argsFree(alloc, args);
 
     if (args.len < 2) {
-        try std.io.getStdErr().writer().print("Usage: {s} <path to ROM file>\n", .{args[0]});
+        var err = std.fs.File.stderr().writerStreaming(&.{});
+        try err.interface.print("Usage: {s} <path to ROM file>\n", .{args[0]});
         std.process.exit(1);
     }
 

@@ -2,7 +2,6 @@ const std = @import("std");
 const Pixel = @import("../pixel.zig").Pixel;
 const as16 = @import("../util.zig").as16;
 const decodeInstrAt = @import("cpu/decode.zig").decodeInstrAt;
-const format = std.fmt.format;
 const PrefixOp = @import("cpu/prefix_op.zig").PrefixOp;
 const Debug = @import("debug/debug.zig").Debug;
 const Timer = @import("timer/timer.zig").Timer;
@@ -245,14 +244,14 @@ pub const Gb = struct {
         };
     }
 
-    pub fn deinit(gb: *const Gb, alloc: std.mem.Allocator) void {
+    pub fn deinit(gb: *Gb, alloc: std.mem.Allocator) void {
         alloc.free(gb.vram);
         alloc.free(gb.wram);
         alloc.free(gb.oam);
         alloc.free(gb.io_regs);
         alloc.free(gb.hram);
         gb.cart.deinit(alloc);
-        gb.debug.deinit(alloc);
+        gb.debug.deinit();
         gb.ppu.deinit(alloc);
         gb.apu.deinit(alloc);
     }
@@ -520,35 +519,37 @@ pub const Gb = struct {
 
     pub fn panic(gb: *Gb, comptime msg: []const u8, args: anytype) noreturn {
         std.debug.print("\n", .{});
-        gb.debug.printExecutionTrace(std.io.getStdOut().writer(), Debug.MAX_TRACE_LENGTH) catch {};
+        var stdout_writer = std.fs.File.stdout().writerStreaming(&.{}).interface;
+        gb.debug.printExecutionTrace(&stdout_writer, Debug.MAX_TRACE_LENGTH) catch {};
         std.debug.print("\n", .{});
-        gb.printDebugState(std.io.getStdOut().writer()) catch {};
+        gb.printDebugState(&stdout_writer) catch {};
         std.debug.print("\n", .{});
         std.debug.panic(msg, args);
     }
 
-    pub fn printDebugState(gb: *Gb, writer: anytype) !void {
-        try format(writer, "PC: ${x:0>4} SP: ${x:0>4}\n", .{ gb.pc, gb.sp });
-        try format(writer, "Z: {} N: {} H: {} C: {}\n", .{ gb.zero, gb.negative, gb.halfCarry, gb.carry });
-        try format(writer, "A: ${x:0>2} B: ${x:0>2} D: ${x:0>2} H: ${x:0>2}\n", .{ gb.a, gb.b, gb.d, gb.h });
-        try format(writer, "F: ${x:0>2} C: ${x:0>2} E: ${x:0>2} L: ${x:0>2}\n", .{ gb.readFlags(), gb.c, gb.e, gb.l });
-        try format(writer, "LY: ${x:0>2} LCDC: %{b:0>8} STAT: %{b:0>8}\n", .{
+    pub fn printDebugState(gb: *Gb, writer: *std.Io.Writer) !void {
+        try writer.print("PC: ${x:0>4} SP: ${x:0>4}\n", .{ gb.pc, gb.sp });
+        try writer.print("Z: {} N: {} H: {} C: {}\n", .{ gb.zero, gb.negative, gb.halfCarry, gb.carry });
+        try writer.print("A: ${x:0>2} B: ${x:0>2} D: ${x:0>2} H: ${x:0>2}\n", .{ gb.a, gb.b, gb.d, gb.h });
+        try writer.print("F: ${x:0>2} C: ${x:0>2} E: ${x:0>2} L: ${x:0>2}\n", .{ gb.readFlags(), gb.c, gb.e, gb.l });
+        try writer.print("LY: ${x:0>2} LCDC: %{b:0>8} STAT: %{b:0>8}\n", .{
             gb.io_regs[IoReg.LY],
             gb.io_regs[IoReg.LCDC],
             gb.io_regs[IoReg.STAT],
         });
-        try format(writer, "IE: %{b:0>8} IF: %{b:0>8} IME: {}\n", .{
+        try writer.print("IE: %{b:0>8} IF: %{b:0>8} IME: {}\n", .{
             gb.ie,
             gb.io_regs[IoReg.IF],
             @as(u1, if (gb.ime) 1 else 0),
         });
-        try format(writer, "cycles: {}\n", .{gb.cycles});
+        try writer.print("cycles: {}\n", .{gb.cycles});
     }
 
     pub fn printDebugTrace(gb: *Gb) !void {
         const PRINT_INSTR_BYTES = true;
 
-        try gb.debug.printExecutionTrace(std.io.getStdOut().writer(), 5);
+        var stdout_writer = std.fs.File.stdout().writerStreaming(&.{}).interface;
+        try gb.debug.printExecutionTrace(&stdout_writer, 5);
 
         var pc_offset: u16 = 0;
 

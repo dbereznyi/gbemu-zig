@@ -302,7 +302,10 @@ pub const Sdl = struct {
 
                             if (bess_file) |file| {
                                 std.debug.print("Creating savestate in slot #{}\n", .{slot});
-                                writeBess(self.gb, file.writer()) catch |err| {
+                                const buf = try self.alloc.alloc(u8, 1024 * 1024);
+                                defer self.alloc.free(buf);
+                                var writer = file.writer(buf).interface;
+                                writeBess(self.gb, &writer) catch |err| {
                                     std.log.err("Failed to create savestate: {}\n", .{err});
                                 };
                             }

@@ -54,7 +54,7 @@ pub const Joypad = struct {
         joypad.data &= ~@intFromEnum(button);
     }
 
-    pub fn printState(joypad: *Joypad, writer: anytype) !void {
+    pub fn printState(joypad: *Joypad, writer: *std.Io.Writer) !void {
         const data = joypad.data;
         const down: u1 = if (data & @intFromEnum(Button.down) > 0) 1 else 0;
         const up: u1 = if (data & @intFromEnum(Button.up) > 0) 1 else 0;
@@ -64,7 +64,7 @@ pub const Joypad = struct {
         const select: u1 = if (data & @intFromEnum(Button.select) > 0) 1 else 0;
         const b: u1 = if (data & @intFromEnum(Button.b) > 0) 1 else 0;
         const a: u1 = if (data & @intFromEnum(Button.a) > 0) 1 else 0;
-        try format(writer, "U={} D={} L={} R={} ST={} SE={} B={} A={}\n", .{ down, up, left, right, start, select, b, a });
+        try writer.print("U={} D={} L={} R={} ST={} SE={} B={} A={}\n", .{ down, up, left, right, start, select, b, a });
     }
 
     pub fn reset(joypad: *Joypad) void {

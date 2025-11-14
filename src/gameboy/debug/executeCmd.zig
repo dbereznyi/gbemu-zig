@@ -44,7 +44,8 @@ const HELP_MESSAGE =
     "    bs 1234\n";
 
 pub fn executeCmd(cmd: DebugCmd, gb: *Gb) !void {
-    const writer = gb.debug.pending_result.writer();
+    var allocating_writer = std.Io.Writer.Allocating.fromArrayList(gb.debug.alloc, &gb.debug.pending_result);
+    const writer = &allocating_writer.writer;
 
     switch (cmd) {
         .quit => {
@@ -69,44 +70,44 @@ pub fn executeCmd(cmd: DebugCmd, gb: *Gb) !void {
                 gb.debug.setPaused(false);
             }
         },
-        .help => try format(writer, "{s}", .{HELP_MESSAGE}),
+        .help => try writer.print("{s}", .{HELP_MESSAGE}),
         .breakpoint_list => blk: {
             if (gb.debug.breakpoints.items.len == 0) {
-                try format(writer, "No active breakpoints set.\n", .{});
+                try writer.print("No active breakpoints set.\n", .{});
                 break :blk;
             }
 
-            try format(writer, "Active breakpoints:\n", .{});
+            try writer.print("Active breakpoints:\n", .{});
             for (gb.debug.breakpoints.items, 0..) |breakpoint, i| {
-                try format(writer, "  #{} ${x:0>4} (bank {})\n", .{ i, breakpoint.addr, breakpoint.bank });
+                try writer.print("  #{} ${x:0>4} (bank {})\n", .{ i, breakpoint.addr, breakpoint.bank });
             }
         },
         .breakpoint_set => |breakpoint| {
-            try gb.debug.breakpoints.append(breakpoint);
-            try format(writer, "Set breakpoint at ${x:0>4} (bank {}).\n", .{ breakpoint.addr, breakpoint.bank });
+            try gb.debug.breakpoints.append(gb.debug.alloc, breakpoint);
+            try writer.print("Set breakpoint at ${x:0>4} (bank {}).\n", .{ breakpoint.addr, breakpoint.bank });
         },
         .breakpoint_unset => |index| blk: {
             if (index >= gb.debug.breakpoints.items.len) {
-                try format(writer, "Breakpoint #{} does not exist.\n", .{index});
+                try writer.print("Breakpoint #{} does not exist.\n", .{index});
                 break :blk;
             }
             _ = gb.debug.breakpoints.orderedRemove(index);
-            try format(writer, "Unset breakpoint #{}.\n", .{index});
+            try writer.print("Unset breakpoint #{}.\n", .{index});
         },
         .breakpoint_clear_all => {
             gb.debug.breakpoints.clearRetainingCapacity();
-            try format(writer, "All breakpoints cleared.\n", .{});
+            try writer.print("All breakpoints cleared.\n", .{});
         },
         .view_registers => try gb.printDebugState(writer),
         .view_memory => |args| {
             for (args.start..args.end, 0..) |addr, i| {
                 if (i > 0 and i % 16 == 0) {
-                    try format(writer, "\n", .{});
+                    try writer.print("\n", .{});
                 }
                 if (i % 16 == 0) {
-                    try format(writer, "{x:0>4}: ", .{addr});
+                    try writer.print("{x:0>4}: ", .{addr});
                 }
-                try format(writer, "{x:0>2} ", .{gb.read(@truncate(addr))});
+                try writer.print("{x:0>2} ", .{gb.read(@truncate(addr))});
             }
         },
         .view_stack => blk: {
@@ -115,23 +116,23 @@ pub fn executeCmd(cmd: DebugCmd, gb: *Gb) !void {
             }
             for (gb.sp..gb.debug.stack_base, 0..) |addr, i| {
                 if (i > 0 and i % 16 == 0) {
-                    try format(writer, "\n", .{});
+                    try writer.print("\n", .{});
                 }
                 if (i % 16 == 0) {
-                    try format(writer, "{x:0>4}: ", .{addr});
+                    try writer.print("{x:0>4}: ", .{addr});
                 }
-                try format(writer, "{x:0>2} ", .{gb.read(@truncate(addr))});
+                try writer.print("{x:0>2} ", .{gb.read(@truncate(addr))});
             }
         },
         .view_ppu => try gb.ppu.printState(writer),
         .view_oam => {
             var i: u16 = 0;
             while (i < gb.oam.len) : (i += 4) {
-                try format(writer, "#{d:0>2}\n", .{i / 4});
-                try format(writer, "${x:0>4}: ${x:0>2} (y = {d:0>3})\n", .{ 0xfe00 + i + 0, gb.read(0xfe00 + i + 0), gb.read(0xfe00 + i + 0) });
-                try format(writer, "${x:0>4}: ${x:0>2} (x = {d:0>3})\n", .{ 0xfe00 + i + 1, gb.read(0xfe00 + i + 1), gb.read(0xfe00 + i + 1) });
-                try format(writer, "${x:0>4}: ${x:0>2} (tileNumber = {d:0>3})\n", .{ 0xfe00 + i + 2, gb.read(0xfe00 + i + 2), gb.read(0xfe00 + i + 2) });
-                try format(writer, "${x:0>4}: ${x:0>2} (flags = {b:0>8})\n", .{ 0xfe00 + i + 3, gb.read(0xfe00 + i + 3), gb.read(0xfe00 + i + 3) });
+                try writer.print("#{d:0>2}\n", .{i / 4});
+                try writer.print("${x:0>4}: ${x:0>2} (y = {d:0>3})\n", .{ 0xfe00 + i + 0, gb.read(0xfe00 + i + 0), gb.read(0xfe00 + i + 0) });
+                try writer.print("${x:0>4}: ${x:0>2} (x = {d:0>3})\n", .{ 0xfe00 + i + 1, gb.read(0xfe00 + i + 1), gb.read(0xfe00 + i + 1) });
+                try writer.print("${x:0>4}: ${x:0>2} (tileNumber = {d:0>3})\n", .{ 0xfe00 + i + 2, gb.read(0xfe00 + i + 2), gb.read(0xfe00 + i + 2) });
+                try writer.print("${x:0>4}: ${x:0>2} (flags = {b:0>8})\n", .{ 0xfe00 + i + 3, gb.read(0xfe00 + i + 3), gb.read(0xfe00 + i + 3) });
             }
         },
         .view_dma => try gb.dma.printState(writer),
@@ -146,18 +147,18 @@ pub fn executeCmd(cmd: DebugCmd, gb: *Gb) !void {
         .joypad_press => |button| gb.joypad.pressButton(button),
         .joypad_release => |button| gb.joypad.releaseButton(button),
         .ticks => |args| {
-            try format(writer, "T-cycles: {}\n", .{gb.cycles});
+            try writer.print("T-cycles: {}\n", .{gb.cycles});
             if (!args.keep) {
                 gb.cycles = 0;
-                try format(writer, "Cycle counter reset to 0.\n", .{});
+                try writer.print("Cycle counter reset to 0.\n", .{});
             }
         },
         .palette => |args| {
             if (args.new_palette) |new_palette| {
                 gb.ppu.palette = new_palette;
-                try format(writer, "Palette set to: {s}\n", .{new_palette.toStr()});
+                try writer.print("Palette set to: {s}\n", .{new_palette.toStr()});
             } else {
-                try format(writer, "Current palette: {s}\n", .{gb.ppu.palette.toStr()});
+                try writer.print("Current palette: {s}\n", .{gb.ppu.palette.toStr()});
             }
         },
     }

@@ -1136,30 +1136,30 @@ pub const Apu = struct {
         self.cycles_since_last_render = 0;
     }
 
-    pub fn printState(self: *const Self, writer: anytype) !void {
-        try format(writer, "APU is {s}\n", .{if (self.on == 1) "on" else "off"});
+    pub fn printState(self: *const Self, writer: *std.Io.Writer) !void {
+        try writer.print("APU is {s}\n", .{if (self.on == 1) "on" else "off"});
 
         for (0..4) |ch_ix| {
-            try format(writer, "CH{} is {s}\n", .{
+            try writer.print("CH{} is {s}\n", .{
                 ch_ix + 1,
                 if (self.ch[ch_ix].on == 1) "on" else "off",
             });
-            try format(writer, "    Current sample: {}\n", .{self.band_limited[ch_ix].buffer[self.band_limited[ch_ix].buffer_ix]});
+            try writer.print("    Current sample: {}\n", .{self.band_limited[ch_ix].buffer[self.band_limited[ch_ix].buffer_ix]});
             if (ch_ix != CH4) {
-                try format(writer, "    Next sample in {} APU ticks (sample length: {} APU ticks)\n", .{
+                try writer.print("    Next sample in {} APU ticks (sample length: {} APU ticks)\n", .{
                     if (ch_ix < 2) self.pulse[ch_ix].timer else self.ch3.timer,
                     if (ch_ix < 2) ((0b111_1111_1111 - @as(u13, @intCast(self.ch[ch_ix].period_setting))) << 1) + 1 else (0b111_1111_1111 - @as(u13, @intCast(self.ch[CH3].period_setting))) + 1,
                 });
             }
 
-            try format(writer, "    Pan: L={} R={} ~ {s}\n", .{
+            try writer.print("    Pan: L={} R={} ~ {s}\n", .{
                 self.ch[ch_ix].output_left,
                 self.ch[ch_ix].output_right,
                 if (self.ch[ch_ix].output_left == 1 and self.ch[ch_ix].output_right == 1) "center" else if (self.ch[ch_ix].output_left == 1) "left" else if (self.ch[ch_ix].output_right == 1) "right" else "muted",
             });
 
             if (ch_ix == CH3) {
-                try format(writer, "    Volume: {s}\n", .{
+                try writer.print("    Volume: {s}\n", .{
                     switch (self.ch3.volume) {
                         0 => "0% (muted)",
                         1 => "100%",
@@ -1167,23 +1167,23 @@ pub const Apu = struct {
                         3 => "25%",
                     },
                 });
-                try format(writer, "    Wave: ", .{});
+                try writer.print("    Wave: ", .{});
                 for (0..16) |i| {
-                    try format(writer, "{x:0>1}{x:0>1} ", .{ self.ch3.wav_ram[i * 2], self.ch3.wav_ram[i * 2 + 1] });
+                    try writer.print("{x:0>1}{x:0>1} ", .{ self.ch3.wav_ram[i * 2], self.ch3.wav_ram[i * 2 + 1] });
                 }
-                try format(writer, "\n", .{});
-                try format(writer, "    Current position: {}\n", .{self.ch3.wav_ram_ix});
+                try writer.print("\n", .{});
+                try writer.print("    Current position: {}\n", .{self.ch3.wav_ram_ix});
             } else {
-                try format(writer, "    Volume: {}\n", .{self.ch[ch_ix].volume});
-                try format(writer, "    Initial volume: {}\n", .{self.ch[ch_ix].init_volume});
+                try writer.print("    Volume: {}\n", .{self.ch[ch_ix].volume});
+                try writer.print("    Initial volume: {}\n", .{self.ch[ch_ix].init_volume});
                 const envelope_sweep_pace = if (ch_ix == CH4) self.ch4.envelope_sweep_pace else self.pulse[ch_ix].envelope_sweep_pace;
-                try format(writer, "    Envelope: {s}", .{
+                try writer.print("    Envelope: {s}", .{
                     if (envelope_sweep_pace == 0) "disabled\n" else "",
                 });
                 const envelope_timer = if (ch_ix == CH4) self.ch4.envelope_timer else self.pulse[ch_ix].envelope_timer;
                 if (envelope_sweep_pace != 0) {
                     const envelope_dir = if (ch_ix == CH4) self.ch4.envelope_dir else self.pulse[ch_ix].envelope_dir;
-                    try format(writer, "{s} every {} ticks, next change in {} ticks\n", .{
+                    try writer.print("{s} every {} ticks, next change in {} ticks\n", .{
                         if (envelope_dir == 1) "increasing" else "decreasing",
                         envelope_sweep_pace,
                         envelope_timer,
@@ -1191,18 +1191,18 @@ pub const Apu = struct {
                 }
             }
 
-            try format(writer, "    Length timer: {s}", .{
+            try writer.print("    Length timer: {s}", .{
                 if (self.ch[ch_ix].length_enable == 0) "disabled\n" else "",
             });
             if (self.ch[ch_ix].length_enable == 1) {
-                try format(writer, "set to {}; will expire in {} ticks\n", .{
+                try writer.print("set to {}; will expire in {} ticks\n", .{
                     self.ch[ch_ix].init_length_timer,
                     0b11_1111 - self.ch[ch_ix].length_timer,
                 });
             }
 
             if (ch_ix == CH1 or ch_ix == CH2) {
-                try format(writer, "    Duty cycle: {s}\n", .{
+                try writer.print("    Duty cycle: {s}\n", .{
                     switch (self.pulse[ch_ix].wave_duty) {
                         0 => "12.5%",
                         1 => "25%",
@@ -1210,20 +1210,20 @@ pub const Apu = struct {
                         3 => "75%",
                     },
                 });
-                try format(writer, "    Duty step: {}\n", .{self.pulse[ch_ix].duty_step});
+                try writer.print("    Duty step: {}\n", .{self.pulse[ch_ix].duty_step});
             }
 
             if (ch_ix == CH4) {
-                try format(writer, "    Frequency: {} Hz (divider: {}, shift: {})\n", .{
+                try writer.print("    Frequency: {} Hz (divider: {}, shift: {})\n", .{
                     if (self.ch4.clock_divider > 0) 262144 / (self.ch4.clock_divider * (@as(u32, 1) << self.ch4.clock_shift)) else (262144 * 2) / (@as(u32, 1) << self.ch4.clock_shift),
                     self.ch4.clock_divider,
                     self.ch4.clock_shift,
                 });
-                try format(writer, "    LFSR: {b:0>16}\n", .{self.ch4.lfsr});
-                try format(writer, "    LFSR width: {}\n", .{if (self.ch4.lfsr_width == 1) @as(usize, 7) else 15});
+                try writer.print("    LFSR: {b:0>16}\n", .{self.ch4.lfsr});
+                try writer.print("    LFSR width: {}\n", .{if (self.ch4.lfsr_width == 1) @as(usize, 7) else 15});
             } else {
                 const period_setting: usize = self.ch[ch_ix].period_setting;
-                try format(writer, "    Period setting: ${x} (sample rate: {} Hz, tone: {} Hz)\n", .{
+                try writer.print("    Period setting: ${x} (sample rate: {} Hz, tone: {} Hz)\n", .{
                     period_setting,
                     if (ch_ix == CH3) 2097152 / (2048 - period_setting) else 1048576 / (2048 - period_setting),
                     if (ch_ix == CH3) 65536 / (2048 - period_setting) else 131072 / (2048 - period_setting),
@@ -1231,11 +1231,11 @@ pub const Apu = struct {
             }
 
             if (ch_ix == CH1) {
-                try format(writer, "    Period sweep: {s}", .{
+                try writer.print("    Period sweep: {s}", .{
                     if (self.ch1.period_sweep_enabled == 0) "disabled\n" else "",
                 });
                 if (self.ch1.period_sweep_enabled == 1) {
-                    try format(writer, "{s} every {} ticks with step {}\n", .{
+                    try writer.print("{s} every {} ticks with step {}\n", .{
                         if (self.ch1.period_sweep_dir == 1) "increasing" else "decreasing",
                         self.ch1.period_sweep_pace,
                         self.ch1.period_sweep_individual_step,

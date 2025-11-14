@@ -131,8 +131,8 @@ pub const Ppu = struct {
         self.vblank_callback = vblank_callback;
     }
 
-    pub fn printState(ppu: *const Ppu, writer: anytype) !void {
-        try format(writer, "dots={d:>6} y={d:0>3} x={d:0>3} wy={d:0>3} windowY={d:0>3} mode={s}\n", .{
+    pub fn printState(ppu: *const Ppu, writer: *std.Io.Writer) !void {
+        try writer.print("dots={d:>6} y={d:0>3} x={d:0>3} wy={d:0>3} windowY={d:0>3} mode={s}\n", .{
             ppu.dots,
             ppu.y,
             ppu.x,
@@ -145,6 +145,6 @@ pub const Ppu = struct {
                 .vBlank => "vBlank",
             },
         });
-        try format(writer, "Cycles until next frame: {}\n", .{70224 - ppu.dots});
+        try writer.print("Cycles until next frame: {}\n", .{70224 - ppu.dots});
     }
 };
