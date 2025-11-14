@@ -472,7 +472,7 @@ fn ldReg16Imm16(gb: *Gb, comptime dst: Dst16) void {
     const low = cycleReadPC(gb);
     const high = cycleReadPC(gb);
 
-    cycleWrite16(gb, dst, as16(high, low));
+    dst.write(as16(high, low), gb);
 }
 
 fn ldIndA(gb: *Gb, dst: Dst8) void {
@@ -977,7 +977,6 @@ fn addSPe8(gb: *Gb) void {
     cycleStall(gb);
 
     gb.sp = as16(sp_high, sp_low);
-    cycleStall(gb);
 }
 
 fn ldInd16A(gb: *Gb) void {
