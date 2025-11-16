@@ -83,7 +83,8 @@ pub fn BoundedStack(comptime T: type, comptime capacity: usize) type {
             var it = self.list.first;
             var index: usize = 0;
             while (it) |node| : (it = node.next) {
-                items_buf[index] = node.data;
+                const node_with_data: *Node = @fieldParentPtr("node", node);
+                items_buf[index] = node_with_data.data;
                 index += 1;
             }
             return items_buf[0..index];
@@ -116,19 +117,19 @@ test "BoundedStack" {
 
     stack.push(1);
     try expect(stack.size() == 1);
-    try expect(stack.top() == 1);
+    try expect(stack.top().?.data == 1);
 
     stack.push(2);
     try expect(stack.size() == 2);
-    try expect(stack.top() == 2);
+    try expect(stack.top().?.data == 2);
 
     stack.push(3);
     try expect(stack.size() == 3);
-    try expect(stack.top() == 3);
+    try expect(stack.top().?.data == 3);
 
     stack.push(4);
     try expect(stack.size() == 3);
-    try expect(stack.top() == 4);
+    try expect(stack.top().?.data == 4);
 
     var items_buf: [3]u32 = undefined;
     const items = stack.getItems(&items_buf);

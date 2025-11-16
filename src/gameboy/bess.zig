@@ -16,15 +16,12 @@ inline fn u64LE(bytes: []const u8) u64 {
     return std.mem.readVarInt(u64, bytes, .little);
 }
 
-fn readMemoryRegion(data: []const u8, i: *usize) ![]const u8 {
+fn readMemoryRegion(reader: *std.Io.Reader, data: []const u8) ![]const u8 {
     if (data.len < 8) {
         return error.MemoryRegionHeaderTooShort;
     }
-    const size: usize = u32LE(data[i.* .. i.* + 4]);
-    i.* += 4;
-    const start: usize = u32LE(data[i.* .. i.* + 4]);
-    i.* += 4;
-
+    const size: usize = try reader.takeInt(u32, .little);
+    const start: usize = try reader.takeInt(u32, .little);
     if (start + size > data.len) {
         return error.MemoryRegionSizeTooLarge;
     }
@@ -41,6 +38,77 @@ pub const Bess = struct {
     core: BessCore,
     mbc: ?BessMbc,
     rtc: ?BessRtc,
+
+    /// Parses BESS-format savestate data. Caller is responsible for freeing `data` after deinit.
+    pub fn init(alloc: std.mem.Allocator, data: []const u8) !Bess {
+        if (data.len < 8) {
+            return error.DataTooShort;
+        }
+
+        const bess_footer = data[data.len - 4 .. data.len];
+        if (!std.mem.eql(u8, bess_footer, "BESS")) {
+            return error.BadFooter;
+        }
+        const first_block_start: usize = u32LE(data[data.len - 8 .. data.len - 4]);
+        if (first_block_start > data.len - 8) {
+            return error.InvalidFirstBlockOffset;
+        }
+
+        var name: ?BessName = null;
+        var info: ?BessInfo = null;
+        var core: ?BessCore = null;
+        var mbc: ?BessMbc = null;
+        var rtc: ?BessRtc = null;
+        var has_end = false;
+
+        var reader = std.Io.Reader.fixed(data[first_block_start..]);
+        while (reader.bufferedLen() > 0) {
+            const block = try BessBlock.parse(&reader, alloc, data);
+
+            switch (block) {
+                .name => {
+                    if (core != null) {
+                        return error.NameBlockMustComeBeforeCoreBlock;
+                    }
+                    if (info != null) {
+                        return error.NameBlockMustComeBeforeInfoBlock;
+                    }
+                    name = block.name;
+                },
+                .info => {
+                    if (core != null) {
+                        return error.InfoBlockMustComeBeforeCoreBlock;
+                    }
+                    info = block.info;
+                },
+                .core => core = block.core,
+                .mbc => mbc = block.mbc,
+                .rtc => rtc = block.rtc,
+                .end => {
+                    has_end = true;
+                    break;
+                },
+                .unknown => {},
+            }
+        }
+
+        if (!has_end) {
+            return error.MissingEndBlock;
+        }
+
+        if (core) |core_nonnull| {
+            return Bess{
+                .data = data,
+                .name = name,
+                .info = info,
+                .core = core_nonnull,
+                .mbc = mbc,
+                .rtc = rtc,
+            };
+        } else {
+            return error.MissingCoreBlock;
+        }
+    }
 
     pub fn deinit(self: *const Self, alloc: std.mem.Allocator) void {
         if (self.mbc) |mbc| mbc.deinit(alloc);
@@ -75,36 +143,28 @@ const BessBlock = union(BessBlockTag) {
     end: void,
     unknown: usize, // Just contains the block length in order to skip it
 
-    pub fn parse(alloc: std.mem.Allocator, data: []const u8, i: *usize) !BessBlock {
-        if (data.len < 8) {
-            return error.NotEnoughDataForABlock;
-        }
-
-        const block_name = data[i.* .. i.* + 4];
-        i.* += 4;
-        const block_len: usize = u32LE(data[i.* .. i.* + 4]);
-        i.* += 4;
-
-        const block_start = i;
-
-        if (block_start.* + block_len > data.len) {
-            return error.InvalidBlockLength;
-        }
+    pub fn parse(
+        reader: *std.Io.Reader,
+        alloc: std.mem.Allocator,
+        data: []const u8,
+    ) !BessBlock {
+        const block_name = try reader.take(4);
+        const block_len: usize = try reader.takeInt(u32, .little);
 
         if (std.mem.eql(u8, block_name, "NAME")) {
-            return .{ .name = try BessName.init(data, block_start, block_len) };
+            return .{ .name = try BessName.init(reader, block_len) };
         }
         if (std.mem.eql(u8, block_name, "INFO")) {
-            return .{ .info = try BessInfo.init(data, block_start) };
+            return .{ .info = try BessInfo.init(reader) };
         }
         if (std.mem.eql(u8, block_name, "CORE")) {
-            return .{ .core = try BessCore.init(data, block_start) };
+            return .{ .core = try BessCore.init(reader, data) };
         }
         if (std.mem.eql(u8, block_name, "MBC ")) {
-            return .{ .mbc = try BessMbc.init(alloc, data, block_start, block_len) };
+            return .{ .mbc = try BessMbc.init(reader, alloc, block_len) };
         }
         if (std.mem.eql(u8, block_name, "RTC ")) {
-            return .{ .rtc = try BessRtc.init(data, block_start) };
+            return .{ .rtc = try BessRtc.init(reader) };
         }
         if (std.mem.eql(u8, block_name, "END ")) {
             return .end;
@@ -119,19 +179,13 @@ const BessName = struct {
 
     name: []const u8,
 
-    pub fn init(data: []const u8, i: *usize, len: usize) !BessName {
-        if (i.* + len > data.len) {
-            return error.NameBlockTooSmall;
-        }
-
-        i.* += len;
-
+    pub fn init(reader: *std.Io.Reader, len: usize) !BessName {
         return .{
-            .name = data[i.* .. i.* + len],
+            .name = try reader.take(len),
         };
     }
 
-    pub fn write(writer: anytype) !void {
+    pub fn write(writer: *std.Io.Writer) !void {
         const name = "dbereznyi/gbemu";
         try writer.writeAll("NAME");
         try writer.writeInt(u32, name.len, .little);
@@ -150,20 +204,17 @@ const BessInfo = struct {
     title: []const u8,
     checksum: u16,
 
-    pub fn init(data: []const u8, i: *usize) !BessInfo {
-        if (data.len - i.* < 18) {
-            return error.InfoBlockTooSmall;
-        }
-
-        i.* += 18;
+    pub fn init(reader: *std.Io.Reader) !BessInfo {
+        const title = try reader.take(16);
+        const checksum = try reader.takeInt(u16, .little);
 
         return .{
-            .title = data[i.* .. i.* + 16],
-            .checksum = u16LE(data[i.* + 16 .. i.* + 16 + 2]),
+            .title = title,
+            .checksum = checksum,
         };
     }
 
-    pub fn write(writer: anytype, title: []const u8, checksum: u16) !void {
+    pub fn write(writer: *std.Io.Writer, title: []const u8, checksum: u16) !void {
         if (title.len != 16) {
             return error.InfoBlockInvalidTitleLength;
         }
@@ -209,40 +260,24 @@ const BessCore = struct {
     oam: []const u8,
     hram: []const u8,
 
-    pub fn init(data: []const u8, i: *usize) !BessCore {
-        if (data.len - i.* < 0xd0) {
-            return error.CoreBlockTooSmall;
-        }
-
-        const major = u16LE(data[i.* .. i.* + 2]);
-        i.* += 2;
-        const minor = u16LE(data[i.* .. i.* + 2]);
-        i.* += 2;
-
+    pub fn init(reader: *std.Io.Reader, data: []const u8) !BessCore {
+        const major = try reader.takeInt(u16, .little);
+        const minor = try reader.takeInt(u16, .little);
         if (major != 1 or minor != 1) {
             return error.UnsupportedVersion;
         }
 
-        const model = data[i.* .. i.* + 4];
-        i.* += 4;
-        const pc = u16LE(data[i.* .. i.* + 2]);
-        i.* += 2;
-        const af = u16LE(data[i.* .. i.* + 2]);
-        i.* += 2;
-        const bc = u16LE(data[i.* .. i.* + 2]);
-        i.* += 2;
-        const de = u16LE(data[i.* .. i.* + 2]);
-        i.* += 2;
-        const hl = u16LE(data[i.* .. i.* + 2]);
-        i.* += 2;
-        const sp = u16LE(data[i.* .. i.* + 2]);
-        i.* += 2;
-        const ime: u1 = if (data[i.*] == 0) 0 else 1;
-        i.* += 1;
-        const ie = data[i.*];
-        i.* += 1;
+        const model = try reader.take(4);
+        const pc = try reader.takeInt(u16, .little);
+        const af = try reader.takeInt(u16, .little);
+        const bc = try reader.takeInt(u16, .little);
+        const de = try reader.takeInt(u16, .little);
+        const hl = try reader.takeInt(u16, .little);
+        const sp = try reader.takeInt(u16, .little);
+        const ime: u1 = if (try reader.takeByte() == 0) 0 else 1;
+        const ie = try reader.takeByte();
         var state: BessCore.ExecutionState = undefined;
-        switch (data[i.*]) {
+        switch (try reader.takeByte()) {
             0 => {
                 state = .running;
             },
@@ -256,18 +291,16 @@ const BessCore = struct {
                 return error.CoreBlockBadExecutionState;
             },
         }
-        i.* += 1;
 
-        i.* += 1; // Skip reserved byte
+        reader.toss(1); // Skip reserved byte
 
-        const mm_regs = data[i.* .. i.* + 128];
-        i.* += 128;
+        const mm_regs = try reader.take(128);
 
-        const ram = try readMemoryRegion(data, i);
-        const vram = try readMemoryRegion(data, i);
-        const mbc_ram = try readMemoryRegion(data, i);
-        const oam = try readMemoryRegion(data, i);
-        const hram = try readMemoryRegion(data, i);
+        const ram = try readMemoryRegion(reader, data);
+        const vram = try readMemoryRegion(reader, data);
+        const mbc_ram = try readMemoryRegion(reader, data);
+        const oam = try readMemoryRegion(reader, data);
+        const hram = try readMemoryRegion(reader, data);
 
         return .{
             .major = major,
@@ -292,7 +325,7 @@ const BessCore = struct {
     }
 
     pub fn write(
-        writer: anytype,
+        writer: *std.Io.Writer,
         gb: *Gb,
         ram_start: usize,
         vram_start: usize,
@@ -423,23 +456,12 @@ const BessMbc = struct {
 
     regs: []MbcReg,
 
-    pub fn init(alloc: std.mem.Allocator, data: []const u8, i: *usize, len: usize) !BessMbc {
-        if (data.len - i.* < len) {
-            return error.MbcBlockTooSmall;
-        }
-        if (len % 3 != 0) {
-            return error.MbcBlockLengthNotDivisibleBy3;
-        }
-
-        const start = i.*;
-
+    pub fn init(reader: *std.Io.Reader, alloc: std.mem.Allocator, len: usize) !BessMbc {
         const regs = try alloc.alloc(MbcReg, len / 3);
         var regs_ix: usize = 0;
-        while (i.* < start + len) {
-            const addr = u16LE(data[i.* .. i.* + 2]);
-            i.* += 2;
-            const val = data[i.*];
-            i.* += 1;
+        while (regs_ix < len / 3) {
+            const addr = try reader.takeInt(u16, .little);
+            const val = try reader.takeByte();
 
             regs[regs_ix] = .{
                 .addr = addr,
@@ -457,7 +479,7 @@ const BessMbc = struct {
         alloc.free(self.regs);
     }
 
-    pub fn write(writer: anytype, gb: *Gb) !void {
+    pub fn write(writer: *std.Io.Writer, gb: *Gb) !void {
         try writer.writeAll("MBC ");
 
         var buf: [16]MbcReg = undefined;
@@ -493,33 +515,18 @@ const BessRtc = struct {
     latched_overflow: u8,
     unix_timestamp: u64,
 
-    pub fn init(data: []const u8, i: *usize) !BessRtc {
-        if (data.len - i.* < 0x30) {
-            return error.RtcBlockTooSmall;
-        }
-
-        const seconds = data[i.*];
-        i.* += 1;
-        const minutes = data[i.*];
-        i.* += 1;
-        const hours = data[i.*];
-        i.* += 1;
-        const days = data[i.*];
-        i.* += 1;
-        const overflow = data[i.*];
-        i.* += 1;
-        const latched_seconds = data[i.*];
-        i.* += 1;
-        const latched_minutes = data[i.*];
-        i.* += 1;
-        const latched_hours = data[i.*];
-        i.* += 1;
-        const latched_days = data[i.*];
-        i.* += 1;
-        const latched_overflow = data[i.*];
-        i.* += 1;
-        const unix_timestamp = u64LE(data[i.* .. i.* + 8]);
-        i.* += 8;
+    pub fn init(reader: *std.Io.Reader) !BessRtc {
+        const seconds = try reader.takeByte();
+        const minutes = try reader.takeByte();
+        const hours = try reader.takeByte();
+        const days = try reader.takeByte();
+        const overflow = try reader.takeByte();
+        const latched_seconds = try reader.takeByte();
+        const latched_minutes = try reader.takeByte();
+        const latched_hours = try reader.takeByte();
+        const latched_days = try reader.takeByte();
+        const latched_overflow = try reader.takeByte();
+        const unix_timestamp = try reader.takeInt(u64, .little);
 
         return .{
             .seconds = seconds,
@@ -553,76 +560,6 @@ const BessEnd = struct {
         try writer.writeInt(u32, 0, .little);
     }
 };
-
-pub fn readBess(alloc: std.mem.Allocator, data: []const u8) !Bess {
-    if (data.len < 8) {
-        return error.DataTooShort;
-    }
-
-    const bess_footer = data[data.len - 4 .. data.len];
-    if (!std.mem.eql(u8, bess_footer, "BESS")) {
-        return error.BadFooter;
-    }
-    const first_block_start: usize = u32LE(data[data.len - 8 .. data.len - 4]);
-    if (first_block_start > data.len - 8) {
-        return error.InvalidFirstBlockOffset;
-    }
-
-    var name: ?BessName = null;
-    var info: ?BessInfo = null;
-    var core: ?BessCore = null;
-    var mbc: ?BessMbc = null;
-    var rtc: ?BessRtc = null;
-    var has_end = false;
-
-    var i = first_block_start;
-    while (i < data.len) {
-        const block = try BessBlock.parse(alloc, data, &i);
-
-        switch (block) {
-            .name => {
-                if (core != null) {
-                    return error.NameBlockMustComeBeforeCoreBlock;
-                }
-                if (info != null) {
-                    return error.NameBlockMustComeBeforeInfoBlock;
-                }
-                name = block.name;
-            },
-            .info => {
-                if (core != null) {
-                    return error.InfoBlockMustComeBeforeCoreBlock;
-                }
-                info = block.info;
-            },
-            .core => core = block.core,
-            .mbc => mbc = block.mbc,
-            .rtc => rtc = block.rtc,
-            .end => {
-                has_end = true;
-                break;
-            },
-            .unknown => {},
-        }
-    }
-
-    if (!has_end) {
-        return error.MissingEndBlock;
-    }
-
-    if (core) |core_nonnull| {
-        return Bess{
-            .data = data,
-            .name = name,
-            .info = info,
-            .core = core_nonnull,
-            .mbc = mbc,
-            .rtc = rtc,
-        };
-    } else {
-        return error.MissingCoreBlock;
-    }
-}
 
 pub fn loadBess(gb: *Gb, bess: Bess) void {
     gb.reset();
@@ -716,13 +653,6 @@ pub fn loadBess(gb: *Gb, bess: Bess) void {
             gb.write(reg.addr, reg.val);
         }
     }
-
-    var stdout_writer = std.fs.File.stdout().writerStreaming(&.{}).interface;
-
-    bess.print(&stdout_writer) catch {};
-    gb.printDebugState(&stdout_writer) catch {};
-    gb.ppu.printState(&stdout_writer) catch {};
-    //gb.printDebugTrace() catch {};
 }
 
 // Handles copying memory regions of possibly differing sizes.
@@ -736,10 +666,6 @@ fn copyMemoryRegion(dst: []u8, src: []const u8) void {
 }
 
 pub fn writeBess(gb: *Gb, writer: *std.Io.Writer) !void {
-    var stdout_writer = std.fs.File.stdout().writerStreaming(&.{}).interface;
-    gb.printDebugState(&stdout_writer) catch {};
-    gb.ppu.printState(&stdout_writer) catch {};
-
     var i: usize = 0;
 
     const ram_start = i;

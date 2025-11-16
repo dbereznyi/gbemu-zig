@@ -4,20 +4,20 @@ const testing = std.testing;
 test "bess" {
     const Gb = @import("gameboy/gameboy.zig").Gb;
     const IoReg = @import("gameboy/gameboy.zig").IoReg;
-    const readBess = @import("gameboy/bess.zig").readBess;
+    const Bess = @import("gameboy/bess.zig").Bess;
     const loadBess = @import("gameboy/bess.zig").loadBess;
     const writeBess = @import("gameboy/bess.zig").writeBess;
     const runGameboyForNumCycles = @import("gameboy/run.zig").runGameboyForNumCycles;
 
     const alloc = std.testing.allocator;
 
-    const rom = try std.fs.cwd().readFileAlloc(alloc, "roms/hello-world.gb", 128 * 1024);
+    const rom = try std.fs.cwd().readFileAlloc(alloc, "roms/sprites.gb", 128 * 1024);
     defer alloc.free(rom);
 
     var gb = try Gb.init(alloc, rom, null);
     defer gb.deinit(alloc);
 
-    runGameboyForNumCycles(&gb, 20000);
+    runGameboyForNumCycles(&gb, 100_000);
 
     const pc_prev = gb.pc;
     const sp_prev = gb.sp;
@@ -49,18 +49,17 @@ test "bess" {
 
     const bess_buf = try alloc.alloc(u8, 64 * 1024 * 1024);
     defer alloc.free(bess_buf);
-    var bess_fbs = std.io.fixedBufferStream(bess_buf);
-    var bess_writer = std.io.countingWriter(bess_fbs.writer());
-    try writeBess(&gb, bess_writer.writer());
+    var bess_writer = std.Io.Writer.fixed(bess_buf);
+    try writeBess(&gb, &bess_writer);
 
-    const bess_data = bess_buf[0..bess_writer.bytes_written];
+    const bess_data = bess_writer.buffered();
 
     // {
     //     const file = try std.fs.cwd().createFile("bess.dat", .{});
     //     try file.writer().writeAll(bess_data);
     // }
 
-    const bess = try readBess(alloc, bess_data);
+    const bess = try Bess.init(alloc, bess_data);
     defer bess.deinit(alloc);
 
     loadBess(&gb, bess);
