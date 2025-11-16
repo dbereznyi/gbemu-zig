@@ -27,7 +27,9 @@ pub fn shouldDebugBreak(gb: *Gb) bool {
     for (gb.debug.breakpoints.items) |breakpoint| {
         const addr = breakpoint.addr;
         const bank = breakpoint.bank;
-        if (gb.pc == addr and gb.cart.getBank(gb.pc) == bank) {
+        const bank_matches = addr >= 0x4000 and addr < 0x8000 and gb.cart.getBank(gb.pc) == bank;
+
+        if (gb.pc == addr and bank_matches) {
             return true;
         }
     }

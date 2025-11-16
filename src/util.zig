@@ -51,16 +51,35 @@ pub fn BoundedStack(comptime T: type, comptime capacity: usize) type {
             }
         }
 
-        pub fn top(self: *const Self) ?T {
-            const first = self.list.first orelse return null;
-            return first.data;
+        pub fn top(self: *const Self) ?Node {
+            const item = self.list.first orelse return null;
+            const node: *Node = @fieldParentPtr("node", item);
+            return node.*;
+        }
+
+        pub fn bottom(self: *const Self) ?Node {
+            const item = self.list.last orelse return null;
+            const node: *Node = @fieldParentPtr("node", item);
+            return node.*;
+        }
+
+        pub fn up(_: *const Self, node: Node) ?Node {
+            const item = node.node.prev orelse return null;
+            const node_above: *Node = @fieldParentPtr("node", item);
+            return node_above.*;
+        }
+
+        pub fn down(_: *const Self, node: Node) ?Node {
+            const item = node.node.next orelse return null;
+            const node_below: *Node = @fieldParentPtr("node", item);
+            return node_below.*;
         }
 
         pub fn size(self: *const Self) usize {
             return self.len;
         }
 
-        pub fn getItems(self: *const Self, items_buf: *[capacity]T) []T {
+        pub fn getItems(self: *const Self, items_buf: []T) []T {
             var it = self.list.first;
             var index: usize = 0;
             while (it) |node| : (it = node.next) {
@@ -70,7 +89,7 @@ pub fn BoundedStack(comptime T: type, comptime capacity: usize) type {
             return items_buf[0..index];
         }
 
-        pub fn getItemsReversed(self: *const Self, items_buf: *[capacity]T) []T {
+        pub fn getItemsReversed(self: *const Self, items_buf: []T) []T {
             var it = self.list.last;
             var index: usize = 0;
             while (it) |node| : (it = node.prev) {

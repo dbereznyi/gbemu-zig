@@ -179,30 +179,20 @@ pub const Gb = struct {
         save_data: ?[]const u8,
     ) !Gb {
         const vram = try alloc.alloc(u8, 8 * 1024);
-        for (vram, 0..) |_, i| {
-            vram[i] = 0;
-        }
+        @memset(vram, 0);
 
         const wram = try alloc.alloc(u8, 8 * 1024);
-        for (wram, 0..) |_, i| {
-            wram[i] = 0;
-        }
+        @memset(wram, 0);
 
         const oam = try alloc.alloc(u8, 160);
-        for (oam, 0..) |_, i| {
-            oam[i] = 0;
-        }
+        @memset(oam, 0);
 
         var io_regs = try alloc.alloc(u8, 128);
-        for (io_regs, 0..) |_, i| {
-            io_regs[i] = 0;
-        }
+        @memset(io_regs, 0);
         io_regs[IoReg.JOYP] = 0xff;
 
         const hram = try alloc.alloc(u8, 128);
-        for (hram, 0..) |_, i| {
-            hram[i] = 0;
-        }
+        @memset(hram, 0);
 
         return Gb{
             .stopped = false,
@@ -517,17 +507,24 @@ pub const Gb = struct {
         return (gb.ie & if_ & 0x1f) != 0;
     }
 
-    pub fn panic(gb: *Gb, comptime msg: []const u8, args: anytype) noreturn {
-        std.debug.print("\n", .{});
-        var stdout_writer = std.fs.File.stdout().writerStreaming(&.{}).interface;
-        gb.debug.printExecutionTrace(&stdout_writer, Debug.MAX_TRACE_LENGTH) catch {};
-        std.debug.print("\n", .{});
-        gb.printDebugState(&stdout_writer) catch {};
-        std.debug.print("\n", .{});
+    pub fn panic(gb: *const Gb, comptime msg: []const u8, args: anytype) noreturn {
+        var stdout_buffer: [1024]u8 = undefined;
+        var stdout_writer = std.fs.File.stdout().writer(&stdout_buffer);
+        const stdout = &stdout_writer.interface;
+
+        stdout.print("\n", .{}) catch {};
+
+        gb.debug.printExecutionTrace(stdout, Debug.MAX_TRACE_LENGTH) catch {};
+        stdout.print("\n", .{}) catch {};
+        gb.printDebugState(stdout) catch {};
+        stdout.print("\n", .{}) catch {};
+
+        stdout.flush() catch {};
+
         std.debug.panic(msg, args);
     }
 
-    pub fn printDebugState(gb: *Gb, writer: *std.Io.Writer) !void {
+    pub fn printDebugState(gb: *const Gb, writer: *std.Io.Writer) !void {
         try writer.print("PC: ${x:0>4} SP: ${x:0>4}\n", .{ gb.pc, gb.sp });
         try writer.print("Z: {} N: {} H: {} C: {}\n", .{ gb.zero, gb.negative, gb.halfCarry, gb.carry });
         try writer.print("A: ${x:0>2} B: ${x:0>2} D: ${x:0>2} H: ${x:0>2}\n", .{ gb.a, gb.b, gb.d, gb.h });
@@ -548,7 +545,7 @@ pub const Gb = struct {
     pub fn printDebugTrace(gb: *Gb) !void {
         const PRINT_INSTR_BYTES = true;
 
-        var stdout_writer = std.fs.File.stdout().writerStreaming(&.{}).interface;
+        var stdout_writer = std.fs.File.stdout().writer(&.{}).interface;
         try gb.debug.printExecutionTrace(&stdout_writer, 5);
 
         var pc_offset: u16 = 0;

@@ -703,6 +703,14 @@ pub fn loadBess(gb: *Gb, bess: Bess) void {
     copyMemoryRegion(gb.oam, core.oam);
     copyMemoryRegion(gb.hram, core.hram);
 
+    // {
+    //     std.debug.print("gb.wram = {x}, core.ram = {x}\n", .{ @intFromPtr(gb.wram.ptr), @intFromPtr(core.ram.ptr) });
+    //     const file = std.fs.cwd().createFile("wram.dat", .{}) catch @panic("asdfasd");
+    //     defer file.close();
+    //     var writer = file.writer(&.{}).interface;
+    //     writer.writeAll(gb.wram) catch {};
+    // }
+
     if (bess.mbc) |mbc| {
         for (mbc.regs) |reg| {
             gb.write(reg.addr, reg.val);

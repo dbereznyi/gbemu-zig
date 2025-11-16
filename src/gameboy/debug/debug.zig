@@ -91,15 +91,26 @@ pub const Debug = struct {
     pub fn printExecutionTrace(debug: *const Debug, writer: *std.Io.Writer, count: usize) !void {
         std.debug.assert(count <= MAX_TRACE_LENGTH);
 
-        var items_buf: [MAX_TRACE_LENGTH]TraceLine = undefined;
-        const items = debug.execution_trace.getItemsReversed(&items_buf);
-        const start_index = items.len -| count;
-        for (start_index..items.len) |i| {
-            const item = items[i];
+        var node = debug.execution_trace.bottom();
+        while (node) |node_nonnull| {
+            const trace_line = node_nonnull.data;
             var instr_str_buf: [64]u8 = undefined;
-            const instr_str = item.instr.toStr(&instr_str_buf) catch "?";
-            try writer.print("    rom{d:_>3}::{x:0>4}: {s}\n", .{ item.bank, item.pc, instr_str });
+            const instr_str = trace_line.instr.toStr(&instr_str_buf) catch "?";
+            try writer.print("    rom{d:_>3}::{x:0>4}: {s}\n", .{ trace_line.bank, trace_line.pc, instr_str });
+
+            node = debug.execution_trace.up(node_nonnull);
         }
+
+        // const items_buf = try debug.alloc.alloc(TraceLine, MAX_TRACE_LENGTH);
+        // defer debug.alloc.free(items_buf);
+        // const items = debug.execution_trace.getItemsReversed(items_buf);
+        // const start_index = items.len -| count;
+        // for (start_index..items.len) |i| {
+        //     const item = items[i];
+        //     var instr_str_buf: [64]u8 = undefined;
+        //     const instr_str = item.instr.toStr(&instr_str_buf) catch "?";
+        //     try writer.print("    rom{d:_>3}::{x:0>4}: {s}\n", .{ item.bank, item.pc, instr_str });
+        // }
     }
 
     pub fn reset(debug: *Debug) void {
