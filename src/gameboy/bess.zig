@@ -4,22 +4,11 @@ const IoReg = @import("gameboy.zig").IoReg;
 const ApuReg = @import("apu/apu.zig").ApuReg;
 const MbcReg = @import("cart.zig").MbcReg;
 
-inline fn u16LE(bytes: []const u8) u16 {
-    return std.mem.readVarInt(u16, bytes, .little);
-}
-
 inline fn u32LE(bytes: []const u8) u32 {
     return std.mem.readVarInt(u32, bytes, .little);
 }
 
-inline fn u64LE(bytes: []const u8) u64 {
-    return std.mem.readVarInt(u64, bytes, .little);
-}
-
 fn readMemoryRegion(reader: *std.Io.Reader, data: []const u8) ![]const u8 {
-    if (data.len < 8) {
-        return error.MemoryRegionHeaderTooShort;
-    }
     const size: usize = try reader.takeInt(u32, .little);
     const start: usize = try reader.takeInt(u32, .little);
     if (start + size > data.len) {
@@ -666,29 +655,22 @@ fn copyMemoryRegion(dst: []u8, src: []const u8) void {
 }
 
 pub fn writeBess(gb: *Gb, writer: *std.Io.Writer) !void {
-    var i: usize = 0;
-
-    const ram_start = i;
+    const ram_start = writer.end;
     try writer.writeAll(gb.wram);
-    i += gb.wram.len;
 
-    const vram_start = i;
+    const vram_start = writer.end;
     try writer.writeAll(gb.vram);
-    i += gb.vram.len;
 
-    const mbc_ram_start = i;
+    const mbc_ram_start = writer.end;
     try writer.writeAll(gb.cart.ram);
-    i += gb.cart.ram.len;
 
-    const oam_start = i;
+    const oam_start = writer.end;
     try writer.writeAll(gb.oam);
-    i += gb.oam.len;
 
-    const hram_start = i;
+    const hram_start = writer.end;
     try writer.writeAll(gb.hram);
-    i += gb.hram.len;
 
-    const first_block_start = i;
+    const first_block_start = writer.end;
     try BessName.write(writer);
     try BessInfo.write(writer, gb.cart.rom_title, gb.cart.global_checksum);
     try BessCore.write(

@@ -11,13 +11,17 @@ test "bess" {
 
     const alloc = std.testing.allocator;
 
-    const rom = try std.fs.cwd().readFileAlloc(alloc, "roms/sprites.gb", 128 * 1024);
+    const rom = try std.fs.cwd().readFileAlloc(
+        alloc,
+        "roms/sprites.gb",
+        1024 * 1024,
+    );
     defer alloc.free(rom);
 
     var gb = try Gb.init(alloc, rom, null);
     defer gb.deinit(alloc);
 
-    runGameboyForNumCycles(&gb, 100_000);
+    runGameboyForNumCycles(&gb, 1_000_000);
 
     const pc_prev = gb.pc;
     const sp_prev = gb.sp;
