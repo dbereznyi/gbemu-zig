@@ -642,6 +642,31 @@ pub fn loadBess(gb: *Gb, bess: Bess) void {
             gb.write(reg.addr, reg.val);
         }
     }
+
+    {
+        var stdout_buffer: [1024]u8 = undefined;
+        var stdout_writer = std.fs.File.stdout().writer(&stdout_buffer);
+        const stdout = &stdout_writer.interface;
+        bess.print(stdout) catch {};
+
+        gb.printDebugState(stdout) catch {};
+
+        var bess_ram_checksum: u64 = 0;
+        for (bess.core.ram) |byte| {
+            bess_ram_checksum +%= byte;
+        }
+        var gb_ram_checksum: u64 = 0;
+        for (gb.wram) |byte| {
+            gb_ram_checksum +%= byte;
+        }
+
+        stdout.print("bess_ram_checksum={} gb_ram_checksum={}\n", .{ bess_ram_checksum, gb_ram_checksum }) catch {};
+
+        if (bess_ram_checksum != gb_ram_checksum) {
+            stdout.print("ram mismatch!\n", .{}) catch {};
+        }
+        stdout.flush() catch {};
+    }
 }
 
 // Handles copying memory regions of possibly differing sizes.

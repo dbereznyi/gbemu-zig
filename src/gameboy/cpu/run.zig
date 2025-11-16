@@ -98,10 +98,14 @@ pub fn runCpu(gb: *Gb) void {
 
 fn tryDebugBreak(gb: *Gb) void {
     if (shouldDebugBreak(gb)) {
+        var stdout_buffer: [1024]u8 = undefined;
+        var stdout_writer = std.fs.File.stdout().writer(&stdout_buffer);
+        const stdout = &stdout_writer.interface;
+
         gb.debug.std_out_mutex.lock();
-        std.debug.print("\n", .{});
-        gb.printDebugTrace() catch {};
-        std.debug.print("\n> ", .{});
+        stdout.print("\n", .{}) catch {};
+        gb.printDebugTrace(stdout) catch {};
+        stdout.print("\n> ", .{}) catch {};
         gb.debug.std_out_mutex.unlock();
 
         gb.debug.setPaused(true);

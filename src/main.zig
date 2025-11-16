@@ -51,14 +51,14 @@ pub fn main() !void {
     defer if (save_data) |data| alloc.free(data);
 
     var gb = try Gb.init(
-        alloc_gpa,
+        alloc,
         rom,
         save_data,
     );
-    defer gb.deinit(alloc_gpa);
+    defer gb.deinit(alloc);
 
     if (false) {
-        try gb.debug.breakpoints.append(alloc_gpa, .{ .bank = 3, .addr = 0x6008 });
+        try gb.debug.breakpoints.append(alloc, .{ .bank = 3, .addr = 0x6008 });
     }
 
     var sdl = try Sdl.init(alloc_gpa, rom_filepath_noext, &gb);

@@ -542,11 +542,10 @@ pub const Gb = struct {
         try writer.print("cycles: {}\n", .{gb.cycles});
     }
 
-    pub fn printDebugTrace(gb: *Gb) !void {
+    pub fn printDebugTrace(gb: *Gb, writer: *std.Io.Writer) !void {
         const PRINT_INSTR_BYTES = true;
 
-        var stdout_writer = std.fs.File.stdout().writer(&.{}).interface;
-        try gb.debug.printExecutionTrace(&stdout_writer, 5);
+        try gb.debug.printExecutionTrace(writer, 5);
 
         var pc_offset: u16 = 0;
 
@@ -557,7 +556,7 @@ pub const Gb = struct {
 
             const instr_str = try instr.toStr(&instrStrBuf);
             // TODO display correct address space for non-ROM addresses
-            std.debug.print("{s} rom{d:_>3}::{x:0>4}: {s} ", .{
+            try writer.print("{s} rom{d:_>3}::{x:0>4}: {s} ", .{
                 if (instr_offset == 0) "==>" else "   ",
                 bank,
                 gb.pc + pc_offset,
@@ -565,16 +564,16 @@ pub const Gb = struct {
             });
 
             if (PRINT_INSTR_BYTES) {
-                std.debug.print("(", .{});
+                try writer.print("(", .{});
                 for (0..instr.size()) |i| {
-                    std.debug.print("${x:0>2}", .{gb.read(gb.pc + pc_offset + @as(u16, @intCast(i)))});
+                    try writer.print("${x:0>2}", .{gb.read(gb.pc + pc_offset + @as(u16, @intCast(i)))});
                     if (i < instr.size() - 1) {
-                        std.debug.print(" ", .{});
+                        try writer.print(" ", .{});
                     }
                 }
-                std.debug.print(")", .{});
+                try writer.print(")", .{});
             }
-            std.debug.print("\n", .{});
+            try writer.print("\n", .{});
 
             pc_offset += instr.size();
         }
