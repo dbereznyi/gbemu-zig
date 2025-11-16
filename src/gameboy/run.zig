@@ -4,9 +4,17 @@ const runCpu = @import("cpu/run.zig").runCpu;
 const shouldDebugBreak = @import("debug/shouldDebugBreak.zig").shouldDebugBreak;
 const runDebugger = @import("debug/runDebugger.zig").runDebugger;
 const executeDebugCmd = @import("debug/executeCmd.zig").executeCmd;
+const loadBess = @import("bess/load.zig").loadBess;
 
 pub fn runGameboy(gb: *Gb) void {
     processDebugCommand(gb);
+
+    if (gb.bess) |bess| {
+        loadBess(gb, bess);
+
+        bess.deinit();
+        gb.bess = null;
+    }
 
     if (!gb.debug.paused) {
         runCpu(gb);

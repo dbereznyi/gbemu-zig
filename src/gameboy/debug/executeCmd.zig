@@ -55,6 +55,7 @@ pub fn executeCmd(cmd: DebugCmd, gb: *Gb) !void {
         .pause => {
             if (!gb.debug.isPaused()) {
                 try gb.printDebugTrace(writer);
+                try writer.flush();
                 gb.debug.setPaused(true);
             }
         },

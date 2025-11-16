@@ -11,6 +11,7 @@ const Joypad = @import("joypad/joypad.zig").Joypad;
 const Ppu = @import("ppu/ppu.zig").Ppu;
 const Apu = @import("apu/apu.zig").Apu;
 const ApuReg = @import("apu/apu.zig").ApuReg;
+const Bess = @import("bess/bess.zig").Bess;
 
 pub const IoReg = .{
     .JOYP = 0x00,
@@ -173,6 +174,8 @@ pub const Gb = struct {
     pending_cycles: usize,
     cycles: u64,
 
+    bess: ?Bess,
+
     pub fn init(
         alloc: std.mem.Allocator,
         rom: []const u8,
@@ -231,6 +234,7 @@ pub const Gb = struct {
             .running = std.atomic.Value(bool).init(true),
             .pending_cycles = 0,
             .cycles = 0,
+            .bess = null,
         };
     }
 

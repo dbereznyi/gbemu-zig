@@ -4,9 +4,9 @@ const testing = std.testing;
 test "bess" {
     const Gb = @import("gameboy/gameboy.zig").Gb;
     const IoReg = @import("gameboy/gameboy.zig").IoReg;
-    const Bess = @import("gameboy/bess.zig").Bess;
-    const loadBess = @import("gameboy/bess.zig").loadBess;
-    const writeBess = @import("gameboy/bess.zig").writeBess;
+    const Bess = @import("gameboy/bess/bess.zig").Bess;
+    const loadBess = @import("gameboy/bess/load.zig").loadBess;
+    const writeBess = @import("gameboy/bess/write.zig").writeBess;
     const runGameboyForNumCycles = @import("gameboy/run.zig").runGameboyForNumCycles;
 
     const alloc = std.testing.allocator;

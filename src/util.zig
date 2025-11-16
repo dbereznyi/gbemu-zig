@@ -102,6 +102,9 @@ pub fn BoundedStack(comptime T: type, comptime capacity: usize) type {
         }
 
         pub fn clear(self: *Self) void {
+            self.list.first = null;
+            self.list.last = null;
+
             self.len = 0;
             while (self.len > 0) {
                 _ = self.list.pop();

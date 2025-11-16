@@ -9,9 +9,8 @@ const runDebugger = @import("gameboy/debug/runDebugger.zig").runDebugger;
 const Sample = @import("sample.zig").Sample;
 const constants = @import("constants.zig");
 const renderVramViewer = @import("gameboy/ppu/vram_viewer.zig").renderVramViewer;
-const Bess = @import("gameboy/bess.zig").Bess;
-const loadBess = @import("gameboy/bess.zig").loadBess;
-const writeBess = @import("gameboy/bess.zig").writeBess;
+const Bess = @import("gameboy/bess/bess.zig").Bess;
+const writeBess = @import("gameboy/bess/write.zig").writeBess;
 
 const WINDOW_SCALE = 3;
 
@@ -251,19 +250,23 @@ pub const Sdl = struct {
                         const slot: usize = @intCast(event.key.keysym.sym - c.SDLK_0);
 
                         if (event.key.keysym.mod & c.KMOD_CTRL != 0 and event.key.keysym.mod & c.KMOD_SHIFT == 0) {
-                            try loadSaveState(
+                            loadSaveState(
                                 self.alloc,
                                 self.gb,
                                 self.rom_filepath_noext,
                                 slot,
-                            );
+                            ) catch |err| {
+                                std.log.err("Failed to load savestate: {}\n", .{err});
+                            };
                         } else if (event.key.keysym.mod & c.KMOD_CTRL != 0 and event.key.keysym.mod & c.KMOD_SHIFT != 0) {
-                            try createSaveState(
+                            createSaveState(
                                 self.alloc,
                                 self.gb,
                                 self.rom_filepath_noext,
                                 slot,
-                            );
+                            ) catch |err| {
+                                std.log.err("Failed to create savestate: {}\n", .{err});
+                            };
                         }
                     },
                     else => {},
@@ -386,19 +389,16 @@ fn loadSaveState(
             return;
         },
         else => {
-            std.log.err("Failed to read savestate file: {}\n", .{err});
-            return;
+            return err;
         },
     };
-    defer alloc.free(data);
-    const bess: Bess = Bess.init(alloc, data) catch |err| {
-        std.log.err("Failed to parse savestate data: {}\n", .{err});
-        return;
-    };
-    defer bess.deinit(alloc);
+    errdefer alloc.free(data);
+
+    const bess = try Bess.init(alloc, data);
+    errdefer bess.deinit();
 
     std.log.info("Loading savestate in slot #{}\n", .{slot});
-    loadBess(gb, bess);
+    gb.bess = bess;
 }
 
 fn createSaveState(
@@ -425,9 +425,12 @@ fn createSaveState(
 
     if (bess_file) |file| {
         std.log.info("Creating savestate in slot #{}\n", .{slot});
-        var writer = file.writer(&.{}).interface;
-        writeBess(gb, &writer) catch |err| {
+        var buf: [1024]u8 = undefined;
+        var file_writer = file.writer(&buf);
+        const writer = &file_writer.interface;
+        writeBess(gb, writer) catch |err| {
             std.log.err("Failed to create savestate: {}\n", .{err});
         };
+        try file_writer.end();
     }
 }
