@@ -64,7 +64,7 @@ test "bess" {
     // }
 
     const bess = try Bess.init(alloc, bess_data);
-    defer bess.deinit(alloc);
+    //defer bess.deinit();
 
     loadBess(&gb, bess);
 

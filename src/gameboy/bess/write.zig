@@ -5,22 +5,22 @@ const ApuReg = @import("../apu/apu.zig").ApuReg;
 const MbcReg = @import("../cart.zig").MbcReg;
 
 pub fn writeBess(gb: *Gb, writer: *std.Io.Writer) !void {
-    const ram_start = writer.end;
+    const ram_start = 0;
     try writer.writeAll(gb.wram);
 
-    const vram_start = writer.end;
+    const vram_start = ram_start + gb.wram.len;
     try writer.writeAll(gb.vram);
 
-    const mbc_ram_start = writer.end;
+    const mbc_ram_start = vram_start + gb.vram.len;
     try writer.writeAll(gb.cart.ram);
 
-    const oam_start = writer.end;
+    const oam_start = mbc_ram_start + gb.cart.ram.len;
     try writer.writeAll(gb.oam);
 
-    const hram_start = writer.end;
+    const hram_start = oam_start + gb.oam.len;
     try writer.writeAll(gb.hram);
 
-    const first_block_start = writer.end;
+    const first_block_start = hram_start + gb.hram.len;
     try writeName(writer);
     try writeInfo(writer, gb.cart.rom_title, gb.cart.global_checksum);
     try writeCore(
