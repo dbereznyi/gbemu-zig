@@ -1,5 +1,5 @@
 const std = @import("std");
-const MbcReg = @import("../cart.zig").MbcReg;
+const MbcReg = @import("../cart/cart.zig").MbcReg;
 
 inline fn u32LE(bytes: []const u8) u32 {
     return std.mem.readVarInt(u32, bytes, .little);

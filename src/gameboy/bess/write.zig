@@ -2,7 +2,7 @@ const std = @import("std");
 const Gb = @import("../gameboy.zig").Gb;
 const IoReg = @import("../gameboy.zig").IoReg;
 const ApuReg = @import("../apu/apu.zig").ApuReg;
-const MbcReg = @import("../cart.zig").MbcReg;
+const MbcReg = @import("../cart/cart.zig").MbcReg;
 
 pub fn writeBess(gb: *Gb, writer: *std.Io.Writer) !void {
     const ram_start = 0;
