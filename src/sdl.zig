@@ -11,6 +11,7 @@ const constants = @import("constants.zig");
 const renderVramViewer = @import("gameboy/ppu/vram_viewer.zig").renderVramViewer;
 const Bess = @import("gameboy/bess/bess.zig").Bess;
 const writeBess = @import("gameboy/bess/write.zig").writeBess;
+const Button = @import("gameboy/joypad/joypad.zig").Joypad.Button;
 
 const WINDOW_SCALE = 3;
 
@@ -138,9 +139,10 @@ pub const Sdl = struct {
     fps_ix: usize,
 
     rom_filepath_noext: []const u8,
+    controller: ?*c.SDL_GameController,
 
     pub fn init(alloc: std.mem.Allocator, rom_filepath_noext: []const u8, gb: *Gb) !Self {
-        if (c.SDL_Init(c.SDL_INIT_VIDEO | c.SDL_INIT_AUDIO) != 0) {
+        if (c.SDL_Init(c.SDL_INIT_VIDEO | c.SDL_INIT_AUDIO | c.SDL_INIT_GAMECONTROLLER) != 0) {
             c.SDL_Log("Unable to initialize SDL: %s", c.SDL_GetError());
             return error.SDLInitializationFailed;
         }
@@ -186,6 +188,18 @@ pub const Sdl = struct {
         }
         const samples_buf = try alloc.alloc(Sample, constants.AUDIO.SAMPLES_BUFFER_LEN);
 
+        const num_joysticks: usize = @intCast(c.SDL_NumJoysticks());
+        var controller: ?*c.SDL_GameController = null;
+        for (0..num_joysticks) |i| {
+            const joystick_ix: c_int = @intCast(i);
+            if (c.SDL_IsGameController(joystick_ix) != 0) {
+                controller = c.SDL_GameControllerOpen(joystick_ix);
+                if (controller != null) {
+                    break;
+                }
+            }
+        }
+
         return .{
             .alloc = alloc,
             .gb = gb,
@@ -199,6 +213,7 @@ pub const Sdl = struct {
             .fps = [_]f32{0.0} ** FPS_LEN,
             .fps_ix = 0,
             .rom_filepath_noext = rom_filepath_noext,
+            .controller = controller,
         };
     }
 
@@ -236,74 +251,113 @@ pub const Sdl = struct {
     fn handleEvents(self: *Self) !void {
         var event: c.SDL_Event = undefined;
         while (c.SDL_PollEvent(&event) != 0) {
+            if (event.window.windowID == c.SDL_GetWindowID(self.vram_window.window)) {
+                handleVramWindowEvent(self, &event);
+            } else if (event.window.windowID == c.SDL_GetWindowID(self.gb_window.window)) {
+                handleGbWindowEvent(self, &event);
+            }
+
             switch (event.type) {
-                c.SDL_KEYUP => switch (event.key.keysym.sym) {
-                    c.SDLK_a => self.gb.joypad.releaseButton(.start),
-                    c.SDLK_s => self.gb.joypad.releaseButton(.select),
-                    c.SDLK_x => self.gb.joypad.releaseButton(.a),
-                    c.SDLK_z => self.gb.joypad.releaseButton(.b),
-                    c.SDLK_RIGHT => self.gb.joypad.releaseButton(.right),
-                    c.SDLK_LEFT => self.gb.joypad.releaseButton(.left),
-                    c.SDLK_UP => self.gb.joypad.releaseButton(.up),
-                    c.SDLK_DOWN => self.gb.joypad.releaseButton(.down),
-                    c.SDLK_0, c.SDLK_1, c.SDLK_2, c.SDLK_3, c.SDLK_4, c.SDLK_6, c.SDLK_7, c.SDLK_8, c.SDLK_9 => {
-                        const slot: usize = @intCast(event.key.keysym.sym - c.SDLK_0);
-
-                        if (event.key.keysym.mod & c.KMOD_CTRL != 0 and event.key.keysym.mod & c.KMOD_SHIFT == 0) {
-                            loadSaveState(
-                                self.alloc,
-                                self.gb,
-                                self.rom_filepath_noext,
-                                slot,
-                            ) catch |err| {
-                                std.log.err("Failed to load savestate: {}\n", .{err});
-                            };
-                        } else if (event.key.keysym.mod & c.KMOD_CTRL != 0 and event.key.keysym.mod & c.KMOD_SHIFT != 0) {
-                            createSaveState(
-                                self.alloc,
-                                self.gb,
-                                self.rom_filepath_noext,
-                                slot,
-                            ) catch |err| {
-                                std.log.err("Failed to create savestate: {}\n", .{err});
-                            };
-                        }
-                    },
-                    else => {},
-                },
-                c.SDL_KEYDOWN => switch (event.key.keysym.sym) {
-                    c.SDLK_a => self.gb.joypad.pressButton(.start),
-                    c.SDLK_s => self.gb.joypad.pressButton(.select),
-                    c.SDLK_x => self.gb.joypad.pressButton(.a),
-                    c.SDLK_z => self.gb.joypad.pressButton(.b),
-                    c.SDLK_RIGHT => self.gb.joypad.pressButton(.right),
-                    c.SDLK_LEFT => self.gb.joypad.pressButton(.left),
-                    c.SDLK_UP => self.gb.joypad.pressButton(.up),
-                    c.SDLK_DOWN => self.gb.joypad.pressButton(.down),
-                    c.SDLK_v => {
-                        if (event.key.keysym.mod & c.KMOD_CTRL != 0) {
-                            if (!self.vram_window.is_visible) {
-                                // Reset window position to be next to the GB window
-                                const gb_pos = self.gb_window.getPosition();
-                                self.vram_window.setPosition(
-                                    gb_pos.x + (constants.GB.SCREEN_WIDTH * WINDOW_SCALE),
-                                    gb_pos.y,
-                                );
-                            }
-
-                            self.vram_window.toggleVisible();
-                        }
-                    },
-                    else => {},
-                },
-                c.SDL_WINDOWEVENT => {
-                    if (event.window.event == c.SDL_WINDOWEVENT_CLOSE) {
-                        if (event.window.windowID == c.SDL_GetWindowID(self.vram_window.window)) {
-                            self.vram_window.hide();
-                        } else if (event.window.windowID == c.SDL_GetWindowID(self.gb_window.window)) {
-                            self.gb.setIsRunning(false);
+                c.SDL_KEYUP, c.SDL_KEYDOWN => {
+                    // GB button presses
+                    const gb_button: ?Button = switch (event.key.keysym.sym) {
+                        c.SDLK_x => .a,
+                        c.SDLK_z => .b,
+                        c.SDLK_a => .start,
+                        c.SDLK_s => .select,
+                        c.SDLK_UP => .up,
+                        c.SDLK_DOWN => .down,
+                        c.SDLK_LEFT => .left,
+                        c.SDLK_RIGHT => .right,
+                        else => null,
+                    };
+                    if (gb_button) |button| {
+                        if (event.key.state == c.SDL_PRESSED) {
+                            self.gb.joypad.pressButton(button);
+                        } else {
+                            self.gb.joypad.releaseButton(button);
                         }
                     }
+
+                    switch (event.key.keysym.sym) {
+                        // Savestates
+                        c.SDLK_0, c.SDLK_1, c.SDLK_2, c.SDLK_3, c.SDLK_4, c.SDLK_6, c.SDLK_7, c.SDLK_8, c.SDLK_9 => blk: {
+                            if (event.key.state != c.SDL_PRESSED) {
+                                break :blk;
+                            }
+
+                            const slot: usize = @intCast(event.key.keysym.sym - c.SDLK_0);
+
+                            if (event.key.keysym.mod & c.KMOD_CTRL != 0 and event.key.keysym.mod & c.KMOD_SHIFT == 0) {
+                                loadSaveState(
+                                    self.alloc,
+                                    self.gb,
+                                    self.rom_filepath_noext,
+                                    slot,
+                                ) catch |err| {
+                                    std.log.err("Failed to load savestate: {}\n", .{err});
+                                };
+                            } else if (event.key.keysym.mod & c.KMOD_CTRL != 0 and event.key.keysym.mod & c.KMOD_SHIFT != 0) {
+                                createSaveState(
+                                    self.alloc,
+                                    self.gb,
+                                    self.rom_filepath_noext,
+                                    slot,
+                                ) catch |err| {
+                                    std.log.err("Failed to create savestate: {}\n", .{err});
+                                };
+                            }
+                        },
+                        // Toggle VRAM viewer
+                        c.SDLK_v => blk: {
+                            if (event.key.state != c.SDL_PRESSED) {
+                                break :blk;
+                            }
+
+                            if (event.key.keysym.mod & c.KMOD_CTRL != 0) {
+                                if (!self.vram_window.is_visible) {
+                                    // Reset window position to be next to the GB window
+                                    const gb_pos = self.gb_window.getPosition();
+                                    self.vram_window.setPosition(
+                                        gb_pos.x + (constants.GB.SCREEN_WIDTH * WINDOW_SCALE),
+                                        gb_pos.y,
+                                    );
+                                }
+
+                                self.vram_window.toggleVisible();
+                            }
+                        },
+                        else => {},
+                    }
+                },
+                c.SDL_CONTROLLERBUTTONDOWN, c.SDL_CONTROLLERBUTTONUP => {
+                    const gb_button: ?Button = switch (event.cbutton.button) {
+                        c.SDL_CONTROLLER_BUTTON_A => .b,
+                        c.SDL_CONTROLLER_BUTTON_B => .a,
+                        c.SDL_CONTROLLER_BUTTON_START => .start,
+                        c.SDL_CONTROLLER_BUTTON_BACK => .select,
+                        c.SDL_CONTROLLER_BUTTON_DPAD_UP => .up,
+                        c.SDL_CONTROLLER_BUTTON_DPAD_DOWN => .down,
+                        c.SDL_CONTROLLER_BUTTON_DPAD_LEFT => .left,
+                        c.SDL_CONTROLLER_BUTTON_DPAD_RIGHT => .right,
+                        else => null,
+                    };
+                    if (gb_button) |button| {
+                        if (event.cbutton.state == c.SDL_PRESSED) {
+                            self.gb.joypad.pressButton(button);
+                        } else {
+                            self.gb.joypad.releaseButton(button);
+                        }
+                    }
+                },
+                c.SDL_CONTROLLERDEVICEADDED => {
+                    if (self.controller == null) {
+                        self.controller = c.SDL_GameControllerOpen(event.cdevice.which);
+                    }
+                },
+                c.SDL_CONTROLLERDEVICEREMOVED => {
+                    c.SDL_GameControllerClose(self.controller);
+                    self.controller = null;
                 },
                 c.SDL_QUIT => self.gb.setIsRunning(false),
                 else => {},
@@ -369,6 +423,28 @@ pub const Sdl = struct {
         }
     }
 };
+
+fn handleGbWindowEvent(self: *Sdl, event: *c.SDL_Event) void {
+    switch (event.type) {
+        c.SDL_WINDOWEVENT => {
+            if (event.window.event == c.SDL_WINDOWEVENT_CLOSE) {
+                self.gb.setIsRunning(false);
+            }
+        },
+        else => {},
+    }
+}
+
+fn handleVramWindowEvent(self: *Sdl, event: *c.SDL_Event) void {
+    switch (event.type) {
+        c.SDL_WINDOWEVENT => {
+            if (event.window.event == c.SDL_WINDOWEVENT_CLOSE) {
+                self.vram_window.hide();
+            }
+        },
+        else => {},
+    }
+}
 
 fn loadSaveState(
     alloc: std.mem.Allocator,
