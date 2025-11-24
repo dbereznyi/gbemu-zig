@@ -5,7 +5,7 @@ const mem = @import("../memory/root.zig");
 const printAddrSpace = @import("./printAddrSpace.zig").printAddrSpace;
 
 pub fn printDebugTrace(gb: *Gb, writer: *std.Io.Writer) !void {
-    const PRINT_INSTR_BYTES = true;
+    //const PRINT_INSTR_BYTES = true;
 
     try gb.debug.printExecutionTrace(writer, 5);
 
@@ -24,16 +24,16 @@ pub fn printDebugTrace(gb: *Gb, writer: *std.Io.Writer) !void {
             instr_str,
         });
 
-        if (PRINT_INSTR_BYTES) {
-            try writer.print("(", .{});
-            for (0..instr.size()) |i| {
-                try writer.print("${x:0>2}", .{mem.read(gb, gb.pc + pc_offset + @as(u16, @intCast(i)))});
-                if (i < instr.size() - 1) {
-                    try writer.print(" ", .{});
-                }
-            }
-            try writer.print(")", .{});
-        }
+        // if (PRINT_INSTR_BYTES) {
+        //     try writer.print("(", .{});
+        //     for (0..instr.size()) |i| {
+        //         try writer.print("${x:0>2}", .{mem.read(gb, gb.pc + pc_offset + @as(u16, @intCast(i)))});
+        //         if (i < instr.size() - 1) {
+        //             try writer.print(" ", .{});
+        //         }
+        //     }
+        //     try writer.print(")", .{});
+        // }
         try writer.print("\n", .{});
 
         pc_offset += instr.size();
