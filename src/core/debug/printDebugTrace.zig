@@ -2,6 +2,7 @@ const std = @import("std");
 const Gb = @import("../root.zig").Gb;
 const decodeInstrAt = @import("../cpu/root.zig").decodeInstrAt;
 const mem = @import("../memory/root.zig");
+const printAddrSpace = @import("./printAddrSpace.zig").printAddrSpace;
 
 pub fn printDebugTrace(gb: *Gb, writer: *std.Io.Writer) !void {
     const PRINT_INSTR_BYTES = true;
@@ -16,10 +17,9 @@ pub fn printDebugTrace(gb: *Gb, writer: *std.Io.Writer) !void {
         const bank = gb.cart.getBank(gb.pc + pc_offset);
 
         const instr_str = try instr.toStr(&instrStrBuf);
-        // TODO display correct address space for non-ROM addresses
-        try writer.print("{s} rom{d:_>3}::{x:0>4}: {s} ", .{
-            if (instr_offset == 0) "==>" else "   ",
-            bank,
+        try writer.print("{s} ", .{if (instr_offset == 0) "==>" else "   "});
+        try printAddrSpace(writer, gb.pc, bank);
+        try writer.print("{x:0>4}: {s} ", .{
             gb.pc + pc_offset,
             instr_str,
         });

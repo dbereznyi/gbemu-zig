@@ -3,6 +3,7 @@ const format = std.fmt.format;
 const Instr = @import("../cpu/root.zig").Instr;
 const BoundedStack = @import("util").BoundedStack;
 const DebugCmd = @import("./cmd.zig").DebugCmd;
+const printAddrSpace = @import("./printAddrSpace.zig").printAddrSpace;
 
 pub const Debug = struct {
     const TraceLine = struct {
@@ -89,20 +90,31 @@ pub const Debug = struct {
     }
 
     pub fn printExecutionTrace(debug: *const Debug, writer: *std.Io.Writer, count: usize) !void {
-        var curr_node = debug.execution_trace.bottom();
-        var curr_count: usize = 0;
-        while (curr_node) |node| {
-            if (curr_count == count) {
-                break;
-            }
+        // Determine the starting node by traversing `count` nodes from the top of the trace
+        const starting_node = blk: {
+            var curr = debug.execution_trace.top();
+            var curr_count: usize = 0;
+            while (curr) |node| {
+                if (curr_count == count) {
+                    break;
+                }
 
+                curr = debug.execution_trace.down(node);
+                curr_count += 1;
+            }
+            break :blk curr;
+        };
+
+        var curr_node = starting_node;
+        while (curr_node) |node| {
             const trace_line = node.data;
             var instr_str_buf: [64]u8 = undefined;
             const instr_str = trace_line.instr.toStr(&instr_str_buf) catch "?";
-            try writer.print("    rom{d:_>3}::{x:0>4}: {s}\n", .{ trace_line.bank, trace_line.pc, instr_str });
+            try writer.print("    ", .{});
+            try printAddrSpace(writer, trace_line.pc, trace_line.bank);
+            try writer.print("{x:0>4}: {s}\n", .{ trace_line.pc, instr_str });
 
             curr_node = debug.execution_trace.up(node);
-            curr_count += 1;
         }
     }
 
