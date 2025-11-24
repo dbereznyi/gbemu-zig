@@ -15,6 +15,8 @@ const Bess = @import("bess/bess.zig").Bess;
 
 pub const IoReg = .{
     .JOYP = 0x00,
+    .SB = 0x01,
+    .SC = 0x02,
     .DIV = 0x04,
     .TIMA = 0x05,
     .TMA = 0x06,
