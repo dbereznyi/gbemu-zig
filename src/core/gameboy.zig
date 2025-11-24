@@ -163,7 +163,7 @@ pub const Gb = struct {
     timer: Timer,
     debug: Debug,
 
-    running: std.atomic.Value(bool),
+    running: bool,
 
     pending_cycles: usize,
     cycles: u64,
@@ -225,7 +225,7 @@ pub const Gb = struct {
             .dma = Dma.init(),
             .timer = Timer.init(),
             .debug = try Debug.init(alloc),
-            .running = std.atomic.Value(bool).init(true),
+            .running = true,
             .pending_cycles = 0,
             .cycles = 0,
             .bess = null,
@@ -289,12 +289,12 @@ pub const Gb = struct {
         gb.apu.setAudioCallback(audio_callback);
     }
 
-    pub fn isRunning(gb: *Gb) bool {
-        return gb.running.load(.monotonic);
+    pub fn isRunning(gb: *const Gb) bool {
+        return gb.running;
     }
 
     pub fn setIsRunning(gb: *Gb, val: bool) void {
-        gb.running.store(val, .monotonic);
+        gb.running = val;
     }
 
     pub fn readFlags(gb: *const Gb) u8 {
