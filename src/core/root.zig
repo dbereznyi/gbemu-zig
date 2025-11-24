@@ -1,9 +1,4 @@
 pub const Gb = @import("./gameboy.zig").Gb;
-pub const IoReg = @import("./gameboy.zig").IoReg;
-pub const Interrupt = @import("./gameboy.zig").Interrupt;
-pub const LcdcFlag = @import("./gameboy.zig").LcdcFlag;
-pub const ObjFlag = @import("./gameboy.zig").ObjFlag;
-pub const StatFlag = @import("./gameboy.zig").StatFlag;
 pub const runGameboy = @import("./run.zig").runGameboy;
 
 pub const memory = @import("./memory/root.zig");
@@ -17,4 +12,6 @@ pub const Button = @import("./joypad/root.zig").Joypad.Button;
 
 pub const runDebugger = @import("./debug/root.zig").runDebugger;
 
-pub const bess = @import("./bess/root.zig");
+pub const Bess = @import("./bess/root.zig").Bess;
+pub const loadBess = @import("./bess/root.zig").loadBess;
+pub const writeBess = @import("./bess/root.zig").writeBess;

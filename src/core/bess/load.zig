@@ -1,6 +1,6 @@
 const Bess = @import("./bess.zig").Bess;
-const Gb = @import("../root.zig").Gb;
-const IoReg = @import("../root.zig").IoReg;
+const Gb = @import("../gameboy.zig").Gb;
+const IoReg = @import("../gameboy.zig").IoReg;
 const ApuReg = @import("../apu/root.zig").ApuReg;
 const mem = @import("../memory/root.zig");
 

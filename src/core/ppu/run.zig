@@ -1,11 +1,11 @@
 const std = @import("std");
 const Pixel = @import("./pixel.zig").Pixel;
 const Gb = @import("../root.zig").Gb;
-const IoReg = @import("../root.zig").IoReg;
-const Interrupt = @import("../root.zig").Interrupt;
-const LcdcFlag = @import("../root.zig").LcdcFlag;
-const ObjFlag = @import("../root.zig").ObjFlag;
-const StatFlag = @import("../root.zig").StatFlag;
+const IoReg = @import("../gameboy.zig").IoReg;
+const Interrupt = @import("../gameboy.zig").Interrupt;
+const LcdcFlag = @import("../gameboy.zig").LcdcFlag;
+const ObjFlag = @import("../gameboy.zig").ObjFlag;
+const StatFlag = @import("../gameboy.zig").StatFlag;
 const Ppu = @import("./ppu.zig").Ppu;
 const syncTime = @import("../timing/root.zig").syncTime;
 
@@ -56,10 +56,10 @@ fn stepPpu(gb: *Gb) void {
                 const statInterruptsEnabled = gb.ie & Interrupt.STAT > 0;
                 const intOnMode2 = stat & StatFlag.INT_MODE_2_ENABLE > 0;
                 if (statInterruptsEnabled and intOnMode2) {
-                    gb.requestInterrupt(Interrupt.STAT);
+                    gb.io_regs[IoReg.IF] |= Interrupt.STAT;
                 }
 
-                gb.setStatMode(StatFlag.MODE_2);
+                setStatMode(gb, StatFlag.MODE_2);
 
                 if (gb.isLcdOn()) {
                     gb.ppu.scanning_oam = true;
@@ -90,7 +90,7 @@ fn stepPpu(gb: *Gb) void {
 
             if (gb.ppu.dots % LINE_DOTS == DRAWING_START) {
                 gb.ppu.drawing = true;
-                gb.setStatMode(StatFlag.MODE_3);
+                setStatMode(gb, StatFlag.MODE_3);
             } else if (gb.ppu.dots % LINE_DOTS >= DRAWING_START + 12) {
                 for (gb.ppu.x..gb.ppu.x + 4) |x| {
                     const colorId = colorIdAt(
@@ -127,9 +127,9 @@ fn stepPpu(gb: *Gb) void {
                 const statInterruptsEnabled = gb.ie & Interrupt.STAT > 0;
                 const intOnMode0 = stat & StatFlag.INT_MODE_0_ENABLE > 0;
 
-                gb.setStatMode(StatFlag.MODE_0);
+                setStatMode(gb, StatFlag.MODE_0);
                 if (statInterruptsEnabled and intOnMode0) {
-                    gb.requestInterrupt(Interrupt.STAT);
+                    gb.io_regs[IoReg.IF] |= Interrupt.STAT;
                 }
             } else if (gb.ppu.dots % LINE_DOTS == LINE_DOTS - 4) {
                 gb.ppu.y += 1;
@@ -141,9 +141,13 @@ fn stepPpu(gb: *Gb) void {
                 // TODO when is this actually supposed to trigger?
                 gb.io_regs[IoReg.LY] = @truncate(gb.ppu.y);
                 const lycIncident = gb.ppu.y == gb.io_regs[IoReg.LYC];
-                gb.setStatLycIncident(lycIncident);
+                if (gb.ppu.y == gb.io_regs[IoReg.LYC]) {
+                    gb.io_regs[IoReg.STAT] |= StatFlag.LYC_INCIDENT_TRUE;
+                } else {
+                    gb.io_regs[IoReg.STAT] &= StatFlag.LYC_INCIDENT_FALSE;
+                }
                 if (statInterruptsEnabled and intOnLycIncident and lycIncident) {
-                    gb.requestInterrupt(Interrupt.STAT);
+                    gb.io_regs[IoReg.IF] |= Interrupt.STAT;
                 }
 
                 if (gb.ppu.y < 144) {
@@ -182,12 +186,12 @@ fn stepPpu(gb: *Gb) void {
                 const statInterruptsEnabled = gb.ie & Interrupt.STAT > 0;
                 const intOnMode1 = stat & StatFlag.INT_MODE_1_ENABLE > 0;
 
-                gb.setStatMode(StatFlag.MODE_1);
+                setStatMode(gb, StatFlag.MODE_1);
                 if (statInterruptsEnabled and intOnMode1) {
-                    gb.requestInterrupt(Interrupt.STAT);
+                    gb.io_regs[IoReg.IF] |= Interrupt.STAT;
                 }
                 if (vblankInterruptsEnabled) {
-                    gb.requestInterrupt(Interrupt.VBLANK);
+                    gb.io_regs[IoReg.IF] |= Interrupt.VBLANK;
                 }
             }
 
@@ -205,6 +209,11 @@ fn stepPpu(gb: *Gb) void {
     }
 
     gb.ppu.dots = (gb.ppu.dots + 4) % VBLANK_END;
+}
+
+fn setStatMode(gb: *Gb, mode: u8) void {
+    gb.io_regs[IoReg.STAT] &= StatFlag.MODE_CLEAR;
+    gb.io_regs[IoReg.STAT] |= mode;
 }
 
 fn readObjectAttributesForLine(

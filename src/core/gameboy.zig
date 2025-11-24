@@ -313,47 +313,8 @@ pub const Gb = struct {
         gb.carry = flags & 0b0001_0000 > 0;
     }
 
-    pub fn isVramInUse(gb: *Gb) bool {
-        const lcdOn = gb.io_regs[IoReg.LCDC] & LcdcFlag.ON > 0;
-        return lcdOn and gb.ppu.drawing;
-    }
-
     pub fn isLcdOn(gb: *Gb) bool {
         return gb.io_regs[IoReg.LCDC] & LcdcFlag.ON > 0;
-    }
-
-    pub fn setStatMode(gb: *Gb, mode: u8) void {
-        gb.io_regs[IoReg.STAT] &= StatFlag.MODE_CLEAR;
-        gb.io_regs[IoReg.STAT] |= mode;
-    }
-
-    pub fn setStatLycIncident(gb: *Gb, isIncident: bool) void {
-        if (isIncident) {
-            gb.io_regs[IoReg.STAT] |= StatFlag.LYC_INCIDENT_TRUE;
-        } else {
-            gb.io_regs[IoReg.STAT] &= StatFlag.LYC_INCIDENT_FALSE;
-        }
-    }
-
-    pub fn requestInterrupt(gb: *Gb, interrupt: u8) void {
-        gb.io_regs[IoReg.IF] |= interrupt;
-    }
-
-    pub fn clearInterrupt(gb: *Gb, interrupt: u8) void {
-        gb.io_regs[IoReg.IF] &= ~interrupt;
-    }
-
-    pub fn isInterruptEnabled(gb: *const Gb, interrupt: u8) bool {
-        return gb.ie & interrupt > 0;
-    }
-
-    pub fn isInterruptPending(gb: *const Gb, interrupt: u8) bool {
-        return gb.io_regs[IoReg.IF] & interrupt > 0;
-    }
-
-    pub fn anyInterruptsPending(gb: *const Gb) bool {
-        const if_ = gb.io_regs[IoReg.IF];
-        return (gb.ie & if_ & 0x1f) != 0;
     }
 
     pub fn panic(gb: *const Gb, comptime msg: []const u8, args: anytype) noreturn {

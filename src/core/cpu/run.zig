@@ -5,8 +5,8 @@ const expect = std.testing.expect;
 const as16 = @import("util").as16;
 const incAs16 = @import("util").incAs16;
 const Gb = @import("../root.zig").Gb;
-const IoReg = @import("../root.zig").IoReg;
-const Interrupt = @import("../root.zig").Interrupt;
+const IoReg = @import("../gameboy.zig").IoReg;
+const Interrupt = @import("../gameboy.zig").Interrupt;
 const Cond = @import("./operand.zig").Cond;
 const Src8 = @import("./operand.zig").Src8;
 const Src16 = @import("./operand.zig").Src16;
@@ -32,7 +32,7 @@ pub fn runCpu(gb: *Gb) void {
         gb.toggle_ime = false;
     }
 
-    const interrupts_pending = gb.anyInterruptsPending();
+    const interrupts_pending = (gb.ie & gb.io_regs[IoReg.IF] & 0x1f) != 0;
 
     if (gb.halted and !effective_ime and interrupts_pending) {
         gb.halted = false;
@@ -54,21 +54,21 @@ pub fn runCpu(gb: *Gb) void {
         gb.sp -%= 1;
         cycleWrite(gb, Dst8{ .Ind = gb.sp }, @truncate(gb.pc));
 
-        if (gb.isInterruptPending(Interrupt.VBLANK)) {
+        if (gb.io_regs[IoReg.IF] & Interrupt.VBLANK > 0) {
             gb.pc = 0x0040;
-            gb.clearInterrupt(Interrupt.VBLANK);
-        } else if (gb.isInterruptPending(Interrupt.STAT)) {
+            gb.io_regs[IoReg.IF] &= ~Interrupt.VBLANK;
+        } else if (gb.io_regs[IoReg.IF] & Interrupt.STAT > 0) {
             gb.pc = 0x0048;
-            gb.clearInterrupt(Interrupt.STAT);
-        } else if (gb.isInterruptPending(Interrupt.TIMER)) {
+            gb.io_regs[IoReg.IF] &= ~Interrupt.STAT;
+        } else if (gb.io_regs[IoReg.IF] & Interrupt.TIMER > 0) {
             gb.pc = 0x0050;
-            gb.clearInterrupt(Interrupt.TIMER);
-        } else if (gb.isInterruptPending(Interrupt.SERIAL)) {
+            gb.io_regs[IoReg.IF] &= ~Interrupt.TIMER;
+        } else if (gb.io_regs[IoReg.IF] & Interrupt.SERIAL > 0) {
             gb.pc = 0x0058;
-            gb.clearInterrupt(Interrupt.SERIAL);
-        } else if (gb.isInterruptPending(Interrupt.JOYPAD)) {
+            gb.io_regs[IoReg.IF] &= ~Interrupt.SERIAL;
+        } else if (gb.io_regs[IoReg.IF] & Interrupt.JOYPAD > 0) {
             gb.pc = 0x0060;
-            gb.clearInterrupt(Interrupt.JOYPAD);
+            gb.io_regs[IoReg.IF] &= ~Interrupt.JOYPAD;
         }
         cycleStall(gb);
 
@@ -461,7 +461,7 @@ fn halt(gb: *Gb) void {
     _ = cycleRead(gb, Src8{ .Ind = gb.pc });
     gb.pending_cycles = 0;
 
-    if (gb.anyInterruptsPending()) {
+    if ((gb.ie & gb.io_regs[IoReg.IF] & 0x1f) != 0) {
         gb.halted = false;
 
         if (gb.ime) {

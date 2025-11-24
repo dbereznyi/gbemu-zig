@@ -1,6 +1,6 @@
 const std = @import("std");
-const Gb = @import("../root.zig").Gb;
-const IoReg = @import("../root.zig").IoReg;
+const Gb = @import("../gameboy.zig").Gb;
+const IoReg = @import("../gameboy.zig").IoReg;
 const ApuReg = @import("../apu/root.zig").ApuReg;
 const MbcReg = @import("../cart/root.zig").MbcReg;
 

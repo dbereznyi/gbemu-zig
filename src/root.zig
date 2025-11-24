@@ -2,12 +2,12 @@ const std = @import("std");
 const testing = std.testing;
 
 test "bess" {
-    const Gb = @import("gameboy/gameboy.zig").Gb;
-    const IoReg = @import("gameboy/gameboy.zig").IoReg;
-    const Bess = @import("gameboy/bess/bess.zig").Bess;
-    const loadBess = @import("gameboy/bess/load.zig").loadBess;
-    const writeBess = @import("gameboy/bess/write.zig").writeBess;
-    const runGameboyForNumCycles = @import("gameboy/run.zig").runGameboyForNumCycles;
+    const Gb = @import("core").Gb;
+    const IoReg = @import("core").IoReg;
+    const Bess = @import("core").Bess;
+    const loadBess = @import("core").loadBess;
+    const writeBess = @import("core").writeBess;
+    const runGameboyForNumCycles = @import("core/run.zig").runGameboyForNumCycles;
 
     const alloc = std.testing.allocator;
 

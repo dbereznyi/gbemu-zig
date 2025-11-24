@@ -1,5 +1,5 @@
-const Gb = @import("../root.zig").Gb;
-const IoReg = @import("../root.zig").IoReg;
+const Gb = @import("../gameboy.zig").Gb;
+const IoReg = @import("../gameboy.zig").IoReg;
 const ApuReg = @import("../apu/root.zig").ApuReg;
 const cart = @import("../cart/root.zig");
 
@@ -9,7 +9,7 @@ pub fn write(gb: *Gb, addr: u16, val: u8) void {
         0x0000...0x7fff => cart.writeRom(&gb.cart, addr, val),
         // VRAM
         0x8000...0x9fff => {
-            if (!gb.isVramInUse() or gb.debug.isPaused()) {
+            if (!gb.isLcdOn() or !gb.ppu.drawing or gb.debug.isPaused()) {
                 gb.vram[addr - 0x8000] = val;
             }
         },

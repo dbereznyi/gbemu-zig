@@ -1,6 +1,6 @@
 const std = @import("std");
 const Gb = @import("../root.zig").Gb;
-const IoReg = @import("../root.zig").IoReg;
+const IoReg = @import("../gameboy.zig").IoReg;
 const mem = @import("../memory/root.zig");
 
 pub fn runDma(gb: *Gb) void {

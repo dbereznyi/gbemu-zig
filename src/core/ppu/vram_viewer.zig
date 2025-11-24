@@ -1,7 +1,7 @@
 const std = @import("std");
 const Pixel = @import("./pixel.zig").Pixel;
 const Gb = @import("../root.zig").Gb;
-const IoReg = @import("../root.zig").IoReg;
+const IoReg = @import("../gameboy.zig").IoReg;
 
 pub fn renderVramViewer(gb: *Gb, pixels: *[]Pixel) void {
     const tile_data = gb.vram[0x0000..0x1800];

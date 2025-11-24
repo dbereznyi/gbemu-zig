@@ -1,6 +1,6 @@
 const Gb = @import("../root.zig").Gb;
-const Interrupt = @import("../root.zig").Interrupt;
-const IoReg = @import("../root.zig").IoReg;
+const Interrupt = @import("../gameboy.zig").Interrupt;
+const IoReg = @import("../gameboy.zig").IoReg;
 const TacFlag = @import("./timer.zig").TacFlag;
 const constants = @import("constants");
 
@@ -14,7 +14,7 @@ pub fn runTimer(gb: *Gb, cycles: usize) void {
         switch (gb.timer.state) {
             .running => {},
             .reloading_tima => {
-                gb.requestInterrupt(Interrupt.TIMER);
+                gb.io_regs[IoReg.IF] |= Interrupt.TIMER;
                 gb.timer.state = .reloaded_tima;
             },
             .reloaded_tima => {

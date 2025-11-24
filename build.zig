@@ -52,30 +52,30 @@ pub fn build(b: *std.Build) void {
     const util = b.createModule(.{ .root_source_file = b.path("src/util/root.zig") });
     exe.root_module.addImport("util", util);
 
-    const core = b.addModule("core", .{ .root_source_file = b.path("src/gameboy/root.zig") });
+    const core = b.addModule("core", .{ .root_source_file = b.path("src/core/root.zig") });
     core.addImport("constants", constants);
     core.addImport("util", util);
     // {
-    //     const cpu = b.createModule(.{ .root_source_file = b.path("src/gameboy/cpu/root.zig") });
+    //     const cpu = b.createModule(.{ .root_source_file = b.path("src/core/cpu/root.zig") });
     //     core.addImport("cpu", cpu);
-    //     const dma = b.createModule(.{ .root_source_file = b.path("src/gameboy/dma/root.zig") });
+    //     const dma = b.createModule(.{ .root_source_file = b.path("src/core/dma/root.zig") });
     //     core.addImport("dma", dma);
-    //     const timer = b.createModule(.{ .root_source_file = b.path("src/gameboy/timer/root.zig") });
+    //     const timer = b.createModule(.{ .root_source_file = b.path("src/core/timer/root.zig") });
     //     core.addImport("timer", timer);
-    //     const joypad = b.createModule(.{ .root_source_file = b.path("src/gameboy/joypad/root.zig") });
+    //     const joypad = b.createModule(.{ .root_source_file = b.path("src/core/joypad/root.zig") });
     //     core.addImport("joypad", joypad);
-    //     const ppu = b.createModule(.{ .root_source_file = b.path("src/gameboy/ppu/root.zig") });
+    //     const ppu = b.createModule(.{ .root_source_file = b.path("src/core/ppu/root.zig") });
     //     core.addImport("ppu", ppu);
-    //     const apu = b.createModule(.{ .root_source_file = b.path("src/gameboy/apu/root.zig") });
+    //     const apu = b.createModule(.{ .root_source_file = b.path("src/core/apu/root.zig") });
     //     core.addImport("apu", apu);
-    //     const cart = b.createModule(.{ .root_source_file = b.path("src/gameboy/cart/root.zig") });
+    //     const cart = b.createModule(.{ .root_source_file = b.path("src/core/cart/root.zig") });
     //     core.addImport("cart", cart);
-    //     const memory = b.createModule(.{ .root_source_file = b.path("src/gameboy/memory/root.zig") });
+    //     const memory = b.createModule(.{ .root_source_file = b.path("src/core/memory/root.zig") });
     //     core.addImport("memory", memory);
-    //     const timing = b.createModule(.{ .root_source_file = b.path("src/gameboy/timing/root.zig") });
+    //     const timing = b.createModule(.{ .root_source_file = b.path("src/core/timing/root.zig") });
     //     core.addImport("timing", timing);
     //     const bess = b.createModule(.{
-    //         .root_source_file = b.path("src/gameboy/bess/root.zig"),
+    //         .root_source_file = b.path("src/core/bess/root.zig"),
     //         .imports = &.{.{
     //             .name = "cart",
     //             .module = cart,
@@ -83,7 +83,7 @@ pub fn build(b: *std.Build) void {
     //     });
     //     core.addImport("bess", bess);
     //     const debug = b.createModule(.{
-    //         .root_source_file = b.path("src/gameboy/debug/root.zig"),
+    //         .root_source_file = b.path("src/core/debug/root.zig"),
     //         .imports = &.{
     //             .{
     //                 .name = "util",

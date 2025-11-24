@@ -1,7 +1,7 @@
 const std = @import("std");
 const Gb = @import("../root.zig").Gb;
-const IoReg = @import("../root.zig").IoReg;
-const Interrupt = @import("../root.zig").Interrupt;
+const IoReg = @import("../gameboy.zig").IoReg;
+const Interrupt = @import("../gameboy.zig").Interrupt;
 const JoypFlag = @import("./joypad.zig").Joypad.JoypFlag;
 
 pub fn runJoypad(gb: *Gb, cycles: usize) void {
@@ -63,8 +63,8 @@ fn stepJoypad(gb: *Gb) void {
                     gb.joypad.cycles_since_low_edge_transition += 1;
                 } else {
                     gb.joypad.cycles_since_low_edge_transition = 0;
-                    if (gb.ime and gb.isInterruptEnabled(Interrupt.JOYPAD)) {
-                        gb.requestInterrupt(Interrupt.JOYPAD);
+                    if (gb.ime and gb.ie & Interrupt.JOYPAD > 0) {
+                        gb.io_regs[IoReg.IF] |= Interrupt.JOYPAD;
                     }
                     gb.joypad.mode = .waiting_for_low_edge;
                 }

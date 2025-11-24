@@ -1,5 +1,5 @@
 const Gb = @import("../root.zig").Gb;
-const IoReg = @import("../root.zig").IoReg;
+const IoReg = @import("../gameboy.zig").IoReg;
 const ApuReg = @import("../apu/root.zig").ApuReg;
 const cart = @import("../cart/root.zig");
 
@@ -9,7 +9,7 @@ pub fn read(gb: *Gb, addr: u16) u8 {
         0x0000...0x7fff => cart.readRom(&gb.cart, addr),
         // VRAM
         0x8000...0x9fff => blk: {
-            if (!gb.isVramInUse() or gb.debug.isPaused()) {
+            if (!gb.isLcdOn() or !gb.ppu.drawing or gb.debug.isPaused()) {
                 const val = gb.vram[addr - 0x8000];
                 break :blk val;
             } else {

@@ -9,8 +9,8 @@ const runDebugger = @import("core").runDebugger;
 const Sample = @import("core").Sample;
 const constants = @import("constants");
 const renderVramViewer = @import("core").renderVramViewer;
-const Bess = @import("core").bess.Bess;
-const writeBess = @import("core").bess.writeBess;
+const Bess = @import("core").Bess;
+const writeBess = @import("core").writeBess;
 const Button = @import("core").Button;
 
 const WINDOW_SCALE = 3;
