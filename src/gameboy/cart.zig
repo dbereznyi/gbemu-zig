@@ -26,6 +26,13 @@ pub const Cart = struct {
         current_rom_bank: u5,
         current_ram_bank: u2,
         banking_mode: u1,
+
+        pub fn reset(self: *Mbc1Registers) void {
+            self.ram_enable = 0;
+            self.current_rom_bank = 1;
+            self.current_ram_bank = 0;
+            self.banking_mode = 0;
+        }
     };
 
     rom_title: []const u8,
@@ -53,6 +60,9 @@ pub const Cart = struct {
                 return error.UnsupportedCartridgeType;
             },
         };
+        const mapper = cart_info[0];
+        const has_ram = cart_info[1];
+        const has_battery = cart_info[2];
 
         const rom_size: u32 = switch (rom[0x0148]) {
             0x00 => 32 * 1024,
@@ -103,9 +113,9 @@ pub const Cart = struct {
             .rom_title = rom_title,
             .rom = rom,
             .ram = ram,
-            .mapper = cart_info[0],
-            .has_ram = cart_info[1],
-            .has_battery = cart_info[2],
+            .mapper = mapper,
+            .has_ram = has_ram,
+            .has_battery = has_battery,
             .mbc1 = .{
                 .ram_enable = 0,
                 .current_rom_bank = 1,
@@ -123,6 +133,8 @@ pub const Cart = struct {
     }
 
     pub fn printState(cart: *const Cart, writer: *std.Io.Writer) !void {
+        try writer.print("title={s}\n", .{cart.rom_title});
+
         const mapper_str = switch (cart.mapper) {
             .none => "none",
             .mbc1 => "mbc1",
@@ -137,7 +149,13 @@ pub const Cart = struct {
             .huc3 => "huc3",
             .huc1 => "huc1",
         };
-        try writer.print("mapper={s} has_ram={d} has_battery={d} rom_size={} ram_size={}\n", .{ mapper_str, if (cart.has_ram) @as(u1, 1) else @as(u1, 0), if (cart.has_battery) @as(u1, 1) else @as(u1, 0), cart.rom_size, cart.ram_size });
+        try writer.print("mapper={s} has_ram={d} has_battery={d} rom_size={} ram_size={}\n", .{
+            mapper_str,
+            if (cart.has_ram) @as(u1, 1) else @as(u1, 0),
+            if (cart.has_battery) @as(u1, 1) else @as(u1, 0),
+            cart.rom_size,
+            cart.ram_size,
+        });
 
         switch (cart.mapper) {
             .mbc1 => {
@@ -163,16 +181,36 @@ pub const Cart = struct {
 
         switch (cart.mapper) {
             .none => {
-                return cart.rom[addr];
+                if (addr < cart.rom.len) {
+                    return cart.rom[addr];
+                } else {
+                    std.debug.panic("Bad ROM read. Tried to read offset {} while max offset is {}\n", .{
+                        addr,
+                        cart.rom.len - 1,
+                    });
+                }
             },
             .mbc1 => {
                 if (addr < 0x4000) {
                     // TODO handle bank 0 being switched out
                     return cart.rom[addr];
                 }
-                const actual_addr = @as(usize, @intCast(addr)) + (0x4000 * (@as(usize, @intCast(cart.mbc1.current_rom_bank)) - 1));
-                std.debug.assert(actual_addr < cart.rom.len);
-                return cart.rom[actual_addr];
+                const masked_addr: usize = addr & 0b11_1111_1111_1111;
+                const rom_bank_upper: usize = if (cart.rom.len >= 1024 * 1024) @intCast(cart.mbc1.current_ram_bank) else 0;
+                const rom_bank_number: usize = rom_bank_upper << 5 | @as(usize, @intCast(cart.mbc1.current_rom_bank));
+                const physical_addr = (rom_bank_number << 14) | masked_addr;
+
+                if (physical_addr < cart.rom.len) {
+                    return cart.rom[physical_addr];
+                } else {
+                    std.debug.panic("Bad ROM read. masked_addr={b:0>16} rom_bank_number={b:0>7} physical_addr={b} ({d}) len={b}\n", .{
+                        masked_addr,
+                        rom_bank_number,
+                        physical_addr,
+                        physical_addr,
+                        cart.rom.len,
+                    });
+                }
             },
             else => std.debug.panic("TODO implement ROM read for {}\n", .{cart.mapper}),
         }
@@ -246,8 +284,11 @@ pub const Cart = struct {
                     return 0xff;
                 }
                 const actual_addr = (@as(usize, @intCast(addr)) - 0xa000) + (0x2000 * @as(usize, @intCast(cart.mbc1.current_ram_bank)));
-                std.debug.assert(actual_addr < cart.ram.len);
-                return cart.ram[actual_addr];
+                if (actual_addr < cart.ram.len) {
+                    return cart.ram[actual_addr];
+                } else {
+                    return 0xff;
+                }
             },
             else => std.debug.panic("TODO implement RAM read for {}\n", .{cart.mapper}),
         }
@@ -279,10 +320,7 @@ pub const Cart = struct {
     }
 
     pub fn reset(cart: *Cart) void {
-        cart.mbc1.ram_enable = 0;
-        cart.mbc1.current_rom_bank = 1;
-        cart.mbc1.current_ram_bank = 0;
-        cart.mbc1.banking_mode = 0;
+        cart.mbc1.reset();
     }
 
     pub fn getMbcRegisters(
