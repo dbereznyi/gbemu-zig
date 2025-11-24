@@ -1,8 +1,8 @@
-const Gb = @import("../gameboy.zig").Gb;
-const Interrupt = @import("../gameboy.zig").Interrupt;
-const IoReg = @import("../gameboy.zig").IoReg;
-const TacFlag = @import("../gameboy.zig").TacFlag;
-const constants = @import("../../constants.zig");
+const Gb = @import("../root.zig").Gb;
+const Interrupt = @import("../root.zig").Interrupt;
+const IoReg = @import("../root.zig").IoReg;
+const TacFlag = @import("./timer.zig").TacFlag;
+const constants = @import("constants");
 
 pub fn runTimer(gb: *Gb, cycles: usize) void {
     var rem_cycles = cycles + gb.timer.odd_cycles;

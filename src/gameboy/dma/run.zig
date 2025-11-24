@@ -1,6 +1,7 @@
 const std = @import("std");
-const Gb = @import("../gameboy.zig").Gb;
-const IoReg = @import("../gameboy.zig").IoReg;
+const Gb = @import("../root.zig").Gb;
+const IoReg = @import("../root.zig").IoReg;
+const mem = @import("../memory/root.zig");
 
 pub fn runDma(gb: *Gb) void {
     var cycles = gb.dma.cycles + gb.dma.cycles_odd;
@@ -19,7 +20,7 @@ pub fn runDma(gb: *Gb) void {
             },
             .transfer => {
                 const i = gb.dma.bytesTransferred;
-                gb.oam[i] = gb.read(gb.dma.startAddr + i);
+                gb.oam[i] = mem.read(gb, gb.dma.startAddr + i);
                 gb.dma.bytesTransferred += 1;
                 if (gb.dma.bytesTransferred >= 160) {
                     gb.dma.mode = .idle;

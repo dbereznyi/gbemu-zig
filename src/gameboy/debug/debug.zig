@@ -1,8 +1,8 @@
 const std = @import("std");
 const format = std.fmt.format;
-const Instr = @import("../cpu/instruction.zig").Instr;
-const BoundedStack = @import("../../util.zig").BoundedStack;
-const DebugCmd = @import("cmd.zig").DebugCmd;
+const Instr = @import("../cpu/root.zig").Instr;
+const BoundedStack = @import("util").BoundedStack;
+const DebugCmd = @import("./cmd.zig").DebugCmd;
 
 pub const Debug = struct {
     const TraceLine = struct {

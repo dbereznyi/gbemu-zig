@@ -1,6 +1,6 @@
 const std = @import("std");
-const Gb = @import("gameboy/gameboy.zig").Gb;
-const Sdl = @import("sdl.zig").Sdl;
+const Gb = @import("core").Gb;
+const Sdl = @import("sdl").Sdl;
 
 pub fn main() !void {
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);

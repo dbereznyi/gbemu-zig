@@ -2,8 +2,8 @@ const std = @import("std");
 const c = @cImport({
     @cInclude("SDL2/SDL.h");
 });
-const Sample = @import("../../sample.zig").Sample;
-const constants = @import("../../constants.zig");
+const Sample = @import("./sample.zig").Sample;
+const constants = @import("constants");
 
 const SAMPLES_CLOCK_DIVIDER = @as(f32, @floatFromInt(constants.GB.CLOCK_RATE)) / 2 / @as(f32, @floatFromInt(constants.AUDIO.SAMPLE_RATE));
 const SAMPLES_CLOCK_DIVIDER_HIGH: i32 = @ceil(SAMPLES_CLOCK_DIVIDER);

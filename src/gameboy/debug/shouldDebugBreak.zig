@@ -1,8 +1,6 @@
 const std = @import("std");
-const Gb = @import("../gameboy.zig").Gb;
-const Ppu = @import("../gameboy.zig").Ppu;
-const IoReg = @import("../gameboy.zig").IoReg;
-const Interrupt = @import("../gameboy.zig").Interrupt;
+const Gb = @import("../root.zig").Gb;
+const mem = @import("../memory/root.zig");
 
 const ENABLE_DEBUGGING = true;
 const ENABLE_SOFTWARE_BREAKPOINTS = false;
@@ -20,7 +18,7 @@ pub fn shouldDebugBreak(gb: *Gb) bool {
     }
 
     // software breakpoint ("ld b, b")
-    if (ENABLE_SOFTWARE_BREAKPOINTS and gb.read(gb.pc) == 0x40) {
+    if (ENABLE_SOFTWARE_BREAKPOINTS and mem.read(gb, gb.pc) == 0x40) {
         return true;
     }
 

@@ -1,9 +1,5 @@
 const std = @import("std");
-
-pub const MbcReg = struct {
-    addr: u16,
-    val: u8,
-};
+const MbcReg = @import("./mbc_reg.zig").MbcReg;
 
 pub const Cart = struct {
     const Mapper = enum {
@@ -26,6 +22,15 @@ pub const Cart = struct {
         current_rom_bank: u5,
         current_ram_bank: u2,
         banking_mode: u1,
+
+        pub fn init() Mbc1Registers {
+            return .{
+                .ram_enable = 0,
+                .current_rom_bank = 1,
+                .current_ram_bank = 0,
+                .banking_mode = 0,
+            };
+        }
 
         pub fn reset(self: *Mbc1Registers) void {
             self.ram_enable = 0;
@@ -116,12 +121,7 @@ pub const Cart = struct {
             .mapper = mapper,
             .has_ram = has_ram,
             .has_battery = has_battery,
-            .mbc1 = .{
-                .ram_enable = 0,
-                .current_rom_bank = 1,
-                .current_ram_bank = 0,
-                .banking_mode = 0,
-            },
+            .mbc1 = Mbc1Registers.init(),
             .rom_size = rom_size,
             .ram_size = ram_size,
             .global_checksum = global_checksum,
@@ -176,46 +176,6 @@ pub const Cart = struct {
         };
     }
 
-    pub fn readRom(cart: *Cart, addr: u16) u8 {
-        std.debug.assert(addr < 0x8000);
-
-        switch (cart.mapper) {
-            .none => {
-                if (addr < cart.rom.len) {
-                    return cart.rom[addr];
-                } else {
-                    std.debug.panic("Bad ROM read. Tried to read offset {} while max offset is {}\n", .{
-                        addr,
-                        cart.rom.len - 1,
-                    });
-                }
-            },
-            .mbc1 => {
-                if (addr < 0x4000) {
-                    // TODO handle bank 0 being switched out
-                    return cart.rom[addr];
-                }
-                const masked_addr: usize = addr & 0b11_1111_1111_1111;
-                const rom_bank_upper: usize = if (cart.rom.len >= 1024 * 1024) @intCast(cart.mbc1.current_ram_bank) else 0;
-                const rom_bank_number: usize = rom_bank_upper << 5 | @as(usize, @intCast(cart.mbc1.current_rom_bank));
-                const physical_addr = (rom_bank_number << 14) | masked_addr;
-
-                if (physical_addr < cart.rom.len) {
-                    return cart.rom[physical_addr];
-                } else {
-                    std.debug.panic("Bad ROM read. masked_addr={b:0>16} rom_bank_number={b:0>7} physical_addr={b} ({d}) len={b}\n", .{
-                        masked_addr,
-                        rom_bank_number,
-                        physical_addr,
-                        physical_addr,
-                        cart.rom.len,
-                    });
-                }
-            },
-            else => std.debug.panic("TODO implement ROM read for {}\n", .{cart.mapper}),
-        }
-    }
-
     pub fn persistRam(cart: *const Cart, path: []const u8) !void {
         if (!cart.has_battery) {
             return;
@@ -224,99 +184,6 @@ pub const Cart = struct {
         const file = try std.fs.cwd().createFile(path, .{});
         defer file.close();
         try file.writeAll(cart.ram);
-    }
-
-    pub fn writeRom(cart: *Cart, addr: u16, val: u8) void {
-        std.debug.assert(addr < 0x8000);
-
-        switch (cart.mapper) {
-            .none => {
-                std.log.warn("Attempt to write to ROM with no mapper present (${x:0>2} -> {x:0>4})\n", .{ val, addr });
-            },
-            .mbc1 => switch (addr) {
-                // RAM Enable
-                0x0000...0x1fff => {
-                    if ((val & 0x0f) == 0x0a) {
-                        cart.mbc1.ram_enable = 1;
-                    } else {
-                        cart.mbc1.ram_enable = 0;
-                    }
-                },
-                // ROM bank select
-                0x2000...0x3fff => {
-                    // TODO handle more nuanced behavior (e.g. small ROMs masking fewer bits)
-                    const bank: u5 = @truncate(val & 0b0001_1111);
-                    cart.mbc1.current_rom_bank = if (bank == 0) 1 else bank;
-                },
-                // RAM bank select
-                0x4000...0x5fff => {
-                    if (cart.mbc1.banking_mode == 1) {
-                        const bank: u2 = @truncate(val & 0b0000_0011);
-                        cart.mbc1.current_ram_bank = bank;
-                    }
-                },
-                // Banking mode select
-                0x6000...0x7fff => {
-                    const mode: u1 = @truncate(val & 0b0000_0001);
-                    cart.mbc1.banking_mode = mode;
-                },
-                else => std.debug.panic("Invalid address for cartridge write: ${x:0>4}", .{addr}),
-            },
-            else => std.debug.panic("TODO implement ROM write for {}\n", .{cart.mapper}),
-        }
-    }
-
-    pub fn readRam(cart: *Cart, addr: u16) u8 {
-        std.debug.assert(addr >= 0xa000 and addr < 0xc000);
-
-        if (!cart.has_ram) {
-            std.log.warn("Attempt to read from cartridge RAM while no RAM is present (${x:0>4})", .{addr});
-            return 0xff;
-        }
-
-        switch (cart.mapper) {
-            .none => {
-                std.log.warn("Attempt to read from cartridge RAM in ROM-only cartridge (${x:0>4})", .{addr});
-                return 0xff;
-            },
-            .mbc1 => {
-                if (cart.mbc1.ram_enable == 0) {
-                    return 0xff;
-                }
-                const actual_addr = (@as(usize, @intCast(addr)) - 0xa000) + (0x2000 * @as(usize, @intCast(cart.mbc1.current_ram_bank)));
-                if (actual_addr < cart.ram.len) {
-                    return cart.ram[actual_addr];
-                } else {
-                    return 0xff;
-                }
-            },
-            else => std.debug.panic("TODO implement RAM read for {}\n", .{cart.mapper}),
-        }
-    }
-
-    pub fn writeRam(cart: *Cart, addr: u16, val: u8) void {
-        std.debug.assert(addr >= 0xa000 and addr < 0xc000);
-
-        if (!cart.has_ram) {
-            std.log.warn("Attempt to write to cartridge RAM while no RAM is present (${x:0>2} -> ${x:0>4})", .{ val, addr });
-            return;
-        }
-
-        switch (cart.mapper) {
-            .none => {
-                std.log.warn("Attempt to write to cartridge RAM in ROM-only cartridge (${x:0>2} -> ${x:0>4})", .{ val, addr });
-            },
-            .mbc1 => {
-                if (cart.mbc1.ram_enable == 0) {
-                    return;
-                }
-                const actual_addr = (@as(usize, @intCast(addr)) - 0xa000) + (0x2000 * @as(usize, @intCast(cart.mbc1.current_ram_bank)));
-                if (actual_addr < cart.ram.len) {
-                    cart.ram[actual_addr] = val;
-                }
-            },
-            else => std.debug.panic("TODO implement RAM read for {}\n", .{cart.mapper}),
-        }
     }
 
     pub fn reset(cart: *Cart) void {

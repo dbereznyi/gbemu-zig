@@ -1,10 +1,10 @@
 const std = @import("std");
-const Gb = @import("../gameboy.zig").Gb;
-const Cond = @import("operand.zig").Cond;
-const Src8 = @import("operand.zig").Src8;
-const Dst8 = @import("operand.zig").Dst8;
-const Src16 = @import("operand.zig").Src16;
-const Dst16 = @import("operand.zig").Dst16;
+const Gb = @import("../root.zig").Gb;
+const Cond = @import("./operand.zig").Cond;
+const Src8 = @import("./operand.zig").Src8;
+const Dst8 = @import("./operand.zig").Dst8;
+const Src16 = @import("./operand.zig").Src16;
+const Dst16 = @import("./operand.zig").Dst16;
 
 const InstrTag = enum {
     INVALID,

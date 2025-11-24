@@ -1,7 +1,7 @@
 const std = @import("std");
-const Gb = @import("../gameboy.zig").Gb;
-const DebugCmd = @import("cmd.zig").DebugCmd;
-const executeCmd = @import("executeCmd.zig").executeCmd;
+const Gb = @import("../root.zig").Gb;
+const DebugCmd = @import("./cmd.zig").DebugCmd;
+const executeCmd = @import("./executeCmd.zig").executeCmd;
 
 pub fn runDebugger(gb: *Gb) !void {
     gb.debug.std_out_mutex.lock();

@@ -2,16 +2,16 @@ const c = @cImport({
     @cInclude("SDL2/SDL.h");
 });
 const std = @import("std");
-const Pixel = @import("pixel.zig").Pixel;
-const Gb = @import("gameboy/gameboy.zig").Gb;
-const runGameboy = @import("gameboy/run.zig").runGameboy;
-const runDebugger = @import("gameboy/debug/runDebugger.zig").runDebugger;
-const Sample = @import("sample.zig").Sample;
-const constants = @import("constants.zig");
-const renderVramViewer = @import("gameboy/ppu/vram_viewer.zig").renderVramViewer;
-const Bess = @import("gameboy/bess/bess.zig").Bess;
-const writeBess = @import("gameboy/bess/write.zig").writeBess;
-const Button = @import("gameboy/joypad/joypad.zig").Joypad.Button;
+const Pixel = @import("core").Pixel;
+const Gb = @import("core").Gb;
+const runGameboy = @import("core").runGameboy;
+const runDebugger = @import("core").runDebugger;
+const Sample = @import("core").Sample;
+const constants = @import("constants");
+const renderVramViewer = @import("core").renderVramViewer;
+const Bess = @import("core").bess.Bess;
+const writeBess = @import("core").bess.writeBess;
+const Button = @import("core").Button;
 
 const WINDOW_SCALE = 3;
 

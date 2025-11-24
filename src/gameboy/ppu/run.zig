@@ -1,13 +1,13 @@
 const std = @import("std");
-const Pixel = @import("../../pixel.zig").Pixel;
-const Gb = @import("../gameboy.zig").Gb;
-const IoReg = @import("../gameboy.zig").IoReg;
-const Interrupt = @import("../gameboy.zig").Interrupt;
-const LcdcFlag = @import("../gameboy.zig").LcdcFlag;
-const ObjFlag = @import("../gameboy.zig").ObjFlag;
-const StatFlag = @import("../gameboy.zig").StatFlag;
-const Ppu = @import("ppu.zig").Ppu;
-const syncTime = @import("../timing.zig").syncTime;
+const Pixel = @import("./pixel.zig").Pixel;
+const Gb = @import("../root.zig").Gb;
+const IoReg = @import("../root.zig").IoReg;
+const Interrupt = @import("../root.zig").Interrupt;
+const LcdcFlag = @import("../root.zig").LcdcFlag;
+const ObjFlag = @import("../root.zig").ObjFlag;
+const StatFlag = @import("../root.zig").StatFlag;
+const Ppu = @import("./ppu.zig").Ppu;
+const syncTime = @import("../timing/root.zig").syncTime;
 
 const LINE_DOTS: usize = 456;
 const OAM_DOTS: usize = 80;

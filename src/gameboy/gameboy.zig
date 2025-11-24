@@ -1,17 +1,14 @@
 const std = @import("std");
-const Pixel = @import("../pixel.zig").Pixel;
-const as16 = @import("../util.zig").as16;
-const decodeInstrAt = @import("cpu/decode.zig").decodeInstrAt;
-const PrefixOp = @import("cpu/prefix_op.zig").PrefixOp;
-const Debug = @import("debug/debug.zig").Debug;
-const Timer = @import("timer/timer.zig").Timer;
-const Dma = @import("dma/dma.zig").Dma;
-const Cart = @import("cart/cart.zig").Cart;
-const Joypad = @import("joypad/joypad.zig").Joypad;
-const Ppu = @import("ppu/ppu.zig").Ppu;
-const Apu = @import("apu/apu.zig").Apu;
-const ApuReg = @import("apu/apu.zig").ApuReg;
-const Bess = @import("bess/bess.zig").Bess;
+const decodeInstrAt = @import("cpu").decodeInstrAt;
+const Debug = @import("debug/root.zig").Debug;
+const Timer = @import("timer/root.zig").Timer;
+const Dma = @import("dma/root.zig").Dma;
+const Cart = @import("cart/root.zig").Cart;
+const Joypad = @import("joypad/root.zig").Joypad;
+const Ppu = @import("ppu/root.zig").Ppu;
+const Apu = @import("apu/root.zig").Apu;
+const ApuReg = @import("apu/root.zig").ApuReg;
+const Bess = @import("bess/root.zig").Bess;
 
 pub const IoReg = .{
     .JOYP = 0x00,
@@ -56,11 +53,6 @@ pub const IoReg = .{
     .WY = 0x4a,
     .WX = 0x4b,
     .IE = 0xff,
-};
-
-pub const TacFlag = .{
-    .ENABLE = 0b0000_0100,
-    .CLOCK_SELECT = 0b0000_0011,
 };
 
 pub const LcdcFlag = .{
@@ -330,155 +322,6 @@ pub const Gb = struct {
         return gb.io_regs[IoReg.LCDC] & LcdcFlag.ON > 0;
     }
 
-    pub fn read(gb: *Gb, addr: u16) u8 {
-        return switch (addr) {
-            // ROM
-            0x0000...0x7fff => gb.cart.readRom(addr),
-            // VRAM
-            0x8000...0x9fff => blk: {
-                if (!gb.isVramInUse() or gb.debug.isPaused()) {
-                    const val = gb.vram[addr - 0x8000];
-                    break :blk val;
-                } else {
-                    break :blk 0xff;
-                }
-            },
-            // External RAM
-            0xa000...0xbfff => gb.cart.readRam(addr),
-            // WRAM
-            0xc000...0xdfff => gb.wram[addr - 0xc000],
-            // Echo RAM
-            0xe000...0xfdff => gb.wram[addr - 0xe000],
-            // OAM
-            0xfe00...0xfe9f => blk: {
-                if (!gb.isLcdOn() or !gb.ppu.scanning_oam or gb.debug.isPaused()) {
-                    const val = gb.oam[addr - 0xfe00];
-                    break :blk val;
-                } else {
-                    break :blk 0xff;
-                }
-            },
-            // Not useable
-            0xfea0...0xfeff => blk: {
-                //std.log.warn("Attempted to read from prohibited memory at ${x}\n", .{addr});
-                break :blk 0xff;
-            },
-            // I/O Registers
-            0xff00...0xff7f => {
-                const reg_ix = addr - 0xff00;
-                return switch (reg_ix) {
-                    IoReg.DIV => @truncate(gb.timer.system_counter >> 8),
-                    IoReg.NR10 => gb.apu.readReg(ApuReg.NR10),
-                    IoReg.NR11 => gb.apu.readReg(ApuReg.NR11),
-                    IoReg.NR12 => gb.apu.readReg(ApuReg.NR12),
-                    IoReg.NR13 => gb.apu.readReg(ApuReg.NR13),
-                    IoReg.NR14 => gb.apu.readReg(ApuReg.NR14),
-                    IoReg.NR21 => gb.apu.readReg(ApuReg.NR21),
-                    IoReg.NR22 => gb.apu.readReg(ApuReg.NR22),
-                    IoReg.NR23 => gb.apu.readReg(ApuReg.NR23),
-                    IoReg.NR24 => gb.apu.readReg(ApuReg.NR24),
-                    IoReg.NR30 => gb.apu.readReg(ApuReg.NR30),
-                    IoReg.NR31 => gb.apu.readReg(ApuReg.NR31),
-                    IoReg.NR32 => gb.apu.readReg(ApuReg.NR32),
-                    IoReg.NR33 => gb.apu.readReg(ApuReg.NR33),
-                    IoReg.NR34 => gb.apu.readReg(ApuReg.NR34),
-                    IoReg.NR41 => gb.apu.readReg(ApuReg.NR41),
-                    IoReg.NR42 => gb.apu.readReg(ApuReg.NR42),
-                    IoReg.NR43 => gb.apu.readReg(ApuReg.NR43),
-                    IoReg.NR44 => gb.apu.readReg(ApuReg.NR44),
-                    IoReg.NR50 => gb.apu.readReg(ApuReg.NR50),
-                    IoReg.NR51 => gb.apu.readReg(ApuReg.NR51),
-                    IoReg.NR52 => gb.apu.readReg(ApuReg.NR52),
-                    0x30...0x3f => gb.apu.readWavRam(reg_ix - 0x30),
-                    else => gb.io_regs[reg_ix],
-                };
-            },
-            // HRAM
-            0xff80...0xfffe => gb.hram[addr - 0xff80],
-            // IE
-            0xffff => gb.ie,
-        };
-    }
-
-    pub fn write(gb: *Gb, addr: u16, val: u8) void {
-        switch (addr) {
-            // ROM
-            0x0000...0x7fff => gb.cart.writeRom(addr, val),
-            // VRAM
-            0x8000...0x9fff => {
-                if (!gb.isVramInUse() or gb.debug.isPaused()) {
-                    gb.vram[addr - 0x8000] = val;
-                }
-            },
-            // External RAM
-            0xa000...0xbfff => gb.cart.writeRam(addr, val),
-            // WRAM
-            0xc000...0xdfff => {
-                gb.wram[addr - 0xc000] = val;
-            },
-            // Echo RAM
-            0xe000...0xfdff => {
-                gb.wram[addr - 0xe000] = val;
-            },
-            // OAM
-            0xfe00...0xfe9f => {
-                if (!gb.isLcdOn() or !gb.ppu.scanning_oam or gb.debug.isPaused()) {
-                    gb.oam[addr - 0xfe00] = val;
-                }
-            },
-            // Not useable
-            0xfea0...0xfeff => {
-                //std.log.warn("Attempted to write to prohibited memory (${x} -> ${x})\n", .{ val, addr });
-            },
-            // I/O Registers
-            0xff00...0xff7f => {
-                const reg_ix = addr - 0xff00;
-                switch (reg_ix) {
-                    IoReg.DIV => {
-                        gb.timer.system_counter = 0;
-                    },
-                    IoReg.NR10 => gb.apu.writeReg(ApuReg.NR10, val),
-                    IoReg.NR11 => gb.apu.writeReg(ApuReg.NR11, val),
-                    IoReg.NR12 => gb.apu.writeReg(ApuReg.NR12, val),
-                    IoReg.NR13 => gb.apu.writeReg(ApuReg.NR13, val),
-                    IoReg.NR14 => gb.apu.writeReg(ApuReg.NR14, val),
-                    IoReg.NR21 => gb.apu.writeReg(ApuReg.NR21, val),
-                    IoReg.NR22 => gb.apu.writeReg(ApuReg.NR22, val),
-                    IoReg.NR23 => gb.apu.writeReg(ApuReg.NR23, val),
-                    IoReg.NR24 => gb.apu.writeReg(ApuReg.NR24, val),
-                    IoReg.NR30 => gb.apu.writeReg(ApuReg.NR30, val),
-                    IoReg.NR31 => gb.apu.writeReg(ApuReg.NR31, val),
-                    IoReg.NR32 => gb.apu.writeReg(ApuReg.NR32, val),
-                    IoReg.NR33 => gb.apu.writeReg(ApuReg.NR33, val),
-                    IoReg.NR34 => gb.apu.writeReg(ApuReg.NR34, val),
-                    IoReg.NR41 => gb.apu.writeReg(ApuReg.NR41, val),
-                    IoReg.NR42 => gb.apu.writeReg(ApuReg.NR42, val),
-                    IoReg.NR43 => gb.apu.writeReg(ApuReg.NR43, val),
-                    IoReg.NR44 => gb.apu.writeReg(ApuReg.NR44, val),
-                    IoReg.NR50 => gb.apu.writeReg(ApuReg.NR50, val),
-                    IoReg.NR51 => gb.apu.writeReg(ApuReg.NR51, val),
-                    IoReg.NR52 => gb.apu.writeReg(ApuReg.NR52, val),
-                    0x30...0x3f => gb.apu.writeWavRam(reg_ix - 0x30, val),
-                    IoReg.DMA => {
-                        gb.io_regs[reg_ix] = val;
-                        gb.dma.transferPending = true;
-                    },
-                    else => {
-                        gb.io_regs[reg_ix] = val;
-                    },
-                }
-            },
-            // HRAM
-            0xff80...0xfffe => {
-                gb.hram[addr - 0xff80] = val;
-            },
-            // IE
-            0xffff => {
-                gb.ie = val;
-            },
-        }
-    }
-
     pub fn setStatMode(gb: *Gb, mode: u8) void {
         gb.io_regs[IoReg.STAT] &= StatFlag.MODE_CLEAR;
         gb.io_regs[IoReg.STAT] |= mode;
@@ -546,42 +389,5 @@ pub const Gb = struct {
             @as(u1, if (gb.ime) 1 else 0),
         });
         try writer.print("cycles: {}\n", .{gb.cycles});
-    }
-
-    pub fn printDebugTrace(gb: *Gb, writer: *std.Io.Writer) !void {
-        const PRINT_INSTR_BYTES = true;
-
-        try gb.debug.printExecutionTrace(writer, 5);
-
-        var pc_offset: u16 = 0;
-
-        for (0..6) |instr_offset| {
-            var instrStrBuf: [64]u8 = undefined;
-            const instr = decodeInstrAt(gb.pc + pc_offset, gb);
-            const bank = gb.cart.getBank(gb.pc + pc_offset);
-
-            const instr_str = try instr.toStr(&instrStrBuf);
-            // TODO display correct address space for non-ROM addresses
-            try writer.print("{s} rom{d:_>3}::{x:0>4}: {s} ", .{
-                if (instr_offset == 0) "==>" else "   ",
-                bank,
-                gb.pc + pc_offset,
-                instr_str,
-            });
-
-            if (PRINT_INSTR_BYTES) {
-                try writer.print("(", .{});
-                for (0..instr.size()) |i| {
-                    try writer.print("${x:0>2}", .{gb.read(gb.pc + pc_offset + @as(u16, @intCast(i)))});
-                    if (i < instr.size() - 1) {
-                        try writer.print(" ", .{});
-                    }
-                }
-                try writer.print(")", .{});
-            }
-            try writer.print("\n", .{});
-
-            pc_offset += instr.size();
-        }
     }
 };

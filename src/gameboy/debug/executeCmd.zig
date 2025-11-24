@@ -1,7 +1,9 @@
 const std = @import("std");
-const Gb = @import("../gameboy.zig").Gb;
-const DebugCmd = @import("cmd.zig").DebugCmd;
-const MAX_TRACE_LENGTH = @import("debug.zig").Debug.MAX_TRACE_LENGTH;
+const Gb = @import("../root.zig").Gb;
+const DebugCmd = @import("./cmd.zig").DebugCmd;
+const MAX_TRACE_LENGTH = @import("./debug.zig").Debug.MAX_TRACE_LENGTH;
+const mem = @import("../memory/root.zig");
+const printDebugTrace = @import("./printDebugTrace.zig").printDebugTrace;
 
 const HELP_MESSAGE =
     "available commands:\n" ++
@@ -54,7 +56,7 @@ pub fn executeCmd(cmd: DebugCmd, gb: *Gb) !void {
         },
         .pause => {
             if (!gb.debug.isPaused()) {
-                try gb.printDebugTrace(writer);
+                try printDebugTrace(gb, writer);
                 try writer.flush();
                 gb.debug.setPaused(true);
             }
@@ -108,7 +110,7 @@ pub fn executeCmd(cmd: DebugCmd, gb: *Gb) !void {
                 if (i % 16 == 0) {
                     try writer.print("{x:0>4}: ", .{addr});
                 }
-                try writer.print("{x:0>2} ", .{gb.read(@truncate(addr))});
+                try writer.print("{x:0>2} ", .{mem.read(gb, @truncate(addr))});
             }
         },
         .view_stack => blk: {
@@ -122,7 +124,7 @@ pub fn executeCmd(cmd: DebugCmd, gb: *Gb) !void {
                 if (i % 16 == 0) {
                     try writer.print("{x:0>4}: ", .{addr});
                 }
-                try writer.print("{x:0>2} ", .{gb.read(@truncate(addr))});
+                try writer.print("{x:0>2} ", .{mem.read(gb, @truncate(addr))});
             }
         },
         .view_ppu => try gb.ppu.printState(writer),
@@ -130,10 +132,10 @@ pub fn executeCmd(cmd: DebugCmd, gb: *Gb) !void {
             var i: u16 = 0;
             while (i < gb.oam.len) : (i += 4) {
                 try writer.print("#{d:0>2}\n", .{i / 4});
-                try writer.print("${x:0>4}: ${x:0>2} (y = {d:0>3})\n", .{ 0xfe00 + i + 0, gb.read(0xfe00 + i + 0), gb.read(0xfe00 + i + 0) });
-                try writer.print("${x:0>4}: ${x:0>2} (x = {d:0>3})\n", .{ 0xfe00 + i + 1, gb.read(0xfe00 + i + 1), gb.read(0xfe00 + i + 1) });
-                try writer.print("${x:0>4}: ${x:0>2} (tileNumber = {d:0>3})\n", .{ 0xfe00 + i + 2, gb.read(0xfe00 + i + 2), gb.read(0xfe00 + i + 2) });
-                try writer.print("${x:0>4}: ${x:0>2} (flags = {b:0>8})\n", .{ 0xfe00 + i + 3, gb.read(0xfe00 + i + 3), gb.read(0xfe00 + i + 3) });
+                try writer.print("${x:0>4}: ${x:0>2} (y = {d:0>3})\n", .{ 0xfe00 + i + 0, mem.read(gb, 0xfe00 + i + 0), mem.read(gb, 0xfe00 + i + 0) });
+                try writer.print("${x:0>4}: ${x:0>2} (x = {d:0>3})\n", .{ 0xfe00 + i + 1, mem.read(gb, 0xfe00 + i + 1), mem.read(gb, 0xfe00 + i + 1) });
+                try writer.print("${x:0>4}: ${x:0>2} (tileNumber = {d:0>3})\n", .{ 0xfe00 + i + 2, mem.read(gb, 0xfe00 + i + 2), mem.read(gb, 0xfe00 + i + 2) });
+                try writer.print("${x:0>4}: ${x:0>2} (flags = {b:0>8})\n", .{ 0xfe00 + i + 3, mem.read(gb, 0xfe00 + i + 3), mem.read(gb, 0xfe00 + i + 3) });
             }
         },
         .view_dma => try gb.dma.printState(writer),
@@ -143,7 +145,7 @@ pub fn executeCmd(cmd: DebugCmd, gb: *Gb) !void {
         .view_apu => try gb.apu.printState(writer),
         .view_execution_trace => try gb.debug.printExecutionTrace(writer, MAX_TRACE_LENGTH),
         .write_memory => |args| {
-            gb.write(args.addr, args.val);
+            mem.write(gb, args.addr, args.val);
         },
         .joypad_press => |button| gb.joypad.pressButton(button),
         .joypad_release => |button| gb.joypad.releaseButton(button),

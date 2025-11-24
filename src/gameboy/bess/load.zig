@@ -1,7 +1,8 @@
-const Bess = @import("bess.zig").Bess;
-const Gb = @import("../gameboy.zig").Gb;
-const IoReg = @import("../gameboy.zig").IoReg;
-const ApuReg = @import("../apu/apu.zig").ApuReg;
+const Bess = @import("./bess.zig").Bess;
+const Gb = @import("../root.zig").Gb;
+const IoReg = @import("../root.zig").IoReg;
+const ApuReg = @import("../apu/root.zig").ApuReg;
+const mem = @import("../memory/root.zig");
 
 pub fn loadBess(gb: *Gb, bess: Bess) void {
     gb.reset();
@@ -84,7 +85,7 @@ pub fn loadBess(gb: *Gb, bess: Bess) void {
 
     if (bess.mbc) |mbc| {
         for (mbc.regs) |reg| {
-            gb.write(reg.addr, reg.val);
+            mem.write(gb, reg.addr, reg.val);
         }
     }
 }

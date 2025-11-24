@@ -1,10 +1,8 @@
 const std = @import("std");
-const Gb = @import("gameboy.zig").Gb;
-const runCpu = @import("cpu/run.zig").runCpu;
-const shouldDebugBreak = @import("debug/shouldDebugBreak.zig").shouldDebugBreak;
-const runDebugger = @import("debug/runDebugger.zig").runDebugger;
-const executeDebugCmd = @import("debug/executeCmd.zig").executeCmd;
-const loadBess = @import("bess/load.zig").loadBess;
+const Gb = @import("./gameboy.zig").Gb;
+const runCpu = @import("./cpu/root.zig").runCpu;
+const executeDebugCmd = @import("./debug/root.zig").executeDebugCmd;
+const loadBess = @import("./bess/root.zig").loadBess;
 
 pub fn runGameboy(gb: *Gb) void {
     processDebugCommand(gb);

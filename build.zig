@@ -46,6 +46,64 @@ pub fn build(b: *std.Build) void {
     exe.linkSystemLibrary("SDL2");
     exe.linkLibC();
 
+    const constants = b.createModule(.{ .root_source_file = b.path("src/constants/root.zig") });
+    exe.root_module.addImport("constants", constants);
+
+    const util = b.createModule(.{ .root_source_file = b.path("src/util/root.zig") });
+    exe.root_module.addImport("util", util);
+
+    const core = b.addModule("core", .{ .root_source_file = b.path("src/gameboy/root.zig") });
+    core.addImport("constants", constants);
+    core.addImport("util", util);
+    // {
+    //     const cpu = b.createModule(.{ .root_source_file = b.path("src/gameboy/cpu/root.zig") });
+    //     core.addImport("cpu", cpu);
+    //     const dma = b.createModule(.{ .root_source_file = b.path("src/gameboy/dma/root.zig") });
+    //     core.addImport("dma", dma);
+    //     const timer = b.createModule(.{ .root_source_file = b.path("src/gameboy/timer/root.zig") });
+    //     core.addImport("timer", timer);
+    //     const joypad = b.createModule(.{ .root_source_file = b.path("src/gameboy/joypad/root.zig") });
+    //     core.addImport("joypad", joypad);
+    //     const ppu = b.createModule(.{ .root_source_file = b.path("src/gameboy/ppu/root.zig") });
+    //     core.addImport("ppu", ppu);
+    //     const apu = b.createModule(.{ .root_source_file = b.path("src/gameboy/apu/root.zig") });
+    //     core.addImport("apu", apu);
+    //     const cart = b.createModule(.{ .root_source_file = b.path("src/gameboy/cart/root.zig") });
+    //     core.addImport("cart", cart);
+    //     const memory = b.createModule(.{ .root_source_file = b.path("src/gameboy/memory/root.zig") });
+    //     core.addImport("memory", memory);
+    //     const timing = b.createModule(.{ .root_source_file = b.path("src/gameboy/timing/root.zig") });
+    //     core.addImport("timing", timing);
+    //     const bess = b.createModule(.{
+    //         .root_source_file = b.path("src/gameboy/bess/root.zig"),
+    //         .imports = &.{.{
+    //             .name = "cart",
+    //             .module = cart,
+    //         }},
+    //     });
+    //     core.addImport("bess", bess);
+    //     const debug = b.createModule(.{
+    //         .root_source_file = b.path("src/gameboy/debug/root.zig"),
+    //         .imports = &.{
+    //             .{
+    //                 .name = "util",
+    //                 .module = util,
+    //             },
+    //             .{
+    //                 .name = "joypad",
+    //                 .module = joypad,
+    //             },
+    //         },
+    //     });
+    //     core.addImport("debug", debug);
+    // }
+    exe.root_module.addImport("core", core);
+
+    const sdl = b.createModule(.{ .root_source_file = b.path("src/sdl/root.zig") });
+    sdl.addImport("core", core);
+    sdl.addImport("constants", constants);
+    exe.root_module.addImport("sdl", sdl);
+
     // This declares intent for the executable to be installed into the
     // standard location when the user invokes the "install" step (the default
     // step when running `zig build`).

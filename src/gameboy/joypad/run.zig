@@ -1,8 +1,8 @@
 const std = @import("std");
-const Gb = @import("../gameboy.zig").Gb;
-const IoReg = @import("../gameboy.zig").IoReg;
-const Interrupt = @import("../gameboy.zig").Interrupt;
-const JoypFlag = @import("joypad.zig").Joypad.JoypFlag;
+const Gb = @import("../root.zig").Gb;
+const IoReg = @import("../root.zig").IoReg;
+const Interrupt = @import("../root.zig").Interrupt;
+const JoypFlag = @import("./joypad.zig").Joypad.JoypFlag;
 
 pub fn runJoypad(gb: *Gb, cycles: usize) void {
     var rem_cycles = cycles + gb.joypad.cycles_odd;

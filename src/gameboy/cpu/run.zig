@@ -1,24 +1,25 @@
 const std = @import("std");
-const advanceGameboy = @import("../timing.zig").advanceGameboy;
-const syncTime = @import("../timing.zig").syncTime;
+const advanceGameboy = @import("../timing/root.zig").advanceGameboy;
+const syncTime = @import("../timing/root.zig").syncTime;
 const expect = std.testing.expect;
-const as16 = @import("../../util.zig").as16;
-const incAs16 = @import("../../util.zig").incAs16;
-const Gb = @import("../gameboy.zig").Gb;
-const IoReg = @import("../gameboy.zig").IoReg;
-const Interrupt = @import("../gameboy.zig").Interrupt;
-const Cond = @import("operand.zig").Cond;
-const Src8 = @import("operand.zig").Src8;
-const Src16 = @import("operand.zig").Src16;
-const Dst8 = @import("operand.zig").Dst8;
-const Dst16 = @import("operand.zig").Dst16;
-const AluOp = @import("alu_op.zig").AluOp;
-const PrefixOp = @import("prefix_op.zig").PrefixOp;
-const shouldDebugBreak = @import("../debug/shouldDebugBreak.zig").shouldDebugBreak;
-const runDebugger = @import("../debug/runDebugger.zig").runDebugger;
-const executeDebugCmd = @import("../debug/executeCmd.zig").executeCmd;
-const decodeInstrAt = @import("decode.zig").decodeInstrAt;
-const runDma = @import("../dma/run.zig").runDma;
+const as16 = @import("util").as16;
+const incAs16 = @import("util").incAs16;
+const Gb = @import("../root.zig").Gb;
+const IoReg = @import("../root.zig").IoReg;
+const Interrupt = @import("../root.zig").Interrupt;
+const Cond = @import("./operand.zig").Cond;
+const Src8 = @import("./operand.zig").Src8;
+const Src16 = @import("./operand.zig").Src16;
+const Dst8 = @import("./operand.zig").Dst8;
+const Dst16 = @import("./operand.zig").Dst16;
+const AluOp = @import("./alu_op.zig").AluOp;
+const PrefixOp = @import("./prefix_op.zig").PrefixOp;
+const shouldDebugBreak = @import("../debug/root.zig").shouldDebugBreak;
+const executeDebugCmd = @import("../debug/root.zig").executeCmd;
+const decodeInstrAt = @import("./decode.zig").decodeInstrAt;
+const runDma = @import("../dma/root.zig").runDma;
+const mem = @import("../memory");
+const printDebugTrace = @import("../debug/root.zig").printDebugTrace;
 
 pub fn runCpu(gb: *Gb) void {
     if (gb.halted) {
@@ -105,7 +106,7 @@ fn tryDebugBreak(gb: *Gb) void {
 
         gb.debug.std_out_mutex.lock();
         stdout.print("\n", .{}) catch {};
-        gb.printDebugTrace(stdout) catch {};
+        printDebugTrace(gb, stdout) catch {};
         stdout.print("\n> ", .{}) catch {};
         gb.debug.std_out_mutex.unlock();
 

@@ -1,11 +1,11 @@
 const std = @import("std");
-const Gb = @import("gameboy.zig").Gb;
-const runTimer = @import("./timer/run.zig").runTimer;
-const runJoypad = @import("./joypad/run.zig").runJoypad;
-const runApu = @import("./apu/run.zig").runApu;
-const runPpu = @import("./ppu/run.zig").runPpu;
-const runDma = @import("./dma/run.zig").runDma;
-const constants = @import("../constants.zig");
+const Gb = @import("../root.zig").Gb;
+const runTimer = @import("../timer/root.zig").runTimer;
+const runJoypad = @import("../joypad/root.zig").runJoypad;
+const runApu = @import("../apu/root.zig").runApu;
+const runPpu = @import("../ppu/root.zig").runPpu;
+const runDma = @import("../dma/root.zig").runDma;
+const constants = @import("constants");
 
 const LCDC_PERIOD: u64 = 70224;
 

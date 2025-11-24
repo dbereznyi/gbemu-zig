@@ -1,5 +1,10 @@
 const std = @import("std");
 
+pub const TacFlag = .{
+    .ENABLE = 0b0000_0100,
+    .CLOCK_SELECT = 0b0000_0011,
+};
+
 pub const Timer = struct {
     const Self = @This();
 
