@@ -11,6 +11,7 @@ pub const AUDIO = .{
 };
 
 pub const DEBUG = .{
+    .ENABLE_ASSERTIONS = true,
     .DISPLAY_FPS = true,
     .OUTPUT_AUDIO_FILES = false,
 };

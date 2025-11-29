@@ -58,7 +58,7 @@ pub fn main() !void {
     defer gb.deinit(alloc);
 
     if (false) {
-        try gb.debug.breakpoints.append(alloc, .{ .bank = 3, .addr = 0x6008 });
+        try gb.debug.breakpoints.append(alloc, .{ .bank = 0, .addr = 0x3e7a });
     }
 
     var sdl = try Sdl.init(alloc_gpa, rom_filepath_noext, &gb);

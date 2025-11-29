@@ -41,9 +41,10 @@ pub fn readRom(cart: *Cart, addr: u16) u8 {
             if (addr < 0x4000) {
                 return cart.rom[addr];
             }
-            const masked_addr: usize = addr & 0b1_1111_1111;
+            //const x = 0b0000_0001_1111_1111;
+            const masked_addr: usize = addr & 0b11_1111_1111_1111;
             const rom_bank: usize = @intCast(mbc3.rom_bank);
-            const physical_addr = (rom_bank << 9) | masked_addr;
+            const physical_addr = (rom_bank << 14) | masked_addr;
 
             if (physical_addr < cart.rom.len) {
                 return cart.rom[physical_addr];

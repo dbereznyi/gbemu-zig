@@ -40,16 +40,16 @@ pub fn runPpu(gb: *Gb, cycles: usize) void {
 
 // Advance the state of the PPU by 1 M-cycle (1 M-cycle = 4 dots).
 fn stepPpu(gb: *Gb) void {
-    std.debug.assert(gb.ppu.dots % 4 == 0);
-    std.debug.assert(gb.ppu.dots < VBLANK_END);
+    gb.assert(gb.ppu.dots % 4 == 0);
+    gb.assert(gb.ppu.dots < VBLANK_END);
 
     switch (gb.ppu.mode) {
         .oam => {
-            std.debug.assert(gb.ppu.dots % LINE_DOTS < DRAWING_START);
-            std.debug.assert(gb.ppu.x == 0);
-            std.debug.assert(gb.ppu.y < 144);
-            std.debug.assert(gb.io_regs[IoReg.LY] < 144);
-            std.debug.assert(!gb.ppu.drawing);
+            gb.assert(gb.ppu.dots % LINE_DOTS < DRAWING_START);
+            gb.assert(gb.ppu.x == 0);
+            gb.assert(gb.ppu.y < 144);
+            gb.assert(gb.io_regs[IoReg.LY] < 144);
+            gb.assert(!gb.ppu.drawing);
 
             if (gb.ppu.dots % LINE_DOTS == 0) {
                 const stat = gb.io_regs[IoReg.STAT];
@@ -77,11 +77,11 @@ fn stepPpu(gb: *Gb) void {
             }
         },
         .drawing => {
-            std.debug.assert(gb.ppu.dots % LINE_DOTS >= DRAWING_START);
-            std.debug.assert(gb.ppu.dots % LINE_DOTS < HBLANK_START);
-            std.debug.assert(gb.ppu.y < 144);
-            std.debug.assert(gb.io_regs[IoReg.LY] < 144);
-            std.debug.assert(!gb.ppu.scanning_oam);
+            gb.assert(gb.ppu.dots % LINE_DOTS >= DRAWING_START);
+            gb.assert(gb.ppu.dots % LINE_DOTS < HBLANK_START);
+            gb.assert(gb.ppu.y < 144);
+            gb.assert(gb.io_regs[IoReg.LY] < 144);
+            gb.assert(!gb.ppu.scanning_oam);
 
             if (gb.ppu.dots == DRAWING_START) {
                 gb.ppu.windowY = 0;
@@ -114,13 +114,13 @@ fn stepPpu(gb: *Gb) void {
             }
         },
         .hBlank => {
-            std.debug.assert(gb.ppu.dots % LINE_DOTS >= HBLANK_START);
-            std.debug.assert(gb.ppu.dots < VBLANK_START);
-            std.debug.assert(gb.ppu.x == 0);
-            std.debug.assert(gb.ppu.y < 144);
-            std.debug.assert(gb.io_regs[IoReg.LY] < 144);
-            std.debug.assert(!gb.ppu.scanning_oam);
-            std.debug.assert(!gb.ppu.drawing);
+            gb.assert(gb.ppu.dots % LINE_DOTS >= HBLANK_START);
+            gb.assert(gb.ppu.dots < VBLANK_START);
+            gb.assert(gb.ppu.x == 0);
+            gb.assert(gb.ppu.y < 144);
+            gb.assert(gb.io_regs[IoReg.LY] < 144);
+            gb.assert(!gb.ppu.scanning_oam);
+            gb.assert(!gb.ppu.drawing);
 
             if (gb.ppu.dots % LINE_DOTS == HBLANK_START) {
                 const stat = gb.io_regs[IoReg.STAT];
@@ -171,14 +171,14 @@ fn stepPpu(gb: *Gb) void {
             }
         },
         .vBlank => {
-            std.debug.assert(gb.ppu.dots >= VBLANK_START);
-            std.debug.assert(gb.ppu.dots < VBLANK_END);
-            std.debug.assert(gb.ppu.y >= 144);
-            std.debug.assert(gb.ppu.y < 154);
-            std.debug.assert(gb.io_regs[IoReg.LY] >= 144);
-            std.debug.assert(gb.io_regs[IoReg.LY] < 154);
-            std.debug.assert(!gb.ppu.scanning_oam);
-            std.debug.assert(!gb.ppu.drawing);
+            gb.assert(gb.ppu.dots >= VBLANK_START);
+            gb.assert(gb.ppu.dots < VBLANK_END);
+            gb.assert(gb.ppu.y >= 144);
+            gb.assert(gb.ppu.y < 154);
+            gb.assert(gb.io_regs[IoReg.LY] >= 144);
+            gb.assert(gb.io_regs[IoReg.LY] < 154);
+            gb.assert(!gb.ppu.scanning_oam);
+            gb.assert(!gb.ppu.drawing);
 
             if (gb.ppu.dots == VBLANK_START) {
                 const stat = gb.io_regs[IoReg.STAT];
@@ -234,7 +234,7 @@ fn readObjectAttributesForLine(
         obj_attrs[obj_attrs_index].flags = gb.oam[oam_index + 3];
         obj_attrs[obj_attrs_index].oamIndex = oam_index;
     }
-    std.debug.assert(gb.oam.len <= 160);
+    gb.assert(gb.oam.len <= 160);
 
     const lcdc = gb.io_regs[IoReg.LCDC];
 

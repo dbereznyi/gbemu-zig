@@ -199,7 +199,7 @@ const Ch3 = struct {
 
     init_length_timer: u8,
     length_timer: u8,
-    init_volume: u2,
+    //init_volume: u2,
     volume: u2,
     dac_enabled: u1,
     wav_ram_ix: u5,
@@ -212,7 +212,7 @@ const Ch3 = struct {
         return .{
             .init_length_timer = 0,
             .length_timer = 0,
-            .init_volume = 0,
+            //.init_volume = 0,
             .volume = 0,
             .dac_enabled = 0,
             .wav_ram_ix = 0,
@@ -229,7 +229,7 @@ const Ch3 = struct {
     pub fn reset(self: *Self) void {
         self.init_length_timer = 0;
         self.length_timer = 0;
-        self.init_volume = 0;
+        //self.init_volume = 0;
         self.volume = 0;
         self.dac_enabled = 0;
         self.wav_ram_ix = 0;
@@ -434,7 +434,7 @@ pub const Apu = struct {
 
         if (ch_ix == CH3) {
             self.ch3.length_timer = self.ch3.init_length_timer;
-            self.ch3.volume = self.ch3.init_volume;
+            //self.ch3.volume = self.ch3.init_volume;
         } else {
             self.ch[ch_ix].length_timer = self.ch[ch_ix].init_length_timer;
             self.ch[ch_ix].volume = self.ch[ch_ix].init_volume;
@@ -588,7 +588,7 @@ pub const Apu = struct {
             var cycles_rem = cycles;
 
             while (cycles_rem > self.ch3.timer) {
-                cycles_rem -= self.ch3.timer;
+                cycles_rem -= self.ch3.timer + 1;
                 self.ch3.loadTimer(self.ch[CH3].period_setting);
 
                 self.ch3.wav_ram_ix +%= 1;
@@ -857,7 +857,7 @@ pub const Apu = struct {
             },
             .NR31 => return 0xff,
             .NR32 => {
-                const output_level_setting: u8 = self.ch3.init_volume;
+                const output_level_setting: u8 = self.ch3.volume;
                 return output_level_setting << 5;
             },
             .NR33 => return 0xff,
@@ -998,7 +998,7 @@ pub const Apu = struct {
                 self.ch3.length_timer = val;
             },
             .NR32 => {
-                self.ch3.init_volume = @truncate(val >> 5);
+                self.ch3.volume = @truncate(val >> 5);
             },
             .NR33 => {
                 const val_u11: u11 = val;

@@ -227,6 +227,17 @@ pub const Cart = struct {
                     },
                 );
             },
+            .mbc3 => |mbc3| {
+                try writer.print(
+                    "rom_bank={} ram_bank={} ram_enable={} latch_state={}\n",
+                    .{
+                        mbc3.rom_bank,
+                        mbc3.ram_bank_rtc_reg_select,
+                        mbc3.ram_timer_enable,
+                        mbc3.latch_state,
+                    },
+                );
+            },
             else => {},
         }
     }
@@ -275,7 +286,17 @@ pub const Cart = struct {
                 buf[3] = .{ .addr = 0x6000, .val = @intCast(mbc1.banking_mode) };
                 return buf[0..4];
             },
-            else => std.debug.panic("TODO implement for {}\n", .{cart.mapper}),
+            .mbc3 => |mbc3| {
+                buf[0] = .{ .addr = 0x0000, .val = if (mbc3.ram_timer_enable == 1) 0x0a else 0x00 };
+                buf[1] = .{ .addr = 0x2000, .val = @intCast(mbc3.rom_bank) };
+                buf[2] = .{ .addr = 0x4000, .val = @intCast(mbc3.ram_bank_rtc_reg_select) };
+                if (mbc3.latch_state == .waiting_for_01) {
+                    buf[3] = .{ .addr = 0x6000, .val = 0x00 };
+                    return buf[0..4];
+                } else {
+                    return buf[0..3];
+                }
+            },
         }
     }
 };

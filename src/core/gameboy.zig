@@ -1,4 +1,5 @@
 const std = @import("std");
+const constants = @import("constants");
 const decodeInstrAt = @import("cpu").decodeInstrAt;
 const Debug = @import("debug/root.zig").Debug;
 const Timer = @import("timer/root.zig").Timer;
@@ -315,6 +316,12 @@ pub const Gb = struct {
 
     pub fn isLcdOn(gb: *Gb) bool {
         return gb.io_regs[IoReg.LCDC] & LcdcFlag.ON > 0;
+    }
+
+    pub fn assert(gb: *Gb, condition: bool) void {
+        if (constants.DEBUG.ENABLE_ASSERTIONS and !condition) {
+            gb.panic("Assertion failed\n", .{});
+        }
     }
 
     pub fn panic(gb: *const Gb, comptime msg: []const u8, args: anytype) noreturn {

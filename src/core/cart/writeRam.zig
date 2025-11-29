@@ -32,6 +32,8 @@ pub fn writeRam(cart: *Cart, addr: u16, val: u8) void {
                     const physical_addr = (@as(usize, @intCast(addr)) - 0xa000) + (0x2000 * @as(usize, @intCast(mbc3.ram_bank_rtc_reg_select)));
                     if (physical_addr < cart.ram.len) {
                         cart.ram[physical_addr] = val;
+                    } else {
+                        std.log.warn("Attempt to write to invalid cartridge RAM address (${x:0>2} -> ${x:0>4})", .{ val, addr });
                     }
                 },
                 0x08 => mbc3.rtc.s = val,
@@ -39,7 +41,9 @@ pub fn writeRam(cart: *Cart, addr: u16, val: u8) void {
                 0x0a => mbc3.rtc.h = val,
                 0x0b => mbc3.rtc.dl = val,
                 0x0c => mbc3.rtc.dh = val,
-                else => {},
+                else => {
+                    std.log.warn("Invalid MBC3 register: ${x:0>2} (${x:0>2} -> ${x:0>4})", .{ mbc3.ram_bank_rtc_reg_select, val, addr });
+                },
             }
         },
     }
